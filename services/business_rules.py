@@ -1,4 +1,8 @@
+import uuid
+import datetime
 from typing import Dict, Any
+from sqlalchemy.orm import Session
+from models import WorkflowNode
 
 class BusinessRulesEngine:
     """
@@ -50,3 +54,41 @@ class BusinessRulesEngine:
                     execution_logs.append(f"Subtracted {step.get('reducer_field')} from {src}. Final balance = {calculated_value}")
 
         return {"bre_metadata": {"rule_id": self.rule_id, "version": self.version, "execution_status": "COMPLETED_SUCCESSFULLY"}, "final_calculated_state": runtime_context, "audit_trail_logs": execution_logs}
+
+def process_workflow_node(payload: Dict[str, Any], db: Session) -> Dict[str, Any]:
+    """
+    Handles WORKFLOW_NODE_COMMIT manifests.
+    Maps incoming step attributes, node IDs, SLAs, and rule maps directly to the database transaction framework.
+    """
+    node_id = payload.get("node_id", f"NODE-{uuid.uuid4().hex[:8].upper()}")
+    workflow_id = payload.get("workflow_id")
+    
+    if not workflow_id:
+        return {"status": "error", "message": "workflow_id is required"}
+
+    new_node = WorkflowNode(
+        node_id=node_id,
+        workflow_id=workflow_id,
+        sequence_number=payload.get("sequence_number", 1),
+        node_title=payload.get("node_title", "Untitled Node"),
+        node_code=payload.get("node_code", "UNKNOWN_CODE"),
+        canvas_x_position=payload.get("canvas_x_position", 0),
+        canvas_y_position=payload.get("canvas_y_position", 0),
+        rules_applied=payload.get("rules_applied", []),
+        calculations=payload.get("calculations", []),
+        api_triggers=payload.get("api_triggers", []),
+        events_broadcast=payload.get("events_broadcast", []),
+        sla_days=payload.get("sla_days", 1),
+        sla_anchor_field=payload.get("sla_anchor_field", None),
+        screen_template=payload.get("screen_template", None),
+        created_at=datetime.datetime.utcnow().isoformat()
+    )
+    
+    try:
+        db.add(new_node)
+        db.commit()
+        db.refresh(new_node)
+        return {"status": "success", "node_id": node_id, "message": "Workflow node committed successfully"}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}

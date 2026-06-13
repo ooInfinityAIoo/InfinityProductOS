@@ -3,6 +3,8 @@ import datetime
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from models import EvidencePacketRegistry
+import asyncio
+from event_bus import global_event_bus, SystemEvent
 
 class GovernanceGateHub:
     """
@@ -27,10 +29,24 @@ class GovernanceGateHub:
             raw_payload_reference=str(raw_data.get("transaction_id_99", "UNKNOWN")),
             blockchain_tx_hash="HALTED_LIMIT_BREACH",
             variance_metric_logged=f"Deviation: {deviation:.2%}",
-            execution_status="HALTED_IN_GOVERNANCE"
+            execution_status="HALTED_IN_GOVERNANCE",
+            created_at=datetime.datetime.utcnow().isoformat()
         )
         self.db.add(failed_packet)
         self.db.commit()
+        
+        # --- BROADCAST GOVERNANCE TASK CREATED EVENT ---
+        event_payload = {
+            "task_id": task_id,
+            "status": "PENDING_SME_REVIEW",
+            "deviation": f"{deviation:.2%}",
+            "raw_payload_reference": failed_packet.raw_payload_reference
+        }
+        asyncio.run(global_event_bus.broadcast(SystemEvent(
+            event_type="GOVERNANCE_TASK_CREATED",
+            source_context="GovernanceGateHub",
+            payload=event_payload
+        )))
         
         return {
             "task_id": task_id,
@@ -51,9 +67,23 @@ class GovernanceGateHub:
             
         task.execution_status = "AUTHORIZED_REPROCESSED" if action == "APPROVE" else "REJECTED_DEAD"
         task.authorizer_checker = authorizer_sme
+        task.updated_at = datetime.datetime.utcnow().isoformat()
         if action == "APPROVE":
             task.blockchain_tx_hash = f"governance_sig_{uuid.uuid4().hex[:16]}"
         self.db.commit()
+        
+        # --- BROADCAST GOVERNANCE TASK RESOLVED EVENT ---
+        event_payload = {
+            "task_id": task.packet_id,
+            "status": task.execution_status,
+            "resolved_by": authorizer_sme,
+            "action": action
+        }
+        asyncio.run(global_event_bus.broadcast(SystemEvent(
+            event_type="GOVERNANCE_TASK_RESOLVED",
+            source_context="GovernanceGateHub",
+            payload=event_payload
+        )))
         
         return {
             "task_id": task.packet_id, "status": task.execution_status, "checker_identity": task.authorizer_checker,

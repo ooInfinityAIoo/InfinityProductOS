@@ -1,39 +1,55 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
-from typing import Dict, Any
-from services.registry_processor import process_field_mint
-from services.business_rules import process_workflow_node
-from services.orchestrator_pipeline import process_calculation_model
+from typing import Dict, Any, List, Optional
+import uuid
+import datetime
+import io
+import os
+import json
+import csv
+import xml.etree.ElementTree as ET
 
-app = FastAPI(title="Infinity ProductOS - Architectural Engine")
+# Your existing SQLAlchemy & Local Imports
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import models
+from models import Base, WorkflowManifest, LegoBlockConfig, EvidencePacketRegistry
+from decomposition import decomposition_processor
+from event_bus import global_event_bus, SystemEvent
+from services.orchestrator_pipeline import MasterCanvasOrchestrator
+import schemas
+import openpyxl
 
-class EventManifest(BaseModel):
-    event: str
-    timestamp: str
-    payload: Dict[str, Any]
+# --- NEW ROUTER IMPORT ---
+from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens
 
-@app.post("/api/v1/execute")
-async def handle_layer4_event(manifest: EventManifest):
-    """
-    Deterministic Inbound Gateway Router (Layer 4 Integration Fabric)
-    Catches events from index.html and delegates cleanly to independent services.
-    """
-    try:
-        if manifest.event == "FIELD_ASSET_MINT":
-            result = await process_field_mint(manifest.payload)
-            return {"status": "SUCCESS", "message": "LOB Field Asset Minted Cleanly", "data": result}
-            
-        elif manifest.event == "WORKFLOW_NODE_COMMIT":
-            result = await process_workflow_node(manifest.payload)
-            return {"status": "SUCCESS", "message": "Workflow State Map Committed", "data": result}
-            
-        elif manifest.event == "CALCULATION_MODEL_REGISTER":
-            result = await process_calculation_model(manifest.payload)
-            return {"status": "SUCCESS", "message": "Symbolic Formula Matrix Registered", "data": result}
-            
-        else:
-            # Extensible catch-all loop to absorb continuous future frontend expansions
-            return {"status": "FORWARDED", "message": f"Event {manifest.event} stashed to execution fabric storage"}
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Layer 4 Pipeline Router Exception: {str(e)}")
+app = FastAPI(title="InfinityProductOS")
+
+# Keep your existing CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- INCLUDE THE ROUTERS ---
+app.include_router(registry.router)
+app.include_router(workflows.router)
+app.include_router(governance.router)
+app.include_router(calculations.router)
+app.include_router(mappers.router)
+app.include_router(masters.router)
+app.include_router(ingestion.router)
+app.include_router(maintenance.router)
+app.include_router(users.router)
+app.include_router(dashboard.router)
+app.include_router(health.router)
+app.include_router(screens.router)
+
+@app.get("/")
+def read_root():
+    return {"status": "InfinityProductOS Core Engine Active"}

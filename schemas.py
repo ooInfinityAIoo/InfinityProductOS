@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 # =====================================================================
 # --- FOUNDATIONAL WORKFLOW BLUEPRINT SCHEMAS ---
@@ -146,6 +147,106 @@ class FeeConfigurationResponse(FeeConfigurationCreate):
     class Config:
         from_attributes = True
 
+class CurrencyDefinitionListResponse(BaseModel):
+    currencies: List[CurrencyDefinitionResponse]
+
+class OperationalCalendarListResponse(BaseModel):
+    calendars: List[OperationalCalendarResponse]
+
+class AccountProfileListResponse(BaseModel):
+    accounts: List[AccountProfileResponse]
+
+class CountryJurisdictionListResponse(BaseModel):
+    countries: List[CountryJurisdictionResponse]
+
+class FeeConfigurationListResponse(BaseModel):
+    fees: List[FeeConfigurationResponse]
+
+class MastersSearchResults(BaseModel):
+    currencies: List[CurrencyDefinitionResponse] = []
+    calendars: List[OperationalCalendarResponse] = []
+    accounts: List[AccountProfileResponse] = []
+    countries: List[CountryJurisdictionResponse] = []
+    fees: List[FeeConfigurationResponse] = []
+
+class MastersCountResponse(BaseModel):
+    currencies: int
+    calendars: int
+    accounts: int
+    countries: int
+    fees: int
+
+class ProductMasterResponse(BaseModel):
+    product_id: str
+    product_name: str
+    description: Optional[str]
+    class Config:
+        from_attributes = True
+
+class ProductMasterListResponse(BaseModel):
+    products: List[ProductMasterResponse]
+
+class SubproductMasterResponse(BaseModel):
+    subproduct_id: str
+    subproduct_name: str
+    product_id: str
+    description: Optional[str]
+    class Config:
+        from_attributes = True
+
+class SubproductMasterListResponse(BaseModel):
+    subproducts: List[SubproductMasterResponse]
+
+
+# =====================================================================
+# --- DATA INGESTION SCHEMAS ---
+# =====================================================================
+
+class IngestionJobResponse(BaseModel):
+    job_id: str
+    filename: str
+    status: str
+    mapper_id: str
+    workflow_id: str
+    total_records: Optional[int]
+    processed_records: int
+    error_message: Optional[str]
+    created_at: str
+    completed_at: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class IngestionJobListResponse(BaseModel):
+    jobs: List[IngestionJobResponse]
+
+class IngestionStatsResponse(BaseModel):
+    pending: int
+    processing: int
+    completed: int
+    failed: int
+    cancelled: int
+    total: int
+
+class IngestionJobArchiveFilterParams(BaseModel):
+    job_id: Optional[str] = Field(None, description="Filter by job ID (case-insensitive search).")
+    filename: Optional[str] = Field(None, description="Filter by the original filename (case-insensitive search).")
+    status: Optional[str] = Field(None, description="Filter by the exact final job status (e.g., COMPLETED, FAILED).")
+    mapper_id: Optional[str] = Field(None, description="Filter by the exact mapper ID used.")
+    workflow_id: Optional[str] = Field(None, description="Filter by the exact workflow ID used.")
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+# =====================================================================
+# --- DATA ARCHIVAL SCHEMAS ---
+# =====================================================================
+
+class ArchivalStatsResponse(BaseModel):
+    completed: int
+    failed: int
+    cancelled: int
+    total: int
+
 # =====================================================================
 # --- PHASE 4: DYNAMIC PAYLOAD TRANSFORMATION SCHEMAS ---
 # =====================================================================
@@ -182,9 +283,33 @@ class PayloadMapperBlueprintResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class PayloadMapperBlueprintListResponse(BaseModel):
+    mappers: List[PayloadMapperBlueprintResponse]
+
 # =====================================================================
 # --- PHASE 1: FIELD REGISTRY & WORKFLOW PERSISTENCE SCHEMAS ---
 # =====================================================================
+
+# --- GENERIC FIELD REGISTRY SCHEMAS ---
+class FieldRegistryBase(BaseModel):
+    technical_key: str = Field(..., description="Internal system field identifier, must be unique.")
+    display_name: str = Field(..., description="User-facing field label.")
+    data_type: str = Field(..., description="Data type for the field (e.g., TEXT, NUMBER, DATE).")
+    validation_rules: Optional[Dict[str, Any]] = Field(None, description="JSON object defining validation rules.")
+    core_layer: str = Field(..., description="Core system layer this field belongs to.")
+
+class FieldRegistryCreate(FieldRegistryBase):
+    pass
+
+class FieldRegistryResponse(FieldRegistryBase):
+    id: str = Field(..., description="Unique identifier for the field registry entry.")
+
+    class Config:
+        from_attributes = True
+
+class FieldRegistryListResponse(BaseModel):
+    fields: List[FieldRegistryResponse]
+
 
 # --- ISO FIELD REGISTRY SCHEMAS ---
 class ISOFieldDefinitionCreate(BaseModel):
@@ -197,6 +322,7 @@ class ISOFieldDefinitionCreate(BaseModel):
     description: Optional[str] = Field(None, description="Field documentation")
     is_mandatory: bool = Field(False, description="Required field indicator")
     default_value: Optional[str] = Field(None, description="Default value if not provided")
+    is_pii: bool = Field(False, description="Indicates if the field contains Personally Identifiable Information (PII).")
 
 
 class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
@@ -206,6 +332,9 @@ class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
 
     class Config:
         from_attributes = True
+
+class ISOFieldDefinitionListResponse(BaseModel):
+    fields: List[ISOFieldDefinitionResponse]
 
 
 # --- WORKFLOW NODE SCHEMAS ---
@@ -293,6 +422,120 @@ class FieldRegistryFilterParams(BaseModel):
     limit: int = Field(default=100, ge=1, le=1000)
 
 # =====================================================================
+# --- GOVERNANCE HUB SCHEMAS ---
+# =====================================================================
+from enum import Enum
+
+class GovernanceAction(str, Enum):
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+
+class GovernanceTaskAction(BaseModel):
+    action: GovernanceAction = Field(..., description="The resolution action (APPROVE or REJECT).")
+
+class GovernanceTaskResponse(BaseModel):
+    task_id: str
+    status: str
+    checker_identity: str
+    resolution_action: str
+    resolved_at: str
+    governance_signature_token: Optional[str] = None
+
+class GovernanceTaskItem(BaseModel):
+    packet_id: str
+    variance_metric_logged: Optional[str]
+    execution_status: str
+    class Config:
+        from_attributes = True
+
+class GovernanceTaskListResponse(BaseModel):
+    pending_tasks: List[GovernanceTaskItem]
+
+class GovernanceCommentCreate(BaseModel):
+    comment: str = Field(..., min_length=1, description="The content of the comment or note.")
+
+class GovernanceCommentUpdate(BaseModel):
+    comment: str = Field(..., min_length=1, description="The updated content of the comment.")
+
+class GovernanceCommentResponse(GovernanceCommentCreate):
+    author: str
+    comment_id: str
+    task_id: str
+    created_at: str
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class GovernanceTaskDetailResponse(BaseModel):
+    packet_id: str
+    operator_maker: str
+    authorizer_checker: str
+    raw_payload_reference: Optional[str]
+    blockchain_tx_hash: Optional[str]
+    variance_metric_logged: Optional[str]
+    execution_status: str
+    comments: List[GovernanceCommentResponse] = []
+
+    class Config:
+        from_attributes = True
+
+class GovernanceTaskFilterParams(BaseModel):
+    packet_id: Optional[str] = Field(None, description="Filter by the unique task/packet ID.")
+    raw_payload_reference: Optional[str] = Field(None, description="Filter by the raw payload reference (e.g., original transaction ID).")
+    execution_status: Optional[str] = Field(None, description="Filter by the current execution status of the task.")
+    authorizer_sme: Optional[str] = Field(None, description="Filter by the SME who authorized/rejected the task.")
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+class GovernanceTaskSearchResponse(BaseModel):
+    tasks: List[GovernanceTaskItem]
+
+class TaskParticipant(BaseModel):
+    user_id: str
+    roles: List[str] = Field(..., description="A list of roles this user played in the task's lifecycle (e.g., CREATOR, RESOLVER, COMMENTER).")
+
+class TaskParticipantListResponse(BaseModel):
+    task_id: str
+    participants: List[TaskParticipant]
+
+class GovernanceStatsResponse(BaseModel):
+    pending_count: int = Field(..., description="Number of tasks awaiting SME review.")
+    approved_count: int = Field(..., description="Number of tasks approved by an SME.")
+    rejected_count: int = Field(..., description="Number of tasks rejected by an SME.")
+    total_processed: int = Field(..., description="Total number of tasks that have been processed (approved or rejected).")
+
+class ExecutionLogItem(BaseModel):
+    packet_id: str
+    execution_status: str
+    raw_payload_reference: Optional[str]
+    created_at: str
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class ExecutionLogSearchResponse(BaseModel):
+    logs: List[ExecutionLogItem]
+
+class ExecutionLogFilterParams(BaseModel):
+    packet_id: Optional[str] = Field(None, description="Filter by a partial packet ID (case-insensitive).")
+    raw_payload_reference: Optional[str] = Field(None, description="Filter by a partial raw payload reference (case-insensitive).")
+    execution_status: Optional[str] = Field(None, description="Filter by an exact execution status (e.g., FINALIZED_AND_SETTLED).")
+    operator_maker: Optional[str] = Field(None, description="Filter by the creating operator (case-insensitive).")
+    created_after: Optional[datetime] = Field(None, description="Filter for logs created after this timestamp (ISO 8601).")
+    created_before: Optional[datetime] = Field(None, description="Filter for logs created before this timestamp (ISO 8601).")
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+class ExecutionLogStatsResponse(BaseModel):
+    finalized_and_settled: int
+    halted_in_governance: int
+    authorized_reprocessed: int
+    rejected_dead: int
+    total: int
+
+# =====================================================================
 # --- SYMBOLIC FORMULA ENGINE SCHEMAS ---
 # =====================================================================
 
@@ -308,3 +551,236 @@ class SymbolicFormulaResponse(SymbolicFormulaCreate):
 
     class Config:
         from_attributes = True
+
+class SymbolicFormulaListResponse(BaseModel):
+    formulas: List[SymbolicFormulaResponse]
+
+# =====================================================================
+# --- MAINTENANCE SCHEMAS ---
+# =====================================================================
+
+class StaleTaskSummaryResponse(BaseModel):
+    flagged_count: int
+    message: str
+
+class MaintenanceTaskLogResponse(BaseModel):
+    log_id: str
+    task_name: str
+    status: str
+    summary: Optional[Dict[str, Any]]
+    details: Optional[str]
+    triggered_by: str
+    triggered_at: str
+
+    class Config:
+        from_attributes = True
+
+class MaintenanceTaskLogListResponse(BaseModel):
+    logs: List[MaintenanceTaskLogResponse]
+
+class MaintenanceTaskLogFilterParams(BaseModel):
+    task_name: Optional[str] = Field(None, description="Filter by task name (case-insensitive search).")
+    status: Optional[str] = Field(None, description="Filter by exact status (SUCCESS, FAILED).")
+    triggered_by: Optional[str] = Field(None, description="Filter by the user who triggered the task (case-insensitive search).")
+    triggered_after: Optional[datetime] = Field(None, description="Filter for logs created after this timestamp (ISO 8601).")
+    triggered_before: Optional[datetime] = Field(None, description="Filter for logs created before this timestamp (ISO 8601).")
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=1000)
+
+# =====================================================================
+# --- USER ACTIVITY & AUDIT SCHEMAS ---
+# =====================================================================
+
+class UserActivityGovernanceAction(BaseModel):
+    packet_id: str
+    action: str
+    resolved_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class UserActivityComment(BaseModel):
+    comment_id: str
+    task_id: str
+    comment: str
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+class UserActivityMaintenanceTask(BaseModel):
+    log_id: str
+    task_name: str
+    status: str
+    triggered_at: str
+
+    class Config:
+        from_attributes = True
+
+class UserActivitySummaryResponse(BaseModel):
+    user_id: str
+    governance_actions_count: int
+    comments_made_count: int
+    maintenance_tasks_triggered_count: int
+    recent_governance_actions: List[UserActivityGovernanceAction]
+    recent_comments: List[UserActivityComment]
+    recent_maintenance_tasks: List[UserActivityMaintenanceTask]
+
+class UserListItem(BaseModel):
+    user_id: str
+
+class UserListResponse(BaseModel):
+    users: List[UserListItem]
+    total_count: int
+
+class ScreenComponentCategory(str, Enum):
+    READ_ONLY = "READ_ONLY"
+    USER_DEFINED = "USER_DEFINED"
+
+class ScreenComponentRequirement(str, Enum):
+    MANDATORY = "MANDATORY"
+    NON_MANDATORY = "NON_MANDATORY"
+    CONDITIONAL = "CONDITIONAL"
+
+class ScreenComponent(BaseModel):
+    component_type: str = Field(..., description="Type of UI component (e.g., text_input, number_input, date_picker, dropdown, label).")
+    field_binding: Optional[str] = Field(None, description="The technical_sys_name of the ISOFieldDefinition this component is bound to.")
+    label: str = Field(..., description="The user-facing label for the component.")
+    properties: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Component-specific properties like placeholder, readonly, or dropdown options.")
+    category: ScreenComponentCategory = Field(ScreenComponentCategory.USER_DEFINED, description="Defines if the field is for display or user input.")
+    requirement_status: ScreenComponentRequirement = Field(ScreenComponentRequirement.NON_MANDATORY, description="Defines the field's validation requirement.")
+    conditional_rule_id: Optional[str] = Field(None, description="ID of the rule from the Rules Engine that makes this field mandatory.")
+    value_list_group_id: Optional[str] = Field(None, description="Groups this field with others to form a single dropdown.")
+
+class ScreenActionButton(BaseModel):
+    button_id: str = Field(..., description="A unique ID for the button on this screen.")
+    button_label: str = Field(..., description="The text displayed on the button (e.g., 'Submit').")
+    action_type: str = Field(..., description="The behavior on click (e.g., NAVIGATE, DELETE_INSTANCE, CANCEL_SESSION).")
+    target_screen_id: Optional[str] = Field(None, description="The screen_id to navigate to if action_type is NAVIGATE.")
+
+class ValueListGroup(BaseModel):
+    group_id: str = Field(..., description="A unique ID for this value list group.")
+    dropdown_label: str = Field(..., description="The label for the final rendered dropdown component.")
+
+class ScreenTemplateCreate(BaseModel):
+    screen_name: str = Field(..., description="A unique name for the screen template.")
+    description: Optional[str] = Field(None, description="A description of the screen's purpose.")
+    product_id: Optional[str] = Field(None, description="The product this screen is associated with.")
+    subproduct_id: Optional[str] = Field(None, description="The subproduct this screen is associated with.")
+    workflow_id: Optional[str] = Field(None, description="The workflow this screen is part of.")
+    workflow_step_id: Optional[str] = Field(None, description="The specific workflow step this screen is for.")
+    definition: List[ScreenComponent] = Field(default_factory=list, description="The list of UI components that make up the screen.")
+    action_buttons: List[ScreenActionButton] = Field(default_factory=list, description="The list of global action buttons for the screen.")
+    value_list_groups: List[ValueListGroup] = Field(default_factory=list, description="Definitions for grouped dropdowns.")
+
+class ScreenTemplateResponse(ScreenTemplateCreate):
+    screen_id: str
+    status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+
+    class Config:
+        from_attributes = True
+
+class ScreenTemplateListResponse(BaseModel):
+    screens: List[ScreenTemplateResponse]
+
+# =====================================================================
+# --- SYSTEM-WIDE DASHBOARD SCHEMAS ---
+# =====================================================================
+
+class SystemActivitySummaryResponse(BaseModel):
+    total_workflows: int
+    total_mappers: int
+    total_field_definitions: int
+    ingestion_jobs: IngestionStatsResponse
+    governance_tasks: GovernanceStatsResponse
+    execution_logs: ExecutionLogStatsResponse
+    total_comments: int
+    total_maintenance_runs: int
+
+
+# =====================================================================
+# --- SYSTEM-WIDE DASHBOARD SCHEMAS ---
+# =====================================================================
+
+class SystemActivitySummaryResponse(BaseModel):
+    total_workflows: int
+    total_mappers: int
+    total_field_definitions: int
+    ingestion_jobs: IngestionStatsResponse
+    governance_tasks: GovernanceStatsResponse
+    execution_logs: ExecutionLogStatsResponse
+    total_comments: int
+    total_maintenance_runs: int
+
+# =====================================================================
+# --- SYSTEM HEALTH SCHEMAS ---
+# =====================================================================
+
+class SystemHealthCheck(BaseModel):
+    check_name: str
+    status: str
+    details: Optional[str] = None
+
+class SystemHealthResponse(BaseModel):
+    system_status: str
+    timestamp: str
+    checks: List[SystemHealthCheck]
+
+class DatabaseSession(BaseModel):
+    pid: int
+    usename: Optional[str] = None
+    client_addr: Optional[str] = None
+    state: Optional[str] = None
+    query: Optional[str] = None
+
+class DatabaseSessionListResponse(BaseModel):
+    sessions: List[DatabaseSession]
+    message: Optional[str] = None
+
+class TerminateSessionResponse(BaseModel):
+    success: bool
+    message: str
+
+class EventListener(BaseModel):
+    callback_name: str
+
+class EventBusStatusResponse(BaseModel):
+    listeners: Dict[str, List[EventListener]]
+
+class EventListenerRegistration(BaseModel):
+    event_type: str = Field(..., description="The event type to subscribe to.")
+    callback_name: str = Field(..., description="The name of the predefined callback function to register.")
+
+class EventListenerRegistrationResponse(BaseModel):
+    success: bool
+    message: str
+
+class EventBusStatsResponse(BaseModel):
+    total_events_broadcast: int
+    events_by_type: Dict[str, int]
+
+class RecentEventItem(BaseModel):
+    event_id: str
+    broadcast_at: str
+    event_type: str
+    source_context: str
+    payload: Dict[str, Any]
+
+class RecentEventListResponse(BaseModel):
+    events: List[RecentEventItem]
+
+class EventBusControlResponse(BaseModel):
+    status: str
+    message: str
+
+class ManualEventBroadcast(BaseModel):
+    event_type: str = Field(..., description="The type of the event to broadcast.")
+    source_context: str = Field(..., description="The source context for the event (e.g., 'ManualTest').")
+    payload: Dict[str, Any] = Field(..., description="The JSON payload for the event.")
+
+class ClearEventsResponse(BaseModel):
+    cleared_count: int
+    message: str

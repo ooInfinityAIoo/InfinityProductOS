@@ -1,0 +1,30 @@
+
+services:
+  # The Abstract Storage Layer
+  framework-db:
+    image: postgres:15-alpine
+    container_name: infinity_framework_db
+    environment:
+      POSTGRES_USER: platform_architect
+      POSTGRES_PASSWORD: UniversalCorePassword123
+      POSTGRES_DB: infinity_metadata_ledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - framework_data:/var/lib/postgresql/data
+
+  # The Generic Abstraction API Layer
+  framework-api:
+    image: node:18-alpine
+    container_name: infinity_framework_api
+    working_dir: /usr/src/app
+    command: sh -c "npm init -y && npm install express pg && node server.js"
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - framework-db
+
+volumes:
+  framework_data:

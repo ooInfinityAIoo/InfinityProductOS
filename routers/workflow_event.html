@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>InfinityOS Notification</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; line-height: 1.5; }
+        .container { padding: 20px; max-width: 680px; margin: auto; border: 1px solid #ddd; border-radius: 8px; }
+        h2 { color: #0052CC; border-bottom: 2px solid #0052CC; padding-bottom: 10px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 14px; }
+        td, th { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: 700; }
+        pre { background-color: #f8f8f8; padding: 15px; border: 1px solid #ccc; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; }
+        .footer { font-size: 0.8em; color: #777; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>InfinityOS Notification: {{ event.event_type }}</h2>
+        <p>Dear User,</p>
+        <p>A system event has occurred with the following details:</p>
+        <table>
+            <tr><th>Event ID</th><td>{{ event.event_id }}</td></tr>
+            <tr><th>Event Type</th><td>{{ event.event_type }}</td></tr>
+            <tr><th>Source</th><td>{{ event.source_context }}</td></tr>
+            <tr><th>Timestamp (UTC)</th><td>{{ timestamp }}</td></tr>
+        </table>
+        <h3>Payload Details</h3>
+        <pre>{{ payload_json }}</pre>
+        <p class="footer">This is an automated notification from InfinityProductOS.</p>
+    </div>
+</body>
+</html>

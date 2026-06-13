@@ -2,7 +2,7 @@ import json
 import datetime
 import uuid
 from sqlalchemy.orm import Session
-from models import WorkflowManifest, EvidencePacketRegistry
+from models import WorkflowManifest, EvidencePacketRegistry, SymbolicFormulaAsset
 
 # Import our modularized LEGO Blocks
 from services.registry_processor import CanonicalGatewayProcessor
@@ -83,9 +83,40 @@ class MasterCanvasOrchestrator:
             raw_payload_reference=str(raw_input_data.get("transaction_id_99", "UNKNOWN")),
             blockchain_tx_hash=generated_tx_hash,
             variance_metric_logged="0.00% (Cleared)",
-            execution_status="FINALIZED_AND_SETTLED"
+            execution_status="FINALIZED_AND_SETTLED",
+            created_at=datetime.datetime.utcnow().isoformat()
         )
         self.db.add(final_packet)
         self.db.commit()
 
         return {"pipeline_status": "FINALIZED_AND_SAVED_TO_DB", "evidence_packet": {"evidence_id": generated_evidence_id, "blockchain_ledger_anchor": generated_tx_hash, "domain_scope": self.domain_scope, "final_data_snapshot": final_state, "execution_audit_trace": logs}}
+
+def process_calculation_model(payload: dict, db: Session) -> dict:
+    """
+    Registers incoming symbolic mathematical expression blocks from CALCULATION_MODEL_REGISTER events.
+    """
+    asset_id = payload.get("asset_id", f"CALC-ASSET-{uuid.uuid4().hex[:8].upper()}")
+    token_code = payload.get("token_code")
+    target_output_field = payload.get("target_output_field")
+    mathematical_expression = payload.get("mathematical_expression")
+    
+    if not all([token_code, target_output_field, mathematical_expression]):
+        return {"status": "error", "message": "token_code, target_output_field, and mathematical_expression are required"}
+
+    new_formula = SymbolicFormulaAsset(
+        asset_id=asset_id,
+        token_code=token_code,
+        target_output_field=target_output_field,
+        mathematical_expression=mathematical_expression,
+        created_at=datetime.datetime.utcnow().isoformat(),
+        created_by=payload.get("created_by", "SYSTEM")
+    )
+    
+    try:
+        db.add(new_formula)
+        db.commit()
+        db.refresh(new_formula)
+        return {"status": "success", "asset_id": asset_id, "token_code": token_code, "message": "Calculation model registered successfully"}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}
