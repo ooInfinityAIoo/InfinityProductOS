@@ -1,47 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, func, distinct
 from typing import List, Optional
-from enum import Enum
-from pydantic import BaseModel
 
 import models
 from database import get_db
 import schemas
+from auth import get_current_user, require_admin_or_auditor, CurrentUser, UserRole
 
 router = APIRouter(
     prefix="/api/v1/users",
     tags=["User Activity"]
 )
-
-# --- RBAC Dependencies and Models (copied from governance router) ---
-
-class UserRole(str, Enum):
-    ADMIN = "admin"
-    OPERATOR = "operator"
-    AUDITOR = "auditor"
-
-class CurrentUser(BaseModel):
-    id: str
-    role: UserRole
-
-def get_current_user(
-    x_user_id: Optional[str] = Header(None, description="The ID of the user performing the action."),
-    x_user_role: Optional[str] = Header(None, description="The role of the user (admin, operator, auditor).")
-) -> CurrentUser:
-    if not x_user_id or not x_user_role:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="X-User-ID and X-User-Role headers are required.")
-    try:
-        user_role = UserRole(x_user_role.lower())
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid role '{x_user_role}'.")
-    return CurrentUser(id=x_user_id, role=user_role)
-
-def require_admin_or_auditor(current_user: CurrentUser = Depends(get_current_user)):
-    if current_user.role not in [UserRole.ADMIN, UserRole.AUDITOR]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This action requires admin or auditor privileges.")
-    return current_user
-
 
 @router.get("/{user_id}/activity-summary", response_model=schemas.UserActivitySummaryResponse, summary="Get a User's Activity Summary")
 def get_user_activity_summary(user_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
@@ -138,33 +108,71 @@ def get_all_users(db: Session = Depends(get_db), current_user: CurrentUser = Dep
     This includes creators, resolvers, commenters, and maintenance task runners.
     Requires admin or auditor privileges.
     """
-    # Query each table for user IDs
+    # 1. Query each table for user IDs to build a comprehensive list of all users
     makers = db.query(models.EvidencePacketRegistry.operator_maker).distinct().all()
     checkers = db.query(models.EvidencePacketRegistry.authorizer_checker).distinct().all()
     commenters = db.query(models.GovernanceTaskComment.author).distinct().all()
     maintenance_runners = db.query(models.MaintenanceTaskLog.triggered_by).distinct().all()
+    interaction_users = db.query(models.UserInteractionEvent.user_id).distinct().all()
 
-    # Aggregate all user IDs into a set to ensure uniqueness, filtering out system accounts
+    # 2. Aggregate all user IDs into a set to ensure uniqueness, filtering out system accounts
     all_user_ids = set()
-    system_accounts = {"system_auto_flag", "system_auto_process", "pending_sme_override", "system_pre_auth"}
+    system_accounts = {"system_auto_flag", "system_auto_process", "pending_sme_override", "system_pre_auth", "system_scheduler"}
 
-    for user_id, in makers:
-        if user_id and user_id.lower() not in system_accounts:
-            all_user_ids.add(user_id)
-            
-    for user_id, in checkers:
-        if user_id and user_id.lower() not in system_accounts:
-            all_user_ids.add(user_id)
+    user_id_sources = [makers, checkers, commenters, maintenance_runners, interaction_users]
+    for source in user_id_sources:
+        for user_id, in source:
+            if user_id and user_id.lower() not in system_accounts:
+                all_user_ids.add(user_id)
 
-    for user_id, in commenters:
-        if user_id:
-            all_user_ids.add(user_id)
+    # 3. Get interaction counts for all users in a single, efficient query
+    interaction_counts_query = db.query(
+        models.UserInteractionEvent.user_id,
+        func.count(models.UserInteractionEvent.event_id).label('count')
+    ).group_by(models.UserInteractionEvent.user_id).all()
+    
+    interaction_counts = {user_id: count for user_id, count in interaction_counts_query}
 
-    for user_id, in maintenance_runners:
-        if user_id:
-            all_user_ids.add(user_id)
-
+    # 4. Build the final response list, combining user IDs with their interaction counts
     sorted_users = sorted(list(all_user_ids))
-    user_list = [{"user_id": user_id} for user_id in sorted_users]
+    user_list = [
+        schemas.UserListItem(
+            user_id=user_id,
+            interaction_count=interaction_counts.get(user_id, 0)
+        ) for user_id in sorted_users
+    ]
 
     return {"users": user_list, "total_count": len(user_list)}
+
+@router.get("/active", response_model=schemas.UserListResponse, summary="Get Most Active Users by Interaction Count")
+def get_most_active_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_admin_or_auditor)
+):
+    """
+    Retrieves a paginated list of the most active users, ranked by their total number of interaction events.
+    This provides insight into user engagement. Requires admin or auditor privileges.
+    """
+    system_accounts = {"system_auto_flag", "system_auto_process", "pending_sme_override", "system_pre_auth", "system_scheduler"}
+
+    # Query for the paginated list of active users, ranked by interaction count
+    active_users = db.query(
+        models.UserInteractionEvent.user_id,
+        func.count(models.UserInteractionEvent.event_id).label('interaction_count')
+    ).filter(
+        ~models.UserInteractionEvent.user_id.in_(system_accounts)
+    ).group_by(
+        models.UserInteractionEvent.user_id
+    ).order_by(
+        func.count(models.UserInteractionEvent.event_id).desc()
+    ).offset(skip).limit(limit).all()
+
+    # Query for the total count of unique, non-system users who have interactions
+    total_count = db.query(func.count(distinct(models.UserInteractionEvent.user_id))).filter(
+        ~models.UserInteractionEvent.user_id.in_(system_accounts)
+    ).scalar()
+
+    # The query returns Row objects that Pydantic can serialize since field names match the response model.
+    return {"users": active_users, "total_count": total_count or 0}

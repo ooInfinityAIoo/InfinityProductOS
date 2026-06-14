@@ -9,6 +9,10 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# =====================================================================
+# --- CORE ARCHITECTURAL BLUEPRINT & LEDGER MODELS ---
+# =====================================================================
+
 class WorkflowManifest(Base):
     __tablename__ = "workflow_manifests"
     workflow_id = Column(String, primary_key=True, index=True)
@@ -24,6 +28,10 @@ class LegoBlockConfig(Base):
     raw_properties = Column(JSONB, nullable=True)
 
 class EvidencePacketRegistry(Base):
+    """
+    Layer 5: The Immutable Evidence Packet Ledger.
+    This table serves as the primary audit trail for all significant state transitions.
+    """
     __tablename__ = "evidence_packet_registry"
     packet_id = Column(String, primary_key=True, index=True)
     operator_maker = Column(String, nullable=False)
@@ -96,8 +104,8 @@ class TemplateFieldAddressModel(Base):
 # --- LAYER 3: ISO BUSINESS FIELD REGISTRY (SEMANTIC BLOODSTREAM) ---
 class ISOFieldDefinition(Base):
     """
-    Persistent ISO Business Field Registry
-    Stores the global field dictionary with hierarchical domain/subdomain structure
+    Layer 3: The Semantic Bloodstream.
+    This table is the master source of truth for all data fields in the system.
     """
     __tablename__ = "iso_field_registry"
     
@@ -111,6 +119,8 @@ class ISOFieldDefinition(Base):
     description = Column(Text, nullable=True)
     is_mandatory = Column(Boolean, default=False)
     is_pii = Column(Boolean, default=False, nullable=False, index=True)
+    masking_strategy = Column(String, nullable=True) # e.g., REDACT_ALL, SHOW_LAST_4, EMAIL
+    localized_overrides = Column(JSONB, nullable=True) # e.g., {"US_en": {"name": "SSN"}}
     default_value = Column(String, nullable=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
@@ -135,7 +145,8 @@ class GovernanceTaskComment(Base):
 # --- LAYER 1: WORKFLOW DEFINITION PERSISTENCE ---
 class WorkflowNode(Base):
     """
-    Represents a single node/step in a workflow canvas
+    Layer 1: Visual Multi-Canvas Studio (Backend Model).
+    Represents a single node/step in a workflow canvas.
     """
     __tablename__ = "workflow_nodes"
     
@@ -148,9 +159,7 @@ class WorkflowNode(Base):
     canvas_y_position = Column(Integer, default=0)
     
     # Node Configuration
-    rules_applied = Column(JSONB, nullable=True)  # JSON array of rule IDs
-    calculations = Column(JSONB, nullable=True)  # JSON array of calculation IDs
-    api_triggers = Column(JSONB, nullable=True)  # JSON array of API endpoints
+    orchestration_steps = Column(JSONB, nullable=True) # A list of OrchestrationStep objects
     events_broadcast = Column(JSONB, nullable=True)  # JSON array of event types
     
     # SLA Configuration
@@ -172,7 +181,8 @@ class WorkflowNode(Base):
 
 class WorkflowEdge(Base):
     """
-    Represents connections between workflow nodes
+    Layer 1: Visual Multi-Canvas Studio (Backend Model).
+    Represents a directed edge (connection) between two workflow nodes.
     """
     __tablename__ = "workflow_edges"
     
@@ -191,7 +201,8 @@ class WorkflowEdge(Base):
 
 class WorkflowConfiguration(Base):
     """
-    Container for complete workflow definition (nodes + edges + metadata)
+    Layer 1: Visual Multi-Canvas Studio (Backend Model).
+    This is the main container for a complete workflow blueprint definition.
     """
     __tablename__ = "workflow_configurations"
     
@@ -206,7 +217,6 @@ class WorkflowConfiguration(Base):
     
     # Embedded configuration as JSON
     formulas_defined = Column(JSONB, nullable=True)  # JSON array of formula objects
-    rules_matrix = Column(JSONB, nullable=True)  # JSON array of BRE rule definitions
     
     # Metadata
     created_at = Column(String, nullable=False)
@@ -218,34 +228,119 @@ class WorkflowConfiguration(Base):
     nodes = relationship("WorkflowNode", back_populates="workflow", cascade="all, delete-orphan", lazy="joined")
     edges = relationship("WorkflowEdge", back_populates="workflow", cascade="all, delete-orphan", lazy="joined")
 
+class WorkflowVersion(Base):
+    """
+    Stores a historical snapshot of a workflow configuration at a specific version.
+    """
+    __tablename__ = "workflow_versions"
+
+    version_id = Column(String, primary_key=True, index=True)
+    workflow_id = Column(String, ForeignKey("workflow_configurations.workflow_id"), nullable=False, index=True)
+    version = Column(String, nullable=False)
+    definition = Column(JSONB, nullable=False) # Snapshot of the workflow graph (nodes, edges, etc.)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+
+    workflow = relationship("WorkflowConfiguration")
+
 
 # --- LAYER 4: SYMBOLIC CALCULATION ENGINE ---
 class SymbolicFormulaAsset(Base):
     """
-    Standalone registry for mathematical formulas and logic-as-data rules
+    Layer 4: Deterministic Execution (Logic-as-Data).
+    Stores a reusable, named mathematical formula or expression.
     """
     __tablename__ = "symbolic_formula_registry"
     
     asset_id = Column(String, primary_key=True, index=True)
+    financial_domain = Column(String, nullable=True, index=True) # e.g., "Credit Risk", "Treasury"
+    business_name = Column(String, nullable=False, index=True) # e.g., "Linear Scorecard Point Allocation"
     token_code = Column(String, unique=True, nullable=False, index=True) # e.g., CALC-REG-099
     target_output_field = Column(String, nullable=False) # e.g., interest_rate_margin
     mathematical_expression = Column(Text, nullable=False)
+    parameters = Column(JSONB, nullable=True) # For static coefficients, e.g., {"alpha": 0.5, "beta_1": 1.2}
+    description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
 
+class CompositeFormulaBlueprint(Base):
+    """
+    Defines a composite formula, which is an ordered chain of simple symbolic formulas.
+    """
+    __tablename__ = "composite_formula_blueprints"
+
+    composite_id = Column(String, primary_key=True, index=True)
+    business_name = Column(String, nullable=False, unique=True, index=True)
+    token_code = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+
+    steps = relationship("CompositeFormulaStep", back_populates="blueprint", cascade="all, delete-orphan", lazy="joined")
+
+class CompositeFormulaStep(Base):
+    """
+    Represents a single step in a composite formula chain.
+    """
+    __tablename__ = "composite_formula_steps"
+
+    step_id = Column(String, primary_key=True, index=True)
+    composite_id = Column(String, ForeignKey("composite_formula_blueprints.composite_id"), nullable=False, index=True)
+    sequence_number = Column(Integer, nullable=False)
+    formula_token_code = Column(String, ForeignKey("symbolic_formula_registry.token_code"), nullable=False)
+
+    blueprint = relationship("CompositeFormulaBlueprint", back_populates="steps")
+
+class BusinessRuleSet(Base):
+    """
+    Defines a composite business rule, which is an ordered chain of IF-THEN conditions and actions.
+    """
+    __tablename__ = "business_rule_sets"
+
+    rule_set_id = Column(String, primary_key=True, index=True)
+    business_name = Column(String, nullable=False, unique=True, index=True)
+    token_code = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    definition = Column(JSONB, nullable=False) # The full JSON definition of the rule set, including conditions and actions.
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+
+class InsightDefinition(Base):
+    """
+    Defines a blueprint for a business insight, created in the Insights Factory.
+    """
+    __tablename__ = "insight_definitions"
+
+    insight_id = Column(String, primary_key=True, index=True)
+    insight_name = Column(String, nullable=False, unique=True, index=True)
+    insight_code = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    trigger_type = Column(String, nullable=False, index=True) # e.g., EVENT, SCHEDULED
+    trigger_config = Column(JSONB, nullable=False) # e.g., {"event_type": "NEW_TRANSACTION"} or {"cron": "0 0 * * 0"}
+    analysis_steps = Column(JSONB, nullable=False) # A list of OrchestrationStep objects
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+
+class DomainApiContract(Base):
+    """
+    Defines a domain-driven API contract blueprint, designed in the API Designer Studio.
+    """
+    __tablename__ = "domain_api_contracts"
+
+    api_contract_id = Column(String, primary_key=True, index=True)
+    api_name = Column(String, nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, PENDING_APPROVAL, APPROVED, DELETED
+    request_contract = Column(JSONB, nullable=True) # List of ISO field technical_sys_names
+    response_contract = Column(JSONB, nullable=True) # List of ISO field technical_sys_names
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
 
 # --- LAYER 5: COMMON CORE MASTERS ---
-class CurrencyMaster(Base):
-    __tablename__ = "master_currency"
-    currency_code = Column(String, primary_key=True, index=True)
-    currency_name = Column(String, nullable=False)
-    fraction_digits = Column(Integer, default=2)
-    source_currency_code = Column(String, nullable=False)
-    target_currency_code = Column(String, nullable=False)
-    exchange_rate = Column(Float, nullable=False)
-    associated_calendar_id = Column(String, nullable=True)
-    created_at = Column(String, nullable=False)
-
 class OperationalCalendar(Base):
     __tablename__ = "master_calendar"
     calendar_id = Column(String, primary_key=True, index=True)
@@ -257,6 +352,9 @@ class OperationalCalendar(Base):
     calendar_description = Column(String, nullable=True)
     is_active_flag = Column(Boolean, default=True)
     created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
 
 class AccountProfile(Base):
     __tablename__ = "master_account_profile"
@@ -264,9 +362,21 @@ class AccountProfile(Base):
     account_name_title = Column(String, nullable=False)
     currency_code = Column(String, nullable=False)
     clearing_system_member_id = Column(String, nullable=False)
+    data_residency_region = Column(String, nullable=False, index=True) # ISO 3166-1 alpha-2 code
     branch_location_name = Column(String, nullable=True)
     is_frozen_flag = Column(Boolean, default=False)
     created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+    
+    # --- OPTIMISTIC CONCURRENCY CONTROL (OCC) ---
+    # Protects against lost updates when concurrent users edit the same profile.
+    version_id = Column(Integer, nullable=False, default=1)
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
 
 class CountryJurisdiction(Base):
     __tablename__ = "master_country_jurisdiction"
@@ -277,6 +387,9 @@ class CountryJurisdiction(Base):
     target_central_bank_routing_code = Column(String, nullable=True)
     iban_mandatory_flag = Column(Boolean, default=False)
     created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
 
 class FeeConfiguration(Base):
     __tablename__ = "master_fee_configuration"
@@ -288,6 +401,9 @@ class FeeConfiguration(Base):
     fee_category_name = Column(String, nullable=True)
     is_active_flag = Column(Boolean, default=True)
     created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
 
 class ProductMaster(Base):
     __tablename__ = "product_master"
@@ -349,6 +465,7 @@ class PayloadFieldMapping(Base):
 # --- LAYER 4: ASYNCHRONOUS JOB TRACKING ---
 class IngestionJob(Base):
     """
+    Layer 4: Dual-Lane Execution Gateway (Deferred Settlement Engine).
     Tracks the status of asynchronous file ingestion jobs.
     """
     __tablename__ = "ingestion_jobs"
@@ -361,6 +478,8 @@ class IngestionJob(Base):
     total_records = Column(Integer, nullable=True)
     processed_records = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
+    created_by = Column(String, nullable=True)
+    processing_started_at = Column(String, nullable=True)
     created_at = Column(String, nullable=False)
     completed_at = Column(String, nullable=True)
 
@@ -368,7 +487,8 @@ class IngestionJob(Base):
 # --- LAYER 5: DATA ARCHIVAL ---
 class IngestionJobArchive(Base):
     """
-    Stores archived records of completed or cancelled ingestion jobs for historical purposes.
+    Layer 5: Persistent Storage.
+    Stores historical records of completed, failed, or cancelled ingestion jobs.
     """
     __tablename__ = "ingestion_jobs_archive"
 
@@ -380,6 +500,7 @@ class IngestionJobArchive(Base):
     total_records = Column(Integer, nullable=True)
     processed_records = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
+    created_by = Column(String, nullable=True)
     processing_started_at = Column(String, nullable=True)
     created_at = Column(String, nullable=False)
     completed_at = Column(String, nullable=True)
@@ -387,6 +508,7 @@ class IngestionJobArchive(Base):
 
 class ScreenTemplate(Base):
     """
+    Layer 1: Visual Multi-Canvas Studio (Backend Model).
     Stores the definition for a dynamic UI screen template, used by workflow nodes.
     """
     __tablename__ = "screen_templates"
@@ -394,11 +516,8 @@ class ScreenTemplate(Base):
     screen_id = Column(String, primary_key=True, index=True)
     screen_name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    status = Column(String, nullable=False, default="DRAFT", index=True) -- DRAFT, IN_PROGRESS, PUBLISHED
-    product_id = Column(String, nullable=True, index=True)
-    subproduct_id = Column(String, nullable=True, index=True)
-    workflow_id = Column(String, nullable=True, index=True)
-    workflow_step_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, IN_PROGRESS, PUBLISHED
+    workflow_step_id = Column(String, nullable=True, index=True) # Aligned with payload
     definition = Column(JSONB, nullable=False) # The JSON definition of the screen layout and components
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
@@ -406,6 +525,7 @@ class ScreenTemplate(Base):
 
 class MaintenanceTaskLog(Base):
     """
+    Layer 5: The Immutable Evidence Packet Ledger (Operational).
     Logs the execution of system maintenance tasks.
     """
     __tablename__ = "maintenance_task_logs"
@@ -417,6 +537,83 @@ class MaintenanceTaskLog(Base):
     details = Column(Text, nullable=True)
     triggered_by = Column(String, nullable=False)
     triggered_at = Column(String, nullable=False)
+    duration_ms = Column(Integer, nullable=True)
+
+class ApiConfiguration(Base):
+    """
+    Layer 4: Integration Gateway.
+    Stores definitions for external API integrations that can be triggered by a workflow node.
+    """
+    __tablename__ = "api_configurations"
+
+    api_id = Column(String, primary_key=True, index=True)
+    api_name = Column(String, nullable=False, unique=True)
+    http_method = Column(String, nullable=False) # GET, POST, PUT
+    url_template = Column(String, nullable=False) # e.g., https://api.example.com/users/{user_id}
+    request_body_template = Column(JSONB, nullable=True) # For POST/PUT requests
+    headers = Column(JSONB, nullable=True) # e.g., {"Authorization": "Bearer {SECRET_TOKEN}"}
+    mask_pii_in_body = Column(Boolean, default=True) # If true, automatically mask PII in the request body
+    
+    # Fault Tolerance & Integration Patterns (Layer 4)
+    rate_limit_rps = Column(Integer, default=10, nullable=False) # Requests Per Second maximum
+    circuit_breaker_threshold = Column(Integer, default=5, nullable=False) # Failures before tripping
+    circuit_breaker_timeout_sec = Column(Integer, default=60, nullable=False) # Cooldown before half-open state
+    
+    description = Column(Text, nullable=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+
+class UserInteractionEvent(Base):
+    """
+    Layer 2: Agentic Alignment Layer (Behavioural AI).
+    Logs user interactions for Behavioural AI analysis and model training.
+    """
+    __tablename__ = "user_interaction_events"
+
+    event_id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=True, index=True)
+    event_type = Column(String, nullable=False, index=True) # e.g., SCREEN_VIEW, BUTTON_CLICK, FIELD_UPDATE
+    target_component_id = Column(String, nullable=True) # e.g., the ID of a button or input field
+    payload = Column(JSONB, nullable=True) # Rich context, e.g., {"field_value": "new text", "screen_name": "Login"}
+    timestamp = Column(String, nullable=False, index=True)
+
+class CustomerBehavioralProfile(Base):
+    """
+    Layer 2: Agentic Alignment Layer (Behavioral AI).
+    Stores an aggregated, stateful profile of a user's learned habits and preferences.
+    """
+    __tablename__ = "customer_behavioral_profiles"
+
+    user_id = Column(String, primary_key=True, index=True)
+    ranked_journeys = Column(JSONB, nullable=True) # e.g., [{"journey_id": "RTP_PAYMENT", "rank": 0.98, "interaction_count": 150}]
+    common_devices = Column(JSONB, nullable=True) # e.g., [{"fingerprint": "...", "type": "mobile", "last_seen": "..."}]
+    typical_locations = Column(JSONB, nullable=True) # e.g., [{"city": "New York", "country": "US", "last_seen": "..."}]
+    avg_transaction_value = Column(Float, nullable=True)
+    net_worth_estimate = Column(Float, nullable=True)
+    last_calculated_at = Column(String, nullable=False)
+    profile_version = Column(Integer, default=1)
+
+class TransactionalOutboxEvent(Base):
+    """
+    Layer 4: Transactional Outbox Pattern for Distributed Systems.
+    Guarantees 100% event delivery to Kafka by tying event creation 
+    to the same atomic database transaction as the business state change.
+    """
+    __tablename__ = "transactional_outbox_events"
+
+    event_id = Column(String, primary_key=True, index=True)
+    aggregate_type = Column(String, nullable=False, index=True) # e.g., "WorkflowExecution", "GovernanceTask"
+    aggregate_id = Column(String, nullable=False, index=True)   # e.g., "WF-12345"
+    event_type = Column(String, nullable=False, index=True)     # e.g., "WORKFLOW_COMPLETED"
+    payload = Column(JSONB, nullable=False)                     # The full event data payload
+    
+    # Auditing and Poller tracking
+    created_at = Column(String, nullable=False, index=True)
+    status = Column(String, default="PENDING", index=True)      # PENDING, PUBLISHED, FAILED
+
 
 def init_db():
     Base.metadata.create_all(bind=engine)

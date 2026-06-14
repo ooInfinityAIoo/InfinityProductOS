@@ -2,7 +2,7 @@ This is your fully consolidated, master ARCHITECTURE.md file. It incorporates al
 
 InfinityProductOS: Master Architecture Specification
 0. Physical Edge & Device Layer (Integration Fabric)
-Scope: Mobile/Tablets, POS terminals, UPI/Payment capture, Scanners, Printers, OCR tools, IIoT sensors, and Robotics.
+Scope: Mobile/Tablets, POS terminals, UPI/Payment capture, Scanners, Printers, OCR tools, IoT sensors, and Robotics.
 
 Operational Rule: All devices act as Event Producers/Consumers. No business logic resides on the device.
 
@@ -77,3 +77,5 @@ Identity: Zero local user management. All authentication requires Identity Feder
 Integrity: Hard-coded financial logic is PROHIBITED. All math must be represented as graph nodes in the visual designer.
 
 Compliance: Every state transition must be recorded in the Immutable Event Store.
+
+7. Global Isolation & Localization Manifesto: InfinityProductOS mandates absolute structural multi-localization. No text element, address template, numerical scale calculation, or PII storage profile may exist in a single-region assumption. The platform natively forces localized tokenization at Layer 1, tenant-jurisdiction separation at Layer 3, currency-precision awareness at Layer 4, and geographically sharded storage topologies at Layer 5."

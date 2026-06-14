@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import uuid
 import datetime
 
@@ -8,6 +8,9 @@ from database import get_db
 import models
 import schemas
 from sqlalchemy import or_
+from sqlalchemy.orm.exc import StaleDataError
+from auth import get_current_user, require_designer_privileges, CurrentUser
+from services.governance_gate import GovernanceGateHub
 
 router = APIRouter(
     prefix="/api/v1/masters",
@@ -15,7 +18,7 @@ router = APIRouter(
 )
 
 @router.get("/search", response_model=schemas.MastersSearchResults, summary="Search Across All Masters")
-def search_masters(q: str, skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+def search_masters(q: str, skip: int = 0, limit: int = 20, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Performs a paginated, case-insensitive search across all common core master data entities.
     The search will look for matches in names, codes, and descriptions.
@@ -37,7 +40,7 @@ def search_masters(q: str, skip: int = 0, limit: int = 20, db: Session = Depends
     }
 
 @router.get("/stats", response_model=schemas.MastersCountResponse, summary="Get Record Counts for All Masters")
-def get_masters_counts(db: Session = Depends(get_db)):
+def get_masters_counts(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves the total count of records for each common core master data entity.
     """
@@ -58,40 +61,43 @@ def get_masters_counts(db: Session = Depends(get_db)):
 # --- Currency Master ---
 
 @router.post("/currencies", response_model=schemas.CurrencyDefinitionResponse, status_code=status.HTTP_201_CREATED, summary="Create a Currency")
-def create_currency(payload: schemas.CurrencyDefinitionCreate, db: Session = Depends(get_db)):
-    db_currency = models.CurrencyMaster(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat())
+def create_currency(payload: schemas.CurrencyDefinitionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_currency = models.CurrencyMaster(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat(), created_by=current_user.id)
     db.add(db_currency)
     db.commit()
     db.refresh(db_currency)
     return db_currency
 
 @router.get("/currencies", response_model=schemas.CurrencyDefinitionListResponse, summary="List Currencies")
-def list_currencies(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_currencies(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     currencies = db.query(models.CurrencyMaster).offset(skip).limit(limit).all()
     return {"currencies": currencies}
 
 @router.get("/currencies/{currency_code}", response_model=schemas.CurrencyDefinitionResponse, summary="Get a Currency")
-def get_currency(currency_code: str, db: Session = Depends(get_db)):
+def get_currency(currency_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     currency = db.query(models.CurrencyMaster).filter(models.CurrencyMaster.currency_code == currency_code.upper()).first()
     if not currency:
         raise HTTPException(status_code=404, detail="Currency not found")
     return currency
 
 @router.put("/currencies/{currency_code}", response_model=schemas.CurrencyDefinitionResponse, summary="Update a Currency")
-def update_currency(currency_code: str, payload: schemas.CurrencyDefinitionCreate, db: Session = Depends(get_db)):
+def update_currency(currency_code: str, payload: schemas.CurrencyDefinitionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     db_currency = db.query(models.CurrencyMaster).filter(models.CurrencyMaster.currency_code == currency_code.upper()).first()
     if not db_currency:
         raise HTTPException(status_code=404, detail="Currency not found")
     
     for key, value in payload.dict().items():
         setattr(db_currency, key, value)
-        
+    
+    db_currency.updated_at = datetime.datetime.utcnow().isoformat()
+    db_currency.updated_by = current_user.id
+
     db.commit()
     db.refresh(db_currency)
     return db_currency
 
 @router.delete("/currencies/{currency_code}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Currency")
-def delete_currency(currency_code: str, db: Session = Depends(get_db)):
+def delete_currency(currency_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     currency = db.query(models.CurrencyMaster).filter(models.CurrencyMaster.currency_code == currency_code.upper()).first()
     if not currency:
         raise HTTPException(status_code=404, detail="Currency not found")
@@ -102,28 +108,28 @@ def delete_currency(currency_code: str, db: Session = Depends(get_db)):
 # --- Operational Calendar ---
 
 @router.post("/calendars", response_model=schemas.OperationalCalendarResponse, status_code=status.HTTP_201_CREATED, summary="Create a Calendar")
-def create_calendar(payload: schemas.OperationalCalendarCreate, db: Session = Depends(get_db)):
+def create_calendar(payload: schemas.OperationalCalendarCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     calendar_id = f"CAL-{uuid.uuid4().hex[:8].upper()}"
-    db_calendar = models.OperationalCalendar(**payload.dict(), calendar_id=calendar_id, created_at=datetime.datetime.utcnow().isoformat())
+    db_calendar = models.OperationalCalendar(**payload.dict(), calendar_id=calendar_id, created_at=datetime.datetime.utcnow().isoformat(), created_by=current_user.id)
     db.add(db_calendar)
     db.commit()
     db.refresh(db_calendar)
     return db_calendar
 
 @router.get("/calendars", response_model=schemas.OperationalCalendarListResponse, summary="List Calendars")
-def list_calendars(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_calendars(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     calendars = db.query(models.OperationalCalendar).offset(skip).limit(limit).all()
     return {"calendars": calendars}
 
 @router.get("/calendars/{calendar_id}", response_model=schemas.OperationalCalendarResponse, summary="Get a Calendar")
-def get_calendar(calendar_id: str, db: Session = Depends(get_db)):
+def get_calendar(calendar_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     calendar = db.query(models.OperationalCalendar).filter(models.OperationalCalendar.calendar_id == calendar_id).first()
     if not calendar:
         raise HTTPException(status_code=404, detail="Calendar not found")
     return calendar
 
 @router.put("/calendars/{calendar_id}", response_model=schemas.OperationalCalendarResponse, summary="Update a Calendar")
-def update_calendar(calendar_id: str, payload: schemas.OperationalCalendarCreate, db: Session = Depends(get_db)):
+def update_calendar(calendar_id: str, payload: schemas.OperationalCalendarCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     db_calendar = db.query(models.OperationalCalendar).filter(models.OperationalCalendar.calendar_id == calendar_id).first()
     if not db_calendar:
         raise HTTPException(status_code=404, detail="Calendar not found")
@@ -131,12 +137,15 @@ def update_calendar(calendar_id: str, payload: schemas.OperationalCalendarCreate
     for key, value in payload.dict().items():
         setattr(db_calendar, key, value)
 
+    db_calendar.updated_at = datetime.datetime.utcnow().isoformat()
+    db_calendar.updated_by = current_user.id
+
     db.commit()
     db.refresh(db_calendar)
     return db_calendar
 
 @router.delete("/calendars/{calendar_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Calendar")
-def delete_calendar(calendar_id: str, db: Session = Depends(get_db)):
+def delete_calendar(calendar_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     calendar = db.query(models.OperationalCalendar).filter(models.OperationalCalendar.calendar_id == calendar_id).first()
     if not calendar:
         raise HTTPException(status_code=404, detail="Calendar not found")
@@ -147,27 +156,27 @@ def delete_calendar(calendar_id: str, db: Session = Depends(get_db)):
 # --- Account Profile ---
 
 @router.post("/accounts", response_model=schemas.AccountProfileResponse, status_code=status.HTTP_201_CREATED, summary="Create an Account Profile")
-def create_account_profile(payload: schemas.AccountProfileCreate, db: Session = Depends(get_db)):
-    db_account = models.AccountProfile(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat())
+def create_account_profile(payload: schemas.AccountProfileCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_account = models.AccountProfile(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat(), created_by=current_user.id)
     db.add(db_account)
     db.commit()
     db.refresh(db_account)
     return db_account
 
 @router.get("/accounts", response_model=schemas.AccountProfileListResponse, summary="List Account Profiles")
-def list_account_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_account_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     accounts = db.query(models.AccountProfile).offset(skip).limit(limit).all()
     return {"accounts": accounts}
 
 @router.get("/accounts/{account_number}", response_model=schemas.AccountProfileResponse, summary="Get an Account Profile")
-def get_account_profile(account_number: str, db: Session = Depends(get_db)):
+def get_account_profile(account_number: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     account = db.query(models.AccountProfile).filter(models.AccountProfile.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account profile not found")
     return account
 
 @router.put("/accounts/{account_number}", response_model=schemas.AccountProfileResponse, summary="Update an Account Profile")
-def update_account_profile(account_number: str, payload: schemas.AccountProfileCreate, db: Session = Depends(get_db)):
+def update_account_profile(account_number: str, payload: schemas.AccountProfileCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     db_account = db.query(models.AccountProfile).filter(models.AccountProfile.account_number == account_number).first()
     if not db_account:
         raise HTTPException(status_code=404, detail="Account profile not found")
@@ -175,12 +184,29 @@ def update_account_profile(account_number: str, payload: schemas.AccountProfileC
     for key, value in payload.dict().items():
         setattr(db_account, key, value)
 
-    db.commit()
-    db.refresh(db_account)
-    return db_account
+    db_account.updated_at = datetime.datetime.utcnow().isoformat()
+    db_account.updated_by = current_user.id
+
+    try:
+        db.commit()
+        db.refresh(db_account)
+        return db_account
+    except StaleDataError:
+        db.rollback()
+        hub = GovernanceGateHub(db=db)
+        task = hub.create_concurrency_conflict_task(
+            entity_type="AccountProfile",
+            entity_id=account_number,
+            attempted_payload=payload.dict(),
+            operator_id=current_user.id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Concurrent update collision detected. Your changes were intercepted and routed to the Governance Hub (Task ID: {task['task_id']}) for manual SME resolution."
+        )
 
 @router.delete("/accounts/{account_number}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an Account Profile")
-def delete_account_profile(account_number: str, db: Session = Depends(get_db)):
+def delete_account_profile(account_number: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     account = db.query(models.AccountProfile).filter(models.AccountProfile.account_number == account_number).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account profile not found")
@@ -191,27 +217,27 @@ def delete_account_profile(account_number: str, db: Session = Depends(get_db)):
 # --- Country Jurisdiction ---
 
 @router.post("/countries", response_model=schemas.CountryJurisdictionResponse, status_code=status.HTTP_201_CREATED, summary="Create a Country Jurisdiction")
-def create_country(payload: schemas.CountryJurisdictionCreate, db: Session = Depends(get_db)):
-    db_country = models.CountryJurisdiction(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat())
+def create_country(payload: schemas.CountryJurisdictionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_country = models.CountryJurisdiction(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat(), created_by=current_user.id)
     db.add(db_country)
     db.commit()
     db.refresh(db_country)
     return db_country
 
 @router.get("/countries", response_model=schemas.CountryJurisdictionListResponse, summary="List Country Jurisdictions")
-def list_countries(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_countries(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     countries = db.query(models.CountryJurisdiction).offset(skip).limit(limit).all()
     return {"countries": countries}
 
 @router.get("/countries/{country_iso_code}", response_model=schemas.CountryJurisdictionResponse, summary="Get a Country Jurisdiction")
-def get_country(country_iso_code: str, db: Session = Depends(get_db)):
+def get_country(country_iso_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     country = db.query(models.CountryJurisdiction).filter(models.CountryJurisdiction.country_iso_code == country_iso_code.upper()).first()
     if not country:
         raise HTTPException(status_code=404, detail="Country jurisdiction not found")
     return country
 
 @router.put("/countries/{country_iso_code}", response_model=schemas.CountryJurisdictionResponse, summary="Update a Country Jurisdiction")
-def update_country(country_iso_code: str, payload: schemas.CountryJurisdictionCreate, db: Session = Depends(get_db)):
+def update_country(country_iso_code: str, payload: schemas.CountryJurisdictionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     db_country = db.query(models.CountryJurisdiction).filter(models.CountryJurisdiction.country_iso_code == country_iso_code.upper()).first()
     if not db_country:
         raise HTTPException(status_code=404, detail="Country jurisdiction not found")
@@ -219,12 +245,15 @@ def update_country(country_iso_code: str, payload: schemas.CountryJurisdictionCr
     for key, value in payload.dict().items():
         setattr(db_country, key, value)
 
+    db_country.updated_at = datetime.datetime.utcnow().isoformat()
+    db_country.updated_by = current_user.id
+
     db.commit()
     db.refresh(db_country)
     return db_country
 
 @router.delete("/countries/{country_iso_code}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Country Jurisdiction")
-def delete_country(country_iso_code: str, db: Session = Depends(get_db)):
+def delete_country(country_iso_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     country = db.query(models.CountryJurisdiction).filter(models.CountryJurisdiction.country_iso_code == country_iso_code.upper()).first()
     if not country:
         raise HTTPException(status_code=404, detail="Country jurisdiction not found")
@@ -235,27 +264,27 @@ def delete_country(country_iso_code: str, db: Session = Depends(get_db)):
 # --- Fee Configuration ---
 
 @router.post("/fees", response_model=schemas.FeeConfigurationResponse, status_code=status.HTTP_201_CREATED, summary="Create a Fee Configuration")
-def create_fee(payload: schemas.FeeConfigurationCreate, db: Session = Depends(get_db)):
-    db_fee = models.FeeConfiguration(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat())
+def create_fee(payload: schemas.FeeConfigurationCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_fee = models.FeeConfiguration(**payload.dict(), created_at=datetime.datetime.utcnow().isoformat(), created_by=current_user.id)
     db.add(db_fee)
     db.commit()
     db.refresh(db_fee)
     return db_fee
 
 @router.get("/fees", response_model=schemas.FeeConfigurationListResponse, summary="List Fee Configurations")
-def list_fees(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_fees(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     fees = db.query(models.FeeConfiguration).offset(skip).limit(limit).all()
     return {"fees": fees}
 
 @router.get("/fees/{fee_charge_code}", response_model=schemas.FeeConfigurationResponse, summary="Get a Fee Configuration")
-def get_fee(fee_charge_code: str, db: Session = Depends(get_db)):
+def get_fee(fee_charge_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     fee = db.query(models.FeeConfiguration).filter(models.FeeConfiguration.fee_charge_code == fee_charge_code).first()
     if not fee:
         raise HTTPException(status_code=404, detail="Fee configuration not found")
     return fee
 
 @router.put("/fees/{fee_charge_code}", response_model=schemas.FeeConfigurationResponse, summary="Update a Fee Configuration")
-def update_fee(fee_charge_code: str, payload: schemas.FeeConfigurationCreate, db: Session = Depends(get_db)):
+def update_fee(fee_charge_code: str, payload: schemas.FeeConfigurationCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     db_fee = db.query(models.FeeConfiguration).filter(models.FeeConfiguration.fee_charge_code == fee_charge_code).first()
     if not db_fee:
         raise HTTPException(status_code=404, detail="Fee configuration not found")
@@ -263,12 +292,15 @@ def update_fee(fee_charge_code: str, payload: schemas.FeeConfigurationCreate, db
     for key, value in payload.dict().items():
         setattr(db_fee, key, value)
 
+    db_fee.updated_at = datetime.datetime.utcnow().isoformat()
+    db_fee.updated_by = current_user.id
+
     db.commit()
     db.refresh(db_fee)
     return db_fee
 
 @router.delete("/fees/{fee_charge_code}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Fee Configuration")
-def delete_fee(fee_charge_code: str, db: Session = Depends(get_db)):
+def delete_fee(fee_charge_code: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     fee = db.query(models.FeeConfiguration).filter(models.FeeConfiguration.fee_charge_code == fee_charge_code).first()
     if not fee:
         raise HTTPException(status_code=404, detail="Fee configuration not found")
@@ -279,29 +311,13 @@ def delete_fee(fee_charge_code: str, db: Session = Depends(get_db)):
 # --- Product and Subproduct Masters for Screen Designer ---
 
 @router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List All Products")
-def list_products(db: Session = Depends(get_db)):
+def list_products(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Retrieves a list of all products for context selection."""
     products = db.query(models.ProductMaster).order_by(models.ProductMaster.product_name).all()
     return {"products": products}
 
 @router.get("/subproducts", response_model=schemas.SubproductMasterListResponse, summary="List Subproducts for a Product")
-def list_subproducts(product_id: str, db: Session = Depends(get_db)):
-    """Retrieves a list of subproducts filtered by a specific product_id."""
-    subproducts = db.query(models.SubproductMaster).filter(
-        models.SubproductMaster.product_id == product_id
-    ).order_by(models.SubproductMaster.subproduct_name).all()
-    return {"subproducts": subproducts}
-
-# --- Product and Subproduct Masters for Screen Designer ---
-
-@router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List All Products")
-def list_products(db: Session = Depends(get_db)):
-    """Retrieves a list of all products for context selection."""
-    products = db.query(models.ProductMaster).order_by(models.ProductMaster.product_name).all()
-    return {"products": products}
-
-@router.get("/subproducts", response_model=schemas.SubproductMasterListResponse, summary="List Subproducts for a Product")
-def list_subproducts(product_id: str, db: Session = Depends(get_db)):
+def list_subproducts(product_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Retrieves a list of subproducts filtered by a specific product_id."""
     subproducts = db.query(models.SubproductMaster).filter(
         models.SubproductMaster.product_id == product_id

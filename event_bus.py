@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field
 import uuid
 from collections import deque
 import datetime
+import os
+import json
 
 # Import the new service
 from services.notification_service import NotificationService # Email
@@ -15,6 +17,13 @@ class SystemEvent(BaseModel):
     event_type: str  # STATE_TRANSITION, RULES_EXECUTION, CALCULATION_OUTPUT, EXCEPTION_ERROR
     source_context: str
     payload: Dict[str, Any]
+
+try:
+    from confluent_kafka import Producer
+except ImportError:
+    Producer = None
+
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
 
 class EventBusEngine:
     def __init__(self):
@@ -33,6 +42,9 @@ class EventBusEngine:
             "JOB_CANCELLED": [],
             "STUCK_JOB_DETECTED": [],
             "STALE_GOVERNANCE_TASK_DETECTED": [],
+            "UNCONFIGURED_PII_DETECTED": [],
+            "MASTERS_ENTRY_PENDING_APPROVAL": [],
+            "*": [], # Wildcard listener for all events
         }
         self.notification_service = NotificationService()
         self.slack_service = SlackService()
@@ -47,6 +59,12 @@ class EventBusEngine:
         self._is_paused: bool = False
         # Add a deque to store dropped events
         self._dropped_events: deque = deque(maxlen=200) # Store the last 200 dropped events
+
+        # Initialize Kafka Producer for distributed enterprise streaming
+        self.kafka_producer = None
+        if KAFKA_BOOTSTRAP_SERVERS and Producer:
+            self.kafka_producer = Producer({'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS})
+            print(f"[EVENT BUS] Connected to Kafka Cluster at {KAFKA_BOOTSTRAP_SERVERS}")
 
     def register_listener(self, event_type: str, callback: Callable):
         event_type_upper = event_type.upper()
@@ -100,6 +118,14 @@ class EventBusEngine:
         # Add event to recent events deque
         self._recent_events.append(event)
 
+        # LAYER 4 ENTERPRISE STREAMING: Publish to Distributed Kafka Cluster
+        if self.kafka_producer:
+            try:
+                self.kafka_producer.produce('infinity_system_events', key=event.event_id, value=event.json())
+                self.kafka_producer.poll(0) # Non-blocking delivery
+            except Exception as e:
+                print(f"[KAFKA ERROR] Failed to publish event {event.event_id}: {e}")
+
         if evt_type in self._listeners:
             print(f"[EVENT BUS] Intercepted Signal: {evt_type} from {event.source_context}")
             for callback in self._listeners[evt_type]:
@@ -108,6 +134,13 @@ class EventBusEngine:
                     await callback(event)
                 else:
                     callback(event)
+
+        # Also process wildcard listeners
+        if "*" in self._listeners:
+            for callback in self._listeners["*"]:
+                # Wildcard listeners are expected to be background tasks
+                # and should handle their own exceptions.
+                callback(event)
 
 global_event_bus = EventBusEngine()
 
@@ -154,3 +187,5 @@ global_event_bus.register_listener("STUCK_JOB_DETECTED", handle_email_notificati
 global_event_bus.register_listener("STUCK_JOB_DETECTED", handle_slack_notification)
 global_event_bus.register_listener("STALE_GOVERNANCE_TASK_DETECTED", handle_email_notification)
 global_event_bus.register_listener("STALE_GOVERNANCE_TASK_DETECTED", handle_slack_notification)
+global_event_bus.register_listener("UNCONFIGURED_PII_DETECTED", handle_email_notification)
+global_event_bus.register_listener("UNCONFIGURED_PII_DETECTED", handle_slack_notification)

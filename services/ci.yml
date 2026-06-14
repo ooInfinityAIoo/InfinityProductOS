@@ -1,0 +1,43 @@
+name: InfinityProductOS CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    name: Run Guardrail Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip' # Automatically caches pip dependencies to speed up builds
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Execute Enterprise Guardrail Tests
+      # Discovers and runs all files matching test_*.py in the project
+      run: |
+        python -m unittest discover -s . -p "test_*.py"
+
+    - name: Enforce Code Style (Black)
+      # Ensures that pushed code matches your formatting standards
+      run: |
+        pip install black
+        black --check --line-length=120 .
+
+    - name: Verify Docker Container Build
+      # Compiles the Dockerfile to guarantee the application containerizes flawlessly
+      run: |
+        docker build -t infinity-core-engine:ci-test .

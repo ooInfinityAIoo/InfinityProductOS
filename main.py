@@ -22,10 +22,45 @@ from services.orchestrator_pipeline import MasterCanvasOrchestrator
 import schemas
 import openpyxl
 
-# --- NEW ROUTER IMPORT ---
-from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens
+# --- Router Imports ---
+from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights
 
-app = FastAPI(title="InfinityProductOS")
+api_description = """
+**Infinity ProductOS Core Execution Engine API** 🚀
+
+This is the master API gateway for the Infinity ProductOS enterprise architecture.
+It exposes the stateless execution engines, governance guardrails, and dynamic "Logic-as-Data" blueprints to the visual Canva studios.
+
+### Key Subsystems:
+* **Workflow Engine**: Manages state transitions and Directed Acyclic Graph (DAG) executions.
+* **Business Rules Engine**: Evaluates complex IF-THEN logic matrices.
+* **Calculation Engine**: Evaluates symbolic financial mathematical expressions securely.
+* **DataGateway Engine**: Asynchronous multi-file ingestion and payload mapping blueprints.
+* **Insights Factory**: Orchestrates scheduled and event-driven AI insights.
+* **Governance Hub**: Enforces 4-Eye checks, PII masking, and immutable execution logging.
+"""
+
+tags_metadata = [
+    {"name": "Workflow Engine", "description": "Layer 1 & 4: Manage and execute DAG workflows."},
+    {"name": "Business Rule Engine", "description": "Layer 4: Define and evaluate IF-THEN logic sets."},
+    {"name": "Calculation Engine", "description": "Layer 4: Define and evaluate symbolic financial math."},
+    {"name": "DataGateway Engine", "description": "Layer 3 & 4: Payload mappers for multi-format integration."},
+    {"name": "Data Ingestion", "description": "Layer 4: Asynchronous background bulk file processing (Celery)."},
+    {"name": "Governance Hub", "description": "Layer 5 & 6: 4-Eye exception queue, execution logs, and auditing."},
+    {"name": "Insights Factory", "description": "Layer 2: AI-driven smart insights and orchestration."},
+    {"name": "Behavioral AI Module", "description": "Layer 2: User interaction tracking and predictive insights."},
+    {"name": "AI Assistant", "description": "Layer 2: Natural Language Prompt-to-Canvas commands."},
+    {"name": "Event Repository", "description": "Layer 4: Distributed event catalog and Kafka streaming management."},
+    {"name": "Field Registry", "description": "Layer 3: The Semantic Bloodstream. Central ISO 20022 dictionary."},
+    {"name": "Common Core Masters", "description": "Layer 5: Master configurations for calendars, currencies, fees, etc."},
+]
+
+app = FastAPI(
+    title="Infinity ProductOS Enterprise API",
+    description=api_description,
+    version="1.0.0",
+    openapi_tags=tags_metadata
+)
 
 # Keep your existing CORS configuration
 app.add_middleware(
@@ -36,10 +71,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Scheduler Setup ---
+from scheduler import scheduler, start_scheduler
+
+# --- Event Bus Setup ---
+from event_bus import global_event_bus
+from services.event_handlers import handle_rule_engine_triggers
+
+@app.on_event("startup")
+def startup_event():
+    """On application startup, start the background scheduler."""
+    start_scheduler()
+    # Register the master event handler for event-driven rules
+    global_event_bus.register_listener("*", handle_rule_engine_triggers)
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """On application shutdown, gracefully stop the scheduler."""
+    scheduler.shutdown()
+
 # --- INCLUDE THE ROUTERS ---
 app.include_router(registry.router)
 app.include_router(workflows.router)
 app.include_router(governance.router)
+app.include_router(rules.router)
 app.include_router(calculations.router)
 app.include_router(mappers.router)
 app.include_router(masters.router)
@@ -48,7 +103,13 @@ app.include_router(maintenance.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
 app.include_router(health.router)
-app.include_router(screens.router)
+app.include_router(integrations.router)
+app.include_router(mock_services.router)
+app.include_router(ai_module.router)
+app.include_router(ai_assistant.router)
+app.include_router(insights.router)
+app.include_router(events.router)
+app.include_router(domain_apis.router)
 
 @app.get("/")
 def read_root():

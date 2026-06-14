@@ -5,13 +5,34 @@ services:
     image: postgres:15-alpine
     container_name: infinity_framework_db
     environment:
-      POSTGRES_USER: platform_architect
-      POSTGRES_PASSWORD: UniversalCorePassword123
-      POSTGRES_DB: infinity_metadata_ledger
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - framework_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The Primary FastAPI Execution Engine
+  core-engine:
+    build: .
+    container_name: infinity_core_engine
+    ports:
+      - "8081:8081"
+    volumes:
+      - .:/usr/src/app
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+    depends_on:
+      framework-db:
+        condition: service_healthy
 
   # The Generic Abstraction API Layer
   framework-api:
@@ -23,8 +44,78 @@ services:
       - "3000:3000"
     volumes:
       - .:/usr/src/app
+    environment:
+      - CORE_ENGINE_URL=${CORE_ENGINE_URL}
     depends_on:
-      - framework-db
+      framework-db:
+        condition: service_healthy
+      core-engine:
+        condition: service_started
+
+  # The Message Broker for Celery Queue
+  message-broker:
+    image: redis:7-alpine
+    container_name: infinity_message_broker
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The Isolated Background Task Worker
+  celery-worker:
+    image: python:3.11-slim
+    container_name: infinity_celery_worker
+    working_dir: /usr/src/app
+    command: sh -c "pip install -r requirements.txt && celery -A celery_app worker --loglevel=info --concurrency=4"
+    volumes:
+      - .:/usr/src/app
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      message-broker:
+        condition: service_healthy
+      framework-db:
+        condition: service_healthy
+
+  # Flower Dashboard for Celery Monitoring
+  flower-dashboard:
+    image: mher/flower:latest
+    container_name: infinity_flower_dashboard
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+    ports:
+      - "5555:5555"
+    depends_on:
+      message-broker:
+        condition: service_healthy
+        
+  # Layer 4 Enterprise Event Streaming: Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: infinity_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  # Layer 4 Enterprise Event Streaming: Kafka Cluster
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: infinity_kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
 
 volumes:
   framework_data:

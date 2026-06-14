@@ -5,7 +5,9 @@ const path = require('path');
 
 const app = express();
 const PORT = 3000;
-const CORE_ENGINE_URL = 'http://127.0.0.1:8081';
+
+// Read CORE_ENGINE_URL from the environment, defaulting to localhost for local dev
+const CORE_ENGINE_URL = process.env.CORE_ENGINE_URL || 'http://127.0.0.1:8081';
 
 // Enable Cross-Origin Resource Sharing for decoupled network boundaries
 app.use(cors());

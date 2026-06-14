@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import uuid
 import datetime
 
 from database import get_db
 import models
 import schemas
+from auth import get_current_user, require_designer_privileges, CurrentUser
 
 router = APIRouter(
     prefix="/api/v1/mappers",
@@ -14,7 +15,7 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=schemas.PayloadMapperBlueprintResponse, status_code=status.HTTP_201_CREATED, summary="Create a Mapper Blueprint")
-def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: Session = Depends(get_db)):
+def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Creates a new payload transformation mapper blueprint, including all its field mappings, in a single atomic transaction.
     
@@ -29,7 +30,7 @@ def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: S
         source_format=payload.source_format,
         target_format=payload.target_format,
         created_at=datetime.datetime.utcnow().isoformat(),
-        created_by="API_USER",
+        created_by=current_user.id,
     )
 
     # Create and append child mapping objects using the relationship
@@ -49,7 +50,7 @@ def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: S
     return new_blueprint
 
 @router.get("/", response_model=schemas.PayloadMapperBlueprintListResponse, summary="List All Mapper Blueprints")
-def list_mapper_blueprints(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_mapper_blueprints(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves a paginated list of all payload transformation mapper blueprints, with their associated field mappings eagerly loaded.
     """
@@ -58,7 +59,7 @@ def list_mapper_blueprints(skip: int = 0, limit: int = 100, db: Session = Depend
     return {"mappers": blueprints}
 
 @router.get("/{mapper_id}", response_model=schemas.PayloadMapperBlueprintResponse, summary="Get a Specific Mapper Blueprint")
-def get_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db)):
+def get_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves a specific payload transformation mapper blueprint by its ID, including all of its associated field mappings.
     """
@@ -77,7 +78,7 @@ def get_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db)):
     return blueprint
 
 @router.put("/{mapper_id}", response_model=schemas.PayloadMapperBlueprintResponse, summary="Update a Mapper Blueprint")
-def update_mapper_blueprint(mapper_id: str, payload: schemas.PayloadMapperBlueprintCreate, db: Session = Depends(get_db)):
+def update_mapper_blueprint(mapper_id: str, payload: schemas.PayloadMapperBlueprintCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Atomically updates a mapper blueprint, including all of its field mappings.
     This endpoint replaces the existing configuration and mappings with the new graph provided in the payload.
@@ -120,7 +121,7 @@ def update_mapper_blueprint(mapper_id: str, payload: schemas.PayloadMapperBluepr
     return db_blueprint
 
 @router.delete("/{mapper_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Mapper Blueprint")
-def delete_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db)):
+def delete_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Deletes a mapper blueprint and all of its associated field mappings. The deletion is cascaded by the database relationship configuration.
     """
@@ -139,7 +140,7 @@ def delete_mapper_blueprint(mapper_id: str, db: Session = Depends(get_db)):
     return
 
 @router.post("/{mapper_id}/mappings", response_model=schemas.PayloadFieldMappingResponse, status_code=status.HTTP_201_CREATED, summary="Add a Field Mapping to a Blueprint")
-def add_field_mapping_to_blueprint(mapper_id: str, payload: schemas.PayloadFieldMappingCreate, db: Session = Depends(get_db)):
+def add_field_mapping_to_blueprint(mapper_id: str, payload: schemas.PayloadFieldMappingCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Adds a new single field mapping to an existing mapper blueprint.
     

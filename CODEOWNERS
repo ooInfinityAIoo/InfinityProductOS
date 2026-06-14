@@ -1,0 +1,15 @@
+# This file designates default reviewers for pull requests.
+# Lines starting with '#' are comments.
+
+# The core architecture and contribution guidelines are owned by the platform architects.
+/architecture.md @InfinityProductOS/platform-architects
+/CONTRIBUTING.md @InfinityProductOS/platform-architects
+
+# The core orchestration and execution engines are critical and owned by the core team.
+/services/workflow_executor.py @InfinityProductOS/core-orchestration
+/services/business_rule_engine.py @InfinityProductOS/core-orchestration
+
+# The AI services and behavioral profiling are owned by the AI/ML team.
+/services/ai_services.py @InfinityProductOS/ai-services
+/routers/ai_module.py @InfinityProductOS/ai-services
+/routers/ai_assistant.py @InfinityProductOS/ai-services

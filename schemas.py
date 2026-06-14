@@ -80,6 +80,7 @@ class AccountProfileCreate(BaseModel):
     account_name_title: str = Field(..., description="Textual identification name profile heading string")
     currency_code: str = Field(..., description="ISO code linked directly to active currency master row lookup keys")
     clearing_system_member_id: str = Field(..., description="Systemic clearing route sorting member tracking code")
+    data_residency_region: str = Field(..., description="The ISO 3166-1 alpha-2 country code for data residency compliance (e.g., DE, IN, US).")
     branch_location_name: Optional[str] = Field(None, description="Localized processing bank center desk name string")
     is_frozen_flag: bool = Field(False, description="Strict operational freeze switch block constraint control")
 
@@ -123,27 +124,42 @@ class FeeConfigurationCreate(BaseModel):
 
 class CurrencyDefinitionResponse(CurrencyDefinitionCreate):
     created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
     class Config:
         from_attributes = True
 
 class OperationalCalendarResponse(OperationalCalendarCreate):
     calendar_id: str
     created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
     class Config:
         from_attributes = True
 
 class AccountProfileResponse(AccountProfileCreate):
     created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
     class Config:
         from_attributes = True
 
 class CountryJurisdictionResponse(CountryJurisdictionCreate):
     created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
     class Config:
         from_attributes = True
 
 class FeeConfigurationResponse(FeeConfigurationCreate):
     created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -211,6 +227,7 @@ class IngestionJobResponse(BaseModel):
     total_records: Optional[int]
     processed_records: int
     error_message: Optional[str]
+    created_by: Optional[str] = None
     created_at: str
     completed_at: Optional[str]
 
@@ -316,6 +333,7 @@ class ISOFieldDefinitionCreate(BaseModel):
     technical_sys_name: str = Field(..., description="Internal system field identifier")
     preferred_business_name: str = Field(..., description="User-facing field label")
     iso_business_name: str = Field(..., description="ISO 20022 standard field mapping")
+    localized_names: Optional[Dict[str, str]] = Field(None, description="A JSON object for multilingual field names, keyed by locale (e.g., {'es': 'Monto Principal'}).")
     data_type: str = Field(..., description="Decimal, Alphanumeric, Amount, Date, Text")
     domain_category: str = Field(..., description="Business domain (HELOC, PAYMENTS, TREASURY)")
     subdomain_category: Optional[str] = Field(None, description="Sub-domain (FIGRE, RTGS, CLEARING)")
@@ -323,6 +341,8 @@ class ISOFieldDefinitionCreate(BaseModel):
     is_mandatory: bool = Field(False, description="Required field indicator")
     default_value: Optional[str] = Field(None, description="Default value if not provided")
     is_pii: bool = Field(False, description="Indicates if the field contains Personally Identifiable Information (PII).")
+    masking_strategy: Optional[str] = Field(None, description="Explicit masking strategy to use (e.g., EMAIL, SHOW_LAST_4). Overrides data_type default.")
+    localized_overrides: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="JSON object for country-specific overrides (e.g., {'US_en': {'name': 'SSN'}}).")
 
 
 class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
@@ -335,6 +355,13 @@ class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
 
 class ISOFieldDefinitionListResponse(BaseModel):
     fields: List[ISOFieldDefinitionResponse]
+    total_count: int
+
+class DomainCategoryListResponse(BaseModel):
+    domain_categories: List[str]
+
+class SubdomainCategoryListResponse(BaseModel):
+    subdomain_categories: List[str]
 
 
 # --- WORKFLOW NODE SCHEMAS ---
@@ -344,14 +371,14 @@ class WorkflowNodeCreate(BaseModel):
     node_code: str = Field(..., description="Internal node identifier")
     canvas_x_position: int = Field(default=0, description="Canvas X coordinate")
     canvas_y_position: int = Field(default=0, description="Canvas Y coordinate")
-    rules_applied: Optional[List[str]] = Field(None, description="Business rules to execute")
-    calculations: Optional[List[str]] = Field(None, description="Calculations to perform")
-    api_triggers: Optional[List[str]] = Field(None, description="External APIs to call")
+    orchestration_steps: Optional[List['OrchestrationStep']] = Field(None, description="An ordered list of mixed-engine orchestration steps to execute.")
     events_broadcast: Optional[List[str]] = Field(None, description="Events to broadcast")
     sla_days: int = Field(default=1, description="SLA target in days")
     sla_anchor_field: Optional[str] = Field(None, description="Field to anchor SLA calculation")
     screen_template: Optional[str] = Field(None, description="Screen template for UI rendering")
 
+    class Config:
+        from_attributes = True
 
 class WorkflowNodeResponse(WorkflowNodeCreate):
     node_id: str
@@ -362,12 +389,15 @@ class WorkflowNodeResponse(WorkflowNodeCreate):
     class Config:
         from_attributes = True
 
+class WorkflowNodeListResponse(BaseModel):
+    nodes: List[WorkflowNodeResponse]
+
 
 # --- WORKFLOW EDGE SCHEMAS ---
 class WorkflowEdgeCreate(BaseModel):
     source_node_id: str = Field(..., description="Source node ID")
     target_node_id: str = Field(..., description="Target node ID")
-    edge_condition: Optional[str] = Field(None, description="Branching condition (JSON)")
+    edge_condition: Optional[Dict[str, Any]] = Field(None, description="Structured JSON object defining the branching condition.")
 
 
 class WorkflowEdgeResponse(WorkflowEdgeCreate):
@@ -387,7 +417,6 @@ class WorkflowConfigurationCreate(BaseModel):
     sub_product: Optional[str] = Field(None, description="Sub-product specification")
     description: Optional[str] = Field(None, description="Workflow documentation")
     formulas_defined: Optional[List[dict]] = Field(None, description="Mathematical formulas")
-    rules_matrix: Optional[List[dict]] = Field(None, description="Business rules configuration")
     nodes: Optional[List[WorkflowNodeCreate]] = Field(None, description="Workflow nodes")
     edges: Optional[List[WorkflowEdgeCreate]] = Field(None, description="Workflow connections")
 
@@ -402,7 +431,6 @@ class WorkflowConfigurationResponse(BaseModel):
     is_active: bool
     description: Optional[str] = None
     formulas_defined: Optional[List[dict]] = None
-    rules_matrix: Optional[List[dict]] = None
     created_at: str
     created_by: str
     updated_at: Optional[str] = None
@@ -412,156 +440,240 @@ class WorkflowConfigurationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class WorkflowDomainStatItem(BaseModel):
+    domain_scope: str
+    count: int
 
-# --- REGISTRY QUERY SCHEMAS ---
-class FieldRegistryFilterParams(BaseModel):
-    domain_category: Optional[str] = None
-    subdomain_category: Optional[str] = None
-    data_type: Optional[str] = None
-    skip: int = Field(default=0, ge=0)
-    limit: int = Field(default=100, ge=1, le=1000)
+class WorkflowDomainStatsResponse(BaseModel):
+    stats: List[WorkflowDomainStatItem]
 
-# =====================================================================
-# --- GOVERNANCE HUB SCHEMAS ---
-# =====================================================================
-from enum import Enum
+class WorkflowVersionCreate(BaseModel):
+    version_notes: Optional[str] = Field(None, description="Notes describing the changes in this new version.")
 
-class GovernanceAction(str, Enum):
-    APPROVE = "APPROVE"
-    REJECT = "REJECT"
-
-class GovernanceTaskAction(BaseModel):
-    action: GovernanceAction = Field(..., description="The resolution action (APPROVE or REJECT).")
-
-class GovernanceTaskResponse(BaseModel):
-    task_id: str
-    status: str
-    checker_identity: str
-    resolution_action: str
-    resolved_at: str
-    governance_signature_token: Optional[str] = None
-
-class GovernanceTaskItem(BaseModel):
-    packet_id: str
-    variance_metric_logged: Optional[str]
-    execution_status: str
-    class Config:
-        from_attributes = True
-
-class GovernanceTaskListResponse(BaseModel):
-    pending_tasks: List[GovernanceTaskItem]
-
-class GovernanceCommentCreate(BaseModel):
-    comment: str = Field(..., min_length=1, description="The content of the comment or note.")
-
-class GovernanceCommentUpdate(BaseModel):
-    comment: str = Field(..., min_length=1, description="The updated content of the comment.")
-
-class GovernanceCommentResponse(GovernanceCommentCreate):
-    author: str
-    comment_id: str
-    task_id: str
-    created_at: str
-    updated_at: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-class GovernanceTaskDetailResponse(BaseModel):
-    packet_id: str
-    operator_maker: str
-    authorizer_checker: str
-    raw_payload_reference: Optional[str]
-    blockchain_tx_hash: Optional[str]
-    variance_metric_logged: Optional[str]
-    execution_status: str
-    comments: List[GovernanceCommentResponse] = []
-
-    class Config:
-        from_attributes = True
-
-class GovernanceTaskFilterParams(BaseModel):
-    packet_id: Optional[str] = Field(None, description="Filter by the unique task/packet ID.")
-    raw_payload_reference: Optional[str] = Field(None, description="Filter by the raw payload reference (e.g., original transaction ID).")
-    execution_status: Optional[str] = Field(None, description="Filter by the current execution status of the task.")
-    authorizer_sme: Optional[str] = Field(None, description="Filter by the SME who authorized/rejected the task.")
-    skip: int = Field(default=0, ge=0)
-    limit: int = Field(default=100, ge=1, le=1000)
-
-class GovernanceTaskSearchResponse(BaseModel):
-    tasks: List[GovernanceTaskItem]
-
-class TaskParticipant(BaseModel):
-    user_id: str
-    roles: List[str] = Field(..., description="A list of roles this user played in the task's lifecycle (e.g., CREATOR, RESOLVER, COMMENTER).")
-
-class TaskParticipantListResponse(BaseModel):
-    task_id: str
-    participants: List[TaskParticipant]
-
-class GovernanceStatsResponse(BaseModel):
-    pending_count: int = Field(..., description="Number of tasks awaiting SME review.")
-    approved_count: int = Field(..., description="Number of tasks approved by an SME.")
-    rejected_count: int = Field(..., description="Number of tasks rejected by an SME.")
-    total_processed: int = Field(..., description="Total number of tasks that have been processed (approved or rejected).")
-
-class ExecutionLogItem(BaseModel):
-    packet_id: str
-    execution_status: str
-    raw_payload_reference: Optional[str]
-    created_at: str
-    updated_at: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-class ExecutionLogSearchResponse(BaseModel):
-    logs: List[ExecutionLogItem]
-
-class ExecutionLogFilterParams(BaseModel):
-    packet_id: Optional[str] = Field(None, description="Filter by a partial packet ID (case-insensitive).")
-    raw_payload_reference: Optional[str] = Field(None, description="Filter by a partial raw payload reference (case-insensitive).")
-    execution_status: Optional[str] = Field(None, description="Filter by an exact execution status (e.g., FINALIZED_AND_SETTLED).")
-    operator_maker: Optional[str] = Field(None, description="Filter by the creating operator (case-insensitive).")
-    created_after: Optional[datetime] = Field(None, description="Filter for logs created after this timestamp (ISO 8601).")
-    created_before: Optional[datetime] = Field(None, description="Filter for logs created before this timestamp (ISO 8601).")
-    skip: int = Field(default=0, ge=0)
-    limit: int = Field(default=100, ge=1, le=1000)
-
-class ExecutionLogStatsResponse(BaseModel):
-    finalized_and_settled: int
-    halted_in_governance: int
-    authorized_reprocessed: int
-    rejected_dead: int
-    total: int
-
-# =====================================================================
-# --- SYMBOLIC FORMULA ENGINE SCHEMAS ---
-# =====================================================================
-
-class SymbolicFormulaCreate(BaseModel):
-    token_code: str = Field(..., description="Calculation Token Identifier Code (e.g., CALC-REG-099)")
-    target_output_field: str = Field(..., description="Target Binding Dictionary Output Field")
-    mathematical_expression: str = Field(..., description="Symbolic Formula Mathematical String Expression")
-
-class SymbolicFormulaResponse(SymbolicFormulaCreate):
-    asset_id: str
+class WorkflowVersionResponse(BaseModel):
+    version_id: str
+    workflow_id: str
+    version: str
     created_at: str
     created_by: str
 
     class Config:
         from_attributes = True
 
+class RevertToVersionRequest(BaseModel):
+    version_id: str = Field(..., description="The ID of the historical version to revert to.")
+
+# =====================================================================
+# --- BUSINESS RULE ENGINE (BRE) SCHEMAS ---
+# =====================================================================
+
+class ComparisonOperator(str, Enum):
+    LESS_THAN = "LESS_THAN"
+    GREATER_THAN = "GREATER_THAN"
+    LESS_THAN_OR_EQUAL_TO = "LESS_THAN_OR_EQUAL_TO"
+    GREATER_THAN_OR_EQUAL_TO = "GREATER_THAN_OR_EQUAL_TO"
+    EQUAL_TO = "EQUAL_TO"
+    NOT_EQUAL_TO = "NOT_EQUAL_TO"
+    IN = "IN"
+    NOT_IN = "NOT_IN"
+
+class ArithmeticOperation(str, Enum):
+    ADD = "ADD"
+    SUBTRACT = "SUBTRACT"
+    MULTIPLY = "MULTIPLY"
+    DIVIDE = "DIVIDE"
+
+class RuleConditionOperand(BaseModel):
+    source_fields: Optional[List[str]] = Field(None, description="List of source ISO Field Names for this side of the condition.")
+    arithmetic_operation: Optional[ArithmeticOperation] = Field(None, description="An optional arithmetic operation to perform on the source fields.")
+    static_value: Optional[Any] = Field(None, description="A static value to use for the comparison (e.g., 10000, 'PENDING').")
+
+class RuleCondition(BaseModel):
+    left_hand_side: RuleConditionOperand = Field(..., description="The first operand of the comparison.")
+    operator: ComparisonOperator = Field(..., description="The comparison operator.")
+    right_hand_side: RuleConditionOperand = Field(..., description="The second operand of the comparison.")
+
+class RuleActionType(str, Enum):
+    SET_VALUE = "SET_VALUE"
+    EXECUTE_CALCULATION = "EXECUTE_CALCULATION"
+
+class RuleAction(BaseModel):
+    action_type: RuleActionType = Field(..., description="The type of action to perform if the condition is true.")
+    target_field: Optional[str] = Field(None, description="The destination field for a SET_VALUE action.")
+    value: Optional[Any] = Field(None, description="The static value to set for a SET_VALUE action.")
+    calculation_token: Optional[str] = Field(None, description="The token of the calculation to execute for an EXECUTE_CALCULATION action.")
+
+class BusinessRule(BaseModel):
+    priority: int = Field(100, description="Execution priority (lower numbers run first).")
+    conditions: List[RuleCondition] = Field(..., description="A list of conditions that must all be true (AND logic).")
+    actions: List[RuleAction] = Field(..., description="A list of actions to perform if all conditions are met.")
+
+class BusinessRuleSet(BaseModel):
+    business_name: str = Field(..., description="A user-friendly name for this composite rule set.")
+    token_code: str = Field(..., description="A unique token code for this rule set (e.g., 'BRE-CREDIT-POLICY-V1').")
+    description: Optional[str] = Field(None, description="A detailed description of the rule set's purpose.")
+    triggering_event_type: Optional[str] = Field(None, description="If set, this rule set will be automatically executed when the specified event occurs.")
+    rules: List[BusinessRule] = Field(..., description="The ordered list of business rules.")
+
+# =====================================================================
+# --- ORCHESTRATION ENGINE SCHEMAS ---
+# =====================================================================
+
+class OrchestrationStepType(str, Enum):
+    BUSINESS_RULE = "BUSINESS_RULE"
+    CALCULATION = "CALCULATION"
+    API_CALL = "API_CALL"
+    EVENT_BROADCAST = "EVENT_BROADCAST"
+
+class OrchestrationStep(BaseModel):
+    sequence_number: int = Field(..., description="The execution order for this step within the node (lower numbers run first).")
+    step_type: OrchestrationStepType = Field(..., description="The type of engine to invoke for this step.")
+    target_token: Optional[str] = Field(None, description="The token_code or ID of the asset to execute (for BUSINESS_RULE, CALCULATION, API_CALL).")
+    target_event_type: Optional[str] = Field(None, description="The event type to broadcast (for EVENT_BROADCAST).")
+    invocation_rule_token: Optional[str] = Field(None, description="If provided, this step will only be executed if the referenced Business Rule Set evaluates to true.")
+
+class PromptToRuleRequest(BaseModel):
+    prompt: str = Field(..., description="A natural language prompt describing a conditional rule and action.")
+
+class PromptToRuleResponse(BaseModel):
+    message: str
+    generated_rule_token: Optional[str] = None
+    suggested_workflow_node: Optional[WorkflowNodeCreate] = None
+    suggested_edge_condition: Optional[Dict[str, Any]] = None
+    notes: List[str] = Field(default_factory=list, description="Notes and suggestions for the user.")
+
+# =====================================================================
+# --- INSIGHTS FACTORY SCHEMAS ---
+# =====================================================================
+
+class InsightDefinitionCreate(BaseModel):
+    insight_name: str = Field(..., description="A user-friendly name for the insight (e.g., 'Duplicate Subscription Detector').")
+    insight_code: str = Field(..., description="A unique token code for this insight (e.g., 'INSIGHT-001').")
+    description: Optional[str] = Field(None, description="A detailed description of what this insight detects and why it's valuable.")
+    trigger_type: str = Field(..., description="The type of trigger for this insight ('EVENT' or 'SCHEDULED').")
+    trigger_config: Dict[str, Any] = Field(..., description="Configuration for the trigger (e.g., {'event_type': 'NEW_TRANSACTION'}).")
+    analysis_steps: List[OrchestrationStep] = Field(..., description="The sequence of orchestration steps to perform for the analysis.")
+
+class InsightDefinitionResponse(InsightDefinitionCreate):
+    insight_id: str
+    created_at: str
+    created_by: str
+
+    class Config:
+        from_attributes = True
+
+# =====================================================================
+# --- EVENT REPOSITORY SCHEMAS ---
+# =====================================================================
+
+class EventDefinitionCreate(BaseModel):
+    event_type: str = Field(..., description="The unique name of the event (e.g., 'GOVERNANCE_TASK_CREATED').")
+    source_module: str = Field(..., description="The name of the service or module that emits this event.")
+    description: Optional[str] = Field(None, description="A clear description of what this event signifies.")
+
+class EventDefinitionResponse(EventDefinitionCreate):
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+# =====================================================================
+# --- AI ASSISTANT SCHEMAS ---
+# =====================================================================
+
+class AICommandRequest(BaseModel):
+    prompt: str = Field(..., description="The natural language command for the AI Assistant to execute.")
+
+class AICommandResponse(BaseModel):
+    status: str = Field(..., description="The status of the command execution (e.g., SUCCESS, FAILED, REQUIRES_CLARIFICATION).")
+    message: str = Field(..., description="A human-readable message summarizing the result.")
+    executed_action: Optional[str] = Field(None, description="The specific action the AI took (e.g., CREATE_CURRENCY).")
+    details: Optional[Dict[str, Any]] = Field(None, description="A dictionary containing details of the result, like the ID of a created object.")
+
+
+class SymbolicFormulaCreate(BaseModel):
+    financial_domain: Optional[str] = Field(None, description="The financial domain this formula belongs to (e.g., 'Credit Risk', 'Treasury').")
+    business_name: str = Field(..., description="A user-friendly name for the formula (e.g., 'Linear Scorecard Point Allocation').")
+    token_code: str = Field(..., description="Calculation Token Identifier Code (e.g., CALC-REG-099)")
+    target_output_field: str = Field(..., description="Target Binding Dictionary Output Field")
+    mathematical_expression: str = Field(..., description="Symbolic Formula Mathematical String Expression")
+    parameters: Optional[Dict[str, Any]] = Field(None, description="A JSON object for static coefficients or parameters used in the formula.")
+    description: Optional[str] = Field(None, description="A detailed description of the formula's business purpose and context.")
+
+class SymbolicFormulaResponse(SymbolicFormulaCreate):
+    asset_id: str
+    created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class SymbolicFormulaListResponse(BaseModel):
     formulas: List[SymbolicFormulaResponse]
+    total_count: int
+
+class FormulaBulkUploadResponse(BaseModel):
+    successful_uploads: int
+    failed_entries: List[Dict[str, Any]]
+
+class FinancialDomainListResponse(BaseModel):
+    financial_domains: List[str]
+
+class FormulaDomainStatItem(BaseModel):
+    financial_domain: str
+    count: int
+
+class FormulaDomainStatsResponse(BaseModel):
+    stats: List[FormulaDomainStatItem]
+
+class CompositeFormulaStepCreate(BaseModel):
+    sequence_number: int = Field(..., description="The execution order for this step (lower numbers run first).")
+    formula_token_code: str = Field(..., description="The token_code of the SymbolicFormulaAsset to execute in this step.")
+
+class CompositeFormulaStepResponse(CompositeFormulaStepCreate):
+    step_id: str
+
+    class Config:
+        from_attributes = True
+
+class CompositeFormulaBlueprintCreate(BaseModel):
+    business_name: str = Field(..., description="A user-friendly name for the composite formula (e.g., 'Retail Credit Scorecard v2').")
+    token_code: str = Field(..., description="A unique token code for this composite blueprint (e.g., 'COMPOSITE-CREDIT-V2').")
+    description: Optional[str] = Field(None, description="A detailed description of the composite formula's purpose.")
+    steps: List[CompositeFormulaStepCreate] = Field(..., description="The ordered list of formula steps.")
+
+class CompositeFormulaBlueprintResponse(BaseModel):
+    composite_id: str
+    business_name: str
+    token_code: str
+    description: Optional[str] = None
+    steps: List[CompositeFormulaStepResponse]
 
 # =====================================================================
 # --- MAINTENANCE SCHEMAS ---
 # =====================================================================
 
-class StaleTaskSummaryResponse(BaseModel):
-    flagged_count: int
+class CleanupSummaryResponse(BaseModel):
+    deleted_count: int
     message: str
+
+class ManualJobTriggerRequest(BaseModel):
+    parameters: Optional[Dict[str, Any]] = Field(None, description="Optional parameters for the job, e.g., {'retention_days': 60}.")
+
+class ManualJobTriggerResponse(BaseModel):
+    job_name: str
+    status: str
+    message: str
+    summary: Optional[Dict[str, Any]]
+
+class MaintenanceJobDefinition(BaseModel):
+    job_name: str = Field(..., description="The unique identifier for the maintenance job.")
+    description: str = Field(..., description="A human-readable description of what the job does.")
+
+class MaintenanceJobListResponse(BaseModel):
+    jobs: List[MaintenanceJobDefinition]
 
 class MaintenanceTaskLogResponse(BaseModel):
     log_id: str
@@ -571,6 +683,7 @@ class MaintenanceTaskLogResponse(BaseModel):
     details: Optional[str]
     triggered_by: str
     triggered_at: str
+    duration_ms: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -586,6 +699,54 @@ class MaintenanceTaskLogFilterParams(BaseModel):
     triggered_before: Optional[datetime] = Field(None, description="Filter for logs created before this timestamp (ISO 8601).")
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=1000)
+
+class MaintenanceTaskStatItem(BaseModel):
+    task_name: str
+    success_count: int
+    failed_count: int
+    total_runs: int
+    success_rate: float = Field(..., description="Success rate for this specific task (0.0 to 1.0).")
+
+class MaintenanceTaskStatsResponse(BaseModel):
+    overall_total_runs: int
+    overall_success_count: int
+    overall_failed_count: int
+    overall_success_rate: float = Field(..., description="Success rate across all tasks (0.0 to 1.0).")
+    stats_by_task: List[MaintenanceTaskStatItem]
+
+class MaintenanceTaskPerformanceStat(BaseModel):
+    task_name: str
+    run_count: int
+    avg_duration_ms: Optional[float] = None
+    min_duration_ms: Optional[int] = None
+    max_duration_ms: Optional[int] = None
+
+class MaintenanceTaskPerformanceStatsResponse(BaseModel):
+    stats: List[MaintenanceTaskPerformanceStat]
+
+class FrequentlyFailingTask(BaseModel):
+    task_name: str
+    failure_count: int
+
+class FrequentlyFailingTaskListResponse(BaseModel):
+    tasks: List[FrequentlyFailingTask]
+    time_window_hours: int
+    failure_threshold: int
+
+class ScheduledJob(BaseModel):
+    id: str
+    name: str
+    next_run_time: Optional[datetime] = None
+    trigger: str
+
+class SchedulerStatusResponse(BaseModel):
+    is_running: bool
+    job_count: int
+    jobs: List[ScheduledJob]
+
+class SchedulerControlResponse(BaseModel):
+    status: str
+    message: str
 
 # =====================================================================
 # --- USER ACTIVITY & AUDIT SCHEMAS ---
@@ -628,6 +789,7 @@ class UserActivitySummaryResponse(BaseModel):
 
 class UserListItem(BaseModel):
     user_id: str
+    interaction_count: int = Field(0, description="The total number of interaction events logged for this user.")
 
 class UserListResponse(BaseModel):
     users: List[UserListItem]
@@ -645,7 +807,7 @@ class ScreenComponentRequirement(str, Enum):
 class ScreenComponent(BaseModel):
     component_type: str = Field(..., description="Type of UI component (e.g., text_input, number_input, date_picker, dropdown, label).")
     field_binding: Optional[str] = Field(None, description="The technical_sys_name of the ISOFieldDefinition this component is bound to.")
-    label: str = Field(..., description="The user-facing label for the component.")
+    label_token: str = Field(..., description="The i18n token for the user-facing label (e.g., 'LBL_CUSTOMER_NAME').")
     properties: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Component-specific properties like placeholder, readonly, or dropdown options.")
     category: ScreenComponentCategory = Field(ScreenComponentCategory.USER_DEFINED, description="Defines if the field is for display or user input.")
     requirement_status: ScreenComponentRequirement = Field(ScreenComponentRequirement.NON_MANDATORY, description="Defines the field's validation requirement.")
@@ -654,13 +816,13 @@ class ScreenComponent(BaseModel):
 
 class ScreenActionButton(BaseModel):
     button_id: str = Field(..., description="A unique ID for the button on this screen.")
-    button_label: str = Field(..., description="The text displayed on the button (e.g., 'Submit').")
+    label_token: str = Field(..., description="The i18n token for the button label (e.g., 'BTN_SUBMIT').")
     action_type: str = Field(..., description="The behavior on click (e.g., NAVIGATE, DELETE_INSTANCE, CANCEL_SESSION).")
     target_screen_id: Optional[str] = Field(None, description="The screen_id to navigate to if action_type is NAVIGATE.")
 
 class ValueListGroup(BaseModel):
     group_id: str = Field(..., description="A unique ID for this value list group.")
-    dropdown_label: str = Field(..., description="The label for the final rendered dropdown component.")
+    label_token: str = Field(..., description="The i18n token for the final rendered dropdown component's label.")
 
 class ScreenTemplateCreate(BaseModel):
     screen_name: str = Field(..., description="A unique name for the screen template.")
@@ -686,20 +848,17 @@ class ScreenTemplateResponse(ScreenTemplateCreate):
 class ScreenTemplateListResponse(BaseModel):
     screens: List[ScreenTemplateResponse]
 
-# =====================================================================
-# --- SYSTEM-WIDE DASHBOARD SCHEMAS ---
-# =====================================================================
+class ScreenUsageStat(BaseModel):
+    screen_id: str
+    screen_name: str
+    usage_count: int
 
-class SystemActivitySummaryResponse(BaseModel):
-    total_workflows: int
-    total_mappers: int
-    total_field_definitions: int
-    ingestion_jobs: IngestionStatsResponse
-    governance_tasks: GovernanceStatsResponse
-    execution_logs: ExecutionLogStatsResponse
-    total_comments: int
-    total_maintenance_runs: int
+class ScreenUsageStatsResponse(BaseModel):
+    stats: List[ScreenUsageStat]
 
+class BulkDeleteResponse(BaseModel):
+    deleted_count: int
+    message: str
 
 # =====================================================================
 # --- SYSTEM-WIDE DASHBOARD SCHEMAS ---
@@ -784,3 +943,124 @@ class ManualEventBroadcast(BaseModel):
 class ClearEventsResponse(BaseModel):
     cleared_count: int
     message: str
+
+# =====================================================================
+# --- API INTEGRATION SCHEMAS ---
+# =====================================================================
+
+class ApiConfigurationCreate(BaseModel):
+    api_name: str = Field(..., description="A unique name for the API integration.")
+    http_method: str = Field(..., description="The HTTP method to use (e.g., GET, POST).")
+    url_template: str = Field(..., description="The URL for the API endpoint, with optional placeholders like {field_name}.")
+    request_body_template: Optional[Dict[str, Any]] = Field(None, description="A JSON template for the request body for POST/PUT requests.")
+    headers: Optional[Dict[str, Any]] = Field(None, description="A JSON object of headers to include in the request.")
+    mask_pii_in_body: bool = Field(True, description="If true, automatically mask PII fields in the request body before sending to the external system.")
+    
+    rate_limit_rps: int = Field(10, description="The maximum number of requests per second allowed globally for this API.")
+    circuit_breaker_threshold: int = Field(5, description="The number of consecutive failures before the circuit breaker trips open.")
+    circuit_breaker_timeout_sec: int = Field(60, description="The cooldown duration in seconds before the circuit breaker tests recovery.")
+    
+    description: Optional[str] = Field(None, description="A description of the API's purpose.")
+
+class ApiConfigurationResponse(ApiConfigurationCreate):
+    api_id: str
+    created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ApiConfigurationListResponse(BaseModel):
+    integrations: List[ApiConfigurationResponse]
+
+# =====================================================================
+# --- AI & MACHINE LEARNING SCHEMAS ---
+# =====================================================================
+
+class UserInteractionEventCreate(BaseModel):
+    session_id: Optional[str] = Field(None, description="A unique identifier for the user's session.")
+    event_type: str = Field(..., description="The type of interaction (e.g., SCREEN_VIEW, BUTTON_CLICK).")
+    target_component_id: Optional[str] = Field(None, description="The unique ID of the UI component that was interacted with.")
+    payload: Optional[Dict[str, Any]] = Field(None, description="A JSON object containing contextual data about the event.")
+
+class UserInteractionEventResponse(UserInteractionEventCreate):
+    event_id: str
+    user_id: str
+    timestamp: str
+
+    class Config:
+        from_attributes = True
+
+class UserInteractionEventSummaryItem(BaseModel):
+    event_id: str
+    event_type: str
+    target_component_id: Optional[str]
+    timestamp: str
+
+    class Config:
+        from_attributes = True
+
+class UserInteractionSummaryResponse(BaseModel):
+    user_id: str
+    total_interactions: int
+    recent_interactions: List[UserInteractionEventSummaryItem]
+
+class PredictiveInsightRequest(BaseModel):
+    current_event_type: str = Field(..., description="The user's last event type (e.g., SCREEN_VIEW).")
+    current_target_component_id: Optional[str] = Field(None, description="The ID of the component related to the last event.")
+
+class PredictiveInsightResponse(BaseModel):
+    predicted_next_event_type: Optional[str] = Field(None, description="The most likely next event type.")
+    predicted_target_component_id: Optional[str] = Field(None, description="The most likely next target component.")
+    confidence: float = Field(0.0, description="The confidence score of the prediction (0.0 to 1.0).")
+    message: str
+
+class ConversationalInsightRequest(BaseModel):
+    query: str = Field(..., description="The natural language query from the user.")
+
+class ConversationalInsightResponse(BaseModel):
+    answer: str
+    context: Optional[Dict[str, Any]] = None
+
+class UserInteractionStatItem(BaseModel):
+    event_type: str
+    count: int
+
+class UserInteractionStatsResponse(BaseModel):
+    total_interactions: int
+    total_unique_users: int
+    stats_by_event_type: List[UserInteractionStatItem]
+
+class ClearedUserHistoryItem(BaseModel):
+    user_id: str
+    last_cleared_at: str
+    cleared_by: str
+
+class ClearedUserHistoryListResponse(BaseModel):
+    cleared_users: List[ClearedUserHistoryItem]
+    total_count: int
+
+class PromptToCanvasRequest(BaseModel):
+    prompt: str = Field(..., description="A natural language prompt describing the desired workflow.")
+    workflow_name: str = Field("Generated Workflow", description="The name for the new workflow.")
+
+class CustomerBehavioralProfileResponse(BaseModel):
+    user_id: str
+    ranked_journeys: Optional[List[Dict[str, Any]]] = None
+    common_devices: Optional[List[Dict[str, Any]]] = None
+    typical_locations: Optional[List[Dict[str, Any]]] = None
+    avg_transaction_value: Optional[float] = None
+    net_worth_estimate: Optional[float] = None
+    last_calculated_at: str
+    profile_version: int
+
+    class Config:
+        from_attributes = True
+
+class BehavioralProfileListResponse(BaseModel):
+    profiles: List[CustomerBehavioralProfileResponse]
+
+class PromptToCanvasResponse(BaseModel):
+    message: str
+    generated_manifest: WorkflowConfigurationCreate

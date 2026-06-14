@@ -3,15 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from sqlalchemy import func
 from typing import List, Optional
-from enum import Enum
 import uuid
 import datetime
-from pydantic import BaseModel
 
 from database import get_db
 import models
 import schemas
 from services.governance_gate import GovernanceGateHub
+from auth import get_current_user, require_admin, CurrentUser, UserRole
 
 router = APIRouter(
     prefix="/api/v1/governance",
@@ -19,33 +18,6 @@ router = APIRouter(
 )
 
 # --- RBAC Dependencies and Models ---
-
-class UserRole(str, Enum):
-    ADMIN = "admin"
-    OPERATOR = "operator"
-    AUDITOR = "auditor"
-
-class CurrentUser(BaseModel):
-    id: str
-    role: UserRole
-
-def get_current_user(
-    x_user_id: Optional[str] = Header(None, description="The ID of the user performing the action."),
-    x_user_role: Optional[str] = Header(None, description="The role of the user (admin, operator, auditor).")
-) -> CurrentUser:
-    if not x_user_id or not x_user_role:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-User-ID and X-User-Role headers are required for this operation."
-        )
-    try:
-        user_role = UserRole(x_user_role.lower())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role '{x_user_role}'. Valid roles are: {', '.join([r.value for r in UserRole])}."
-        )
-    return CurrentUser(id=x_user_id, role=user_role)
 
 
 @router.get("/tasks/", response_model=schemas.GovernanceTaskSearchResponse, summary="Search and Filter Governance Tasks")
@@ -321,4 +293,33 @@ def authorize_governance_task(task_id: str, payload: schemas.GovernanceTaskActio
             detail=result["error"]
         )
         
+    return result
+
+@router.post("/tasks/bulk-action", response_model=schemas.GovernanceBulkActionResponse, summary="Approve or Reject Multiple Tasks in Bulk")
+def bulk_authorize_governance_tasks(
+    payload: schemas.GovernanceBulkActionRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_admin)
+):
+    """
+    Performs a bulk approval or rejection of multiple governance tasks.
+    This is a privileged administrative action for managing the queue at scale.
+    Requires admin privileges.
+    """
+    hub = GovernanceGateHub(db=db)
+    
+    # Add a single comment to all affected tasks for audit purposes
+    comment_text = f"[BULK ACTION by {current_user.id}] {payload.comment}"
+    for task_id in payload.task_ids:
+        new_comment = models.GovernanceTaskComment(
+            comment_id=f"CMT-{uuid.uuid4().hex[:12].upper()}",
+            task_id=task_id,
+            author=current_user.id,
+            comment=comment_text,
+            created_at=datetime.datetime.utcnow().isoformat()
+        )
+        db.add(new_comment)
+
+    # Perform the bulk state change
+    result = hub.bulk_authorize_exception_tasks(task_ids=payload.task_ids, authorizer_sme=current_user.id, action=payload.action.value, comment_text=comment_text)
     return result

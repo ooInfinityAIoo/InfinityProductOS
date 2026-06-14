@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Header
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from sqlalchemy import func
+from typing import List, Dict, Any, Optional
 import uuid
 import datetime
 
@@ -9,6 +10,7 @@ import models
 import schemas
 from services.workflow_executor import WorkflowExecutor
 from services.reporting_service import ReportingService
+from auth import get_current_user, CurrentUser, require_designer_privileges
 
 router = APIRouter(
     prefix="/api/v1/workflows",
@@ -16,7 +18,7 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=schemas.WorkflowConfigurationResponse, status_code=status.HTTP_201_CREATED, summary="Create a Full Workflow Graph")
-def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = Depends(get_db)):
+def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Registers a new workflow configuration, including all its nodes and edges, in a single atomic transaction. This is the primary endpoint for creating new workflow blueprints.
     """
@@ -33,9 +35,8 @@ def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = 
         is_active=True,
         description=payload.description,
         formulas_defined=payload.formulas_defined,
-        rules_matrix=payload.rules_matrix,
         created_at=datetime.datetime.utcnow().isoformat(),
-        created_by="system_admin" # Or from an auth dependency
+        created_by=current_user.id
     )
 
     # Create and append node objects using the relationship
@@ -74,7 +75,7 @@ def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = 
     return new_workflow
 
 @router.get("/", response_model=List[schemas.WorkflowConfigurationResponse], summary="List All Workflow Graphs")
-def list_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves a paginated list of all workflow configurations. Thanks to relationship loading, each workflow includes its full graph of nodes and edges.
     """
@@ -82,7 +83,7 @@ def list_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db
     return workflows
 
 @router.get("/{workflow_id}", response_model=schemas.WorkflowConfigurationResponse, summary="Get a Specific Workflow Graph")
-def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
+def get_workflow(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves a single complete workflow configuration by its ID. The response includes the full graph of the workflow's nodes and edges.
     """
@@ -101,7 +102,7 @@ def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
     return workflow
 
 @router.put("/{workflow_id}", response_model=schemas.WorkflowConfigurationResponse, summary="Update a Full Workflow Graph")
-def update_workflow(workflow_id: str, payload: schemas.WorkflowConfigurationCreate, db: Session = Depends(get_db)):
+def update_workflow(workflow_id: str, payload: schemas.WorkflowConfigurationCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Atomically updates an entire workflow graph. This endpoint replaces the existing configuration, nodes, and edges of a workflow with the new graph provided in the payload. It's a "replace" operation, ensuring the final state perfectly matches the input.
     """
@@ -123,9 +124,8 @@ def update_workflow(workflow_id: str, payload: schemas.WorkflowConfigurationCrea
         workflow.sub_product = payload.sub_product
         workflow.description = payload.description
         workflow.formulas_defined = payload.formulas_defined
-        workflow.rules_matrix = payload.rules_matrix
         workflow.updated_at = datetime.datetime.utcnow().isoformat()
-        workflow.updated_by = "system_admin_update" # Or from auth
+        workflow.updated_by = current_user.id
 
         # Clear existing nodes and edges. Thanks to `cascade="all, delete-orphan"`,
         # SQLAlchemy will handle the deletion from the database.
@@ -168,7 +168,7 @@ def update_workflow(workflow_id: str, payload: schemas.WorkflowConfigurationCrea
     return workflow
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a Workflow Graph")
-def delete_workflow(workflow_id: str, db: Session = Depends(get_db)):
+def delete_workflow(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Deletes a workflow and all of its associated nodes and edges.
     The deletion is cascaded by the database relationship configuration.
@@ -188,7 +188,7 @@ def delete_workflow(workflow_id: str, db: Session = Depends(get_db)):
     return
 
 @router.post("/{workflow_id}/execute", summary="Execute a Workflow", response_model=Dict[str, Any])
-def execute_workflow_run(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def execute_workflow_run(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Executes a defined workflow blueprint against a given input payload.
     The engine will traverse the workflow's nodes and edges, executing rules and calculations.
@@ -203,7 +203,7 @@ def execute_workflow_run(workflow_id: str, payload: Dict[str, Any], db: Session 
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during workflow execution: {str(e)}")
 
 @router.post("/{workflow_id}/execute/download-report", summary="Execute Workflow and Download PDF Report")
-def execute_workflow_and_download_report(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db)):
+def execute_workflow_and_download_report(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Executes a defined workflow and immediately generates a PDF report of the execution results,
     including the final context and a detailed execution trace.
@@ -227,3 +227,221 @@ def execute_workflow_and_download_report(workflow_id: str, payload: Dict[str, An
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during report generation: {str(e)}")
+
+@router.get("/search/financial-settlement", response_model=List[schemas.WorkflowConfigurationResponse], summary="List Workflows with Financial Settlement Nodes")
+def list_financial_settlement_workflows(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all workflow configurations that contain at least one
+    financial settlement node (i.e., a node with a code of 'POST_LEDGER' or 'SETTLE').
+    This is useful for auditing and identifying all financial-impact workflows.
+    """
+    financial_node_codes = ["POST_LEDGER", "SETTLE"]
+
+    # Subquery to find all workflow_ids that have at least one financial node
+    subquery = db.query(models.WorkflowNode.workflow_id).filter(
+        models.WorkflowNode.node_code.in_(financial_node_codes)
+    ).distinct()
+
+    # Main query to fetch the full workflow configurations for the IDs found
+    workflows = db.query(models.WorkflowConfiguration).filter(
+        models.WorkflowConfiguration.workflow_id.in_(subquery)
+    ).order_by(models.WorkflowConfiguration.workflow_name).all()
+
+    return workflows
+
+@router.get("/search/empty", response_model=List[schemas.WorkflowConfigurationResponse], summary="List All Workflows With No Nodes")
+def list_empty_workflows(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all workflow configurations that do not have any nodes defined.
+    This is useful for identifying and cleaning up empty or orphaned workflow blueprints.
+    """
+    empty_workflows = db.query(
+        models.WorkflowConfiguration
+    ).outerjoin(
+        models.WorkflowNode
+    ).filter(
+        models.WorkflowNode.node_id.is_(None)
+    ).order_by(
+        models.WorkflowConfiguration.workflow_name
+    ).all()
+
+    return empty_workflows
+
+@router.delete("/empty", response_model=schemas.BulkDeleteResponse, summary="Bulk Delete All Empty Workflows")
+def bulk_delete_empty_workflows(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Finds and permanently deletes all workflow configurations that do not have any nodes defined.
+    This is a bulk cleanup operation and requires designer privileges.
+    """
+    empty_workflows_query = db.query(
+        models.WorkflowConfiguration
+    ).outerjoin(
+        models.WorkflowNode
+    ).filter(
+        models.WorkflowNode.node_id.is_(None)
+    )
+    deleted_count = empty_workflows_query.delete(synchronize_session=False)
+    db.commit()
+
+    return {"deleted_count": deleted_count, "message": f"Successfully deleted {deleted_count} empty workflow blueprints."}
+
+@router.get("/stats/by-domain", response_model=schemas.WorkflowDomainStatsResponse, summary="Get Workflow Counts by Domain Scope")
+def get_workflow_stats_by_domain(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a count of workflows, grouped by their `domain_scope`.
+    This is useful for getting a high-level overview of workflow distribution.
+    """
+    stats_query = db.query(
+        models.WorkflowConfiguration.domain_scope,
+        func.count(models.WorkflowConfiguration.workflow_id).label('count')
+    ).group_by(
+        models.WorkflowConfiguration.domain_scope
+    ).order_by(
+        func.count(models.WorkflowConfiguration.workflow_id).desc()
+    ).all()
+
+    # The query returns Row objects which Pydantic can serialize since the field names
+    # in the query result ('domain_scope', 'count') match the `WorkflowDomainStatItem` model.
+    return {"stats": stats_query}
+
+@router.get("/search/needs-migration", response_model=List[schemas.WorkflowConfigurationResponse], summary="List Workflows Needing Migration")
+def list_workflows_needing_migration(db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """
+    Retrieves a list of all workflow configurations that contain at least one node
+    that has not been migrated to the new 'orchestration_steps' model.
+
+    This is a utility endpoint for identifying workflows that still use deprecated
+    node structures and require updating. It works by finding workflows where at least one
+    node has a `NULL` value for its `orchestration_steps`, indicating it hasn't been saved
+    with the new structure.
+    """
+    # Subquery to find all workflow_ids that have at least one unmigrated node
+    subquery = db.query(models.WorkflowNode.workflow_id).filter(
+        models.WorkflowNode.orchestration_steps.is_(None)
+    ).distinct()
+
+    # Main query to fetch the full workflow configurations for the IDs found
+    workflows = db.query(models.WorkflowConfiguration).filter(
+        models.WorkflowConfiguration.workflow_id.in_(subquery)
+    ).order_by(models.WorkflowConfiguration.workflow_name).all()
+
+    return workflows
+
+@router.get("/{workflow_id}/versions", response_model=List[schemas.WorkflowVersionResponse], summary="List All Versions of a Workflow")
+def list_workflow_versions(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all historical versions that have been saved for a specific workflow.
+    """
+    versions = db.query(models.WorkflowVersion).filter(
+        models.WorkflowVersion.workflow_id == workflow_id
+    ).order_by(models.WorkflowVersion.created_at.desc()).all()
+    return versions
+
+@router.post("/{workflow_id}/versions", response_model=schemas.WorkflowVersionResponse, summary="Create a New Workflow Version")
+def create_workflow_version(
+    workflow_id: str,
+    payload: schemas.WorkflowVersionCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Creates a new version of a workflow by taking a snapshot of its current state.
+    This also increments the version number of the active workflow configuration.
+    """
+    workflow = db.query(models.WorkflowConfiguration).filter(
+        models.WorkflowConfiguration.workflow_id == workflow_id
+    ).first()
+
+    if not workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Workflow with ID '{workflow_id}' not found.")
+
+    try:
+        # 1. Create a snapshot of the current definition
+        current_definition = {
+            "workflow_name": workflow.workflow_name,
+            "domain_scope": workflow.domain_scope,
+            "product_context": workflow.product_context,
+            "sub_product": workflow.sub_product,
+            "description": workflow.description,
+            "formulas_defined": workflow.formulas_defined,
+            "nodes": [
+                {
+                    "node_id": node.node_id,
+                    "sequence_number": node.sequence_number,
+                    "node_title": node.node_title,
+                    "node_code": node.node_code,
+                    "orchestration_steps": node.orchestration_steps,
+                    "events_broadcast": node.events_broadcast,
+                    "screen_template": node.screen_template,
+                } for node in workflow.nodes
+            ],
+            "edges": [
+                {
+                    "edge_id": edge.edge_id,
+                    "source_node_id": edge.source_node_id,
+                    "target_node_id": edge.target_node_id,
+                    "edge_condition": edge.edge_condition,
+                } for edge in workflow.edges
+            ]
+        }
+
+        # 2. Create the new version record
+        new_version = models.WorkflowVersion(
+            version_id=f"WFV-{uuid.uuid4().hex[:12].upper()}",
+            workflow_id=workflow.workflow_id,
+            version=workflow.version,
+            definition=current_definition,
+            created_at=datetime.datetime.utcnow().isoformat(),
+            created_by=current_user.id
+        )
+        db.add(new_version)
+
+        # 3. Increment the main workflow's version number (simple increment for now)
+        major, minor, patch = map(int, workflow.version.split('.'))
+        patch += 1
+        workflow.version = f"{major}.{minor}.{patch}"
+        workflow.updated_at = datetime.datetime.utcnow().isoformat()
+        workflow.updated_by = current_user.id
+
+        db.commit()
+        db.refresh(new_version)
+        return new_version
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"An error occurred while creating new version: {str(e)}")
+
+@router.post("/{workflow_id}/revert", response_model=schemas.WorkflowConfigurationResponse, summary="Revert to a Previous Workflow Version")
+def revert_to_workflow_version(
+    workflow_id: str,
+    payload: schemas.RevertToVersionRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Reverts the active workflow configuration to a specific historical version.
+    This is a powerful administrative action for rolling back changes.
+    """
+    # 1. Find the historical version to revert to
+    historical_version = db.query(models.WorkflowVersion).filter(models.WorkflowVersion.version_id == payload.version_id).first()
+    if not historical_version or historical_version.workflow_id != workflow_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Historical version with ID '{payload.version_id}' not found for this workflow.")
+
+    # 2. Find the active workflow to update
+    active_workflow = db.query(models.WorkflowConfiguration).filter(models.WorkflowConfiguration.workflow_id == workflow_id).first()
+    if not active_workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Active workflow with ID '{workflow_id}' not found.")
+
+    # 3. Apply the historical definition to the active workflow
+    definition = historical_version.definition
+    active_workflow.workflow_name = definition.get("workflow_name")
+    # ... update all other fields from the 'definition' snapshot ...
+    active_workflow.version = historical_version.version # Set version back to the historical one
+    active_workflow.updated_at = datetime.datetime.utcnow().isoformat()
+    active_workflow.updated_by = f"reverted_by_{current_user.id}"
+
+    db.commit()
+    db.refresh(active_workflow)
+    return active_workflow

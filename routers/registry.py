@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import func, or_, cast, String
+from typing import List
 import uuid
 import datetime
 
 from database import get_db 
 import models
 import schemas
+from auth import get_current_user, require_designer_privileges, require_admin_or_auditor, CurrentUser
 
 router = APIRouter(
     prefix="/api/v1/fields/registry",
@@ -14,7 +16,7 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=schemas.ISOFieldDefinitionResponse, status_code=status.HTTP_201_CREATED, summary="Register a New ISO Field")
-def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = Depends(get_db)):
+def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Registers a new ISO 20022-compliant data field in the Global Field Dictionary.
     """
@@ -33,7 +35,7 @@ def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = 
     new_field = models.ISOFieldDefinition(
         field_id=field_id,
         created_at=datetime.datetime.utcnow().isoformat(),
-        created_by="API_USER",
+        created_by=current_user.id,
         **payload.dict()
     )
     
@@ -43,7 +45,7 @@ def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = 
     return new_field
 
 @router.get("/", response_model=schemas.ISOFieldDefinitionListResponse, summary="List and Filter ISO Fields")
-def list_iso_fields(filters: schemas.FieldRegistryFilterParams = Depends(), db: Session = Depends(get_db)):
+def list_iso_fields(filters: schemas.FieldRegistryFilterParams = Depends(), db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves registered fields from the ISO Field Registry, with pagination and dynamic filtering based on domain, subdomain, and data type.
     """
@@ -56,11 +58,75 @@ def list_iso_fields(filters: schemas.FieldRegistryFilterParams = Depends(), db: 
     if filters.data_type:
         query = query.filter(models.ISOFieldDefinition.data_type == filters.data_type)
 
+    total_count = query.count()
     fields = query.offset(filters.skip).limit(filters.limit).all()
-    return {"fields": fields}
+    return {"fields": fields, "total_count": total_count}
+
+@router.get("/domain-categories", response_model=schemas.DomainCategoryListResponse, summary="List All Unique Domain Categories")
+def list_domain_categories(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all unique, non-null domain categories present in the ISO Field Registry.
+    This is useful for populating filter dropdowns in a UI.
+    """
+    domains_query = db.query(
+        models.ISOFieldDefinition.domain_category
+    ).distinct().filter(
+        models.ISOFieldDefinition.domain_category.isnot(None),
+        models.ISOFieldDefinition.domain_category != ''
+    ).order_by(models.ISOFieldDefinition.domain_category).all()
+    
+    # The query returns a list of tuples, e.g., [('HELOC',), ('PAYMENTS',)]. Flatten it.
+    domains = [domain for domain, in domains_query]
+    
+    return {"domain_categories": domains}
+
+@router.get("/subdomain-categories", response_model=schemas.SubdomainCategoryListResponse, summary="List All Unique Subdomain Categories")
+def list_subdomain_categories(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all unique, non-null subdomain categories present in the ISO Field Registry.
+    This is useful for populating dependent filter dropdowns in a UI.
+    """
+    subdomains_query = db.query(
+        models.ISOFieldDefinition.subdomain_category
+    ).distinct().filter(
+        models.ISOFieldDefinition.subdomain_category.isnot(None),
+        models.ISOFieldDefinition.subdomain_category != ''
+    ).order_by(models.ISOFieldDefinition.subdomain_category).all()
+    
+    # The query returns a list of tuples, e.g., [('FIGRE',), ('RTGS',)]. Flatten it.
+    subdomains = [subdomain for subdomain, in subdomains_query]
+    
+    return {"subdomain_categories": subdomains}
+
+@router.get("/search", response_model=schemas.ISOFieldDefinitionListResponse, summary="Search the ISO Field Registry")
+def search_iso_fields(
+    q: str = Query(..., min_length=2, description="Search term for technical name, business name, description, or localized names."),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Performs a paginated, case-insensitive search across the ISO Field Registry.
+    The search will look for matches in technical name, business names, description, and localized names.
+    """
+    search_term = f"%{q}%"
+    base_query = db.query(models.ISOFieldDefinition).filter(
+        or_(
+            models.ISOFieldDefinition.technical_sys_name.ilike(search_term),
+            models.ISOFieldDefinition.preferred_business_name.ilike(search_term),
+            models.ISOFieldDefinition.iso_business_name.ilike(search_term),
+            models.ISOFieldDefinition.description.ilike(search_term),
+            cast(models.ISOFieldDefinition.localized_names, String).ilike(search_term)
+        )
+    )
+    total_count = base_query.count()
+    fields = base_query.order_by(models.ISOFieldDefinition.preferred_business_name).offset(skip).limit(limit).all()
+    
+    return {"fields": fields, "total_count": total_count}
 
 @router.get("/{field_id}", response_model=schemas.ISOFieldDefinitionResponse, summary="Get a Specific ISO Field")
-def get_iso_field(field_id: str, db: Session = Depends(get_db)):
+def get_iso_field(field_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Retrieves a specific field configuration from the registry by its unique `field_id`.
     """
@@ -76,7 +142,7 @@ def get_iso_field(field_id: str, db: Session = Depends(get_db)):
     return field
 
 @router.put("/{field_id}", response_model=schemas.ISOFieldDefinitionResponse, summary="Update an ISO Field")
-def update_iso_field(field_id: str, payload: schemas.ISOFieldDefinitionCreate, db: Session = Depends(get_db)):
+def update_iso_field(field_id: str, payload: schemas.ISOFieldDefinitionCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Updates an existing field definition in the ISO Field Registry.
     """
@@ -105,7 +171,7 @@ def update_iso_field(field_id: str, payload: schemas.ISOFieldDefinitionCreate, d
     return db_field
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an ISO Field")
-def delete_iso_field(field_id: str, db: Session = Depends(get_db)):
+def delete_iso_field(field_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
     Deletes a field definition from the ISO Field Registry.
     """
@@ -122,3 +188,88 @@ def delete_iso_field(field_id: str, db: Session = Depends(get_db)):
     db.delete(field)
     db.commit()
     return
+
+@router.get("/pii-fields", response_model=schemas.PIIFieldListResponse, summary="List All PII Fields and Masking Strategies")
+def list_pii_fields(db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_admin_or_auditor)):
+    """
+    Retrieves a list of all fields in the registry that are marked as PII (Personally Identifiable Information),
+    along with their configured masking strategy.
+
+    This is a security auditing endpoint and requires admin or auditor privileges.
+    """
+    pii_fields = db.query(models.ISOFieldDefinition).filter(
+        models.ISOFieldDefinition.is_pii == True
+    ).order_by(models.ISOFieldDefinition.domain_category, models.ISOFieldDefinition.technical_sys_name).all()
+
+    return {
+        "pii_fields": pii_fields,
+        "total_count": len(pii_fields)
+    }
+
+@router.get("/pii-fields/stats", response_model=schemas.PIIMaskingStrategyStatsResponse, summary="Get PII Field Count by Masking Strategy")
+def get_pii_field_stats(db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_admin_or_auditor)):
+    """
+    Retrieves a count of PII fields, grouped by their configured masking strategy.
+    This is useful for getting a high-level overview of data protection coverage.
+
+    Requires admin or auditor privileges.
+    """
+    stats_query = db.query(
+        models.ISOFieldDefinition.masking_strategy,
+        func.count(models.ISOFieldDefinition.field_id).label('count')
+    ).filter(
+        models.ISOFieldDefinition.is_pii == True
+    ).group_by(
+        models.ISOFieldDefinition.masking_strategy
+    ).order_by(
+        func.count(models.ISOFieldDefinition.field_id).desc()
+    ).all()
+
+    # The query returns Row objects which Pydantic can serialize since the field names
+    # ('masking_strategy', 'count') match the `PIIMaskingStrategyStatItem` model.
+    return {"stats": stats_query}
+
+@router.get("/pii-fields/unconfigured", response_model=schemas.PIIFieldListResponse, summary="Find PII Fields With No Masking Strategy")
+def list_unconfigured_pii_fields(db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_admin_or_auditor)):
+    """
+    Retrieves a list of all fields that are marked as PII but do not have an explicit
+    masking strategy assigned. This is a critical endpoint for ensuring data
+    protection policies are fully configured.
+
+    Requires admin or auditor privileges.
+    """
+    unconfigured_pii_fields = db.query(models.ISOFieldDefinition).filter(
+        models.ISOFieldDefinition.is_pii == True,
+        models.ISOFieldDefinition.masking_strategy.is_(None)
+    ).order_by(models.ISOFieldDefinition.domain_category, models.ISOFieldDefinition.technical_sys_name).all()
+
+    return {
+        "pii_fields": unconfigured_pii_fields,
+        "total_count": len(unconfigured_pii_fields)
+    }
+
+@router.get("/masking-strategies", response_model=schemas.MaskingStrategyListResponse, summary="List All Available Masking Strategies")
+def list_masking_strategies(current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Retrieves a list of all available masking strategies that can be assigned to a PII field.
+    """
+    strategies = [
+        schemas.MaskingStrategyDefinition(
+            strategy_name="REDACT_ALL",
+            description="Masks the entire value with asterisks (e.g., '*********')."
+        ),
+        schemas.MaskingStrategyDefinition(
+            strategy_name="SHOW_LAST_4",
+            description="Masks all but the last 4 characters of the value (e.g., '*******1234')."
+        ),
+        schemas.MaskingStrategyDefinition(
+            strategy_name="EMAIL",
+            description="Masks the user part of an email address (e.g., 'j********@example.com')."
+        ),
+        schemas.MaskingStrategyDefinition(
+            strategy_name="PHONE",
+            description="An alias for SHOW_LAST_4, suitable for phone numbers (e.g., '*******1234')."
+        ),
+    ]
+    
+    return {"strategies": strategies}

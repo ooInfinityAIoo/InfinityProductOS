@@ -1,30 +1,20 @@
 import datetime
 import asyncio
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 from models import IngestionJob, IngestionJobArchive, EvidencePacketRegistry, MaintenanceTaskLog
 from event_bus import global_event_bus, SystemEvent
 import uuid
+from services.maintenance_utils import log_maintenance_task
 
 class ArchivalService:
     """
     Handles archiving of old, completed system records.
     """
 
-    def _log_task(self, db: Session, task_name: str, status: str, triggered_by: str, summary: dict = None, details: str = None):
+    def _log_task(self, db: Session, task_name: str, status: str, triggered_by: str, summary: dict = None, details: str = None, duration_ms: int = None):
         """Helper method to log the execution of a maintenance task."""
-        log_id = f"MAINT-LOG-{uuid.uuid4().hex[:12].upper()}"
-        log_entry = MaintenanceTaskLog(
-            log_id=log_id,
-            task_name=task_name,
-            status=status,
-            summary=summary,
-            details=details,
-            triggered_by=triggered_by,
-            triggered_at=datetime.datetime.utcnow().isoformat()
-        )
-        db.add(log_entry)
-        db.commit()
+        log_maintenance_task(db, task_name, status, triggered_by, summary, details, duration_ms)
 
     def archive_old_ingestion_jobs(self, db: Session, retention_days: int, triggered_by: str) -> int:
         """
@@ -34,6 +24,7 @@ class ArchivalService:
         Returns the number of jobs archived.
         """
         task_name = "archive_ingestion_jobs"
+        start_time = datetime.datetime.utcnow()
         try:
             if retention_days < 7:
                 raise ValueError("Retention period must be at least 7 days for safety.")
@@ -47,7 +38,8 @@ class ArchivalService:
             ).all()
 
             if not jobs_to_archive:
-                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"archived_count": 0, "retention_days": retention_days})
+                duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"archived_count": 0, "retention_days": retention_days}, duration_ms=duration_ms)
                 return 0
 
             archived_count = 0
@@ -63,7 +55,8 @@ class ArchivalService:
             db.commit()
 
             summary = {"archived_count": archived_count, "retention_days": retention_days}
-            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary)
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, duration_ms=duration_ms)
 
             if archived_count > 0:
                 event_payload = {**summary, "message": f"Successfully archived {archived_count} jobs older than {retention_days} days."}
@@ -74,8 +67,67 @@ class ArchivalService:
             return archived_count
         except Exception as e:
             db.rollback()
-            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e))
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
             raise e
+
+    def get_maintenance_task_statistics(self, db: Session) -> dict:
+        """
+        Retrieves and calculates statistics on maintenance task runs, grouped by task name.
+        """
+        from collections import defaultdict
+
+        # Query to get counts of each status for each task name
+        counts_query = db.query(
+            MaintenanceTaskLog.task_name,
+            MaintenanceTaskLog.status,
+            func.count(MaintenanceTaskLog.log_id).label('count')
+        ).group_by(
+            MaintenanceTaskLog.task_name,
+            MaintenanceTaskLog.status
+        ).all()
+
+        # Process the raw counts into a more structured dictionary
+        processed_stats = defaultdict(lambda: {"success_count": 0, "failed_count": 0})
+        for task_name, status, count in counts_query:
+            if status == "SUCCESS":
+                processed_stats[task_name]["success_count"] += count
+            elif status == "FAILED":
+                processed_stats[task_name]["failed_count"] += count
+
+        # Calculate totals and success rates
+        stats_by_task = []
+        overall_total_runs = 0
+        overall_success_count = 0
+        overall_failed_count = 0
+
+        for task_name, counts in processed_stats.items():
+            total_runs = counts["success_count"] + counts["failed_count"]
+            success_rate = counts["success_count"] / total_runs if total_runs > 0 else 0.0
+            
+            stats_by_task.append({
+                "task_name": task_name,
+                "success_count": counts["success_count"],
+                "failed_count": counts["failed_count"],
+                "total_runs": total_runs,
+                "success_rate": success_rate
+            })
+            
+            overall_total_runs += total_runs
+            overall_success_count += counts["success_count"]
+            overall_failed_count += counts["failed_count"]
+
+        overall_success_rate = overall_success_count / overall_total_runs if overall_total_runs > 0 else 0.0
+        
+        stats_by_task.sort(key=lambda x: x['total_runs'], reverse=True)
+
+        return {
+            "overall_total_runs": overall_total_runs,
+            "overall_success_count": overall_success_count,
+            "overall_failed_count": overall_failed_count,
+            "overall_success_rate": overall_success_rate,
+            "stats_by_task": stats_by_task
+        }
 
     def restore_job_from_archive(self, db: Session, job_id: str) -> IngestionJob:
         """
@@ -122,6 +174,7 @@ class ArchivalService:
         Returns the number of logs deleted.
         """
         task_name = "cleanup_execution_logs"
+        start_time = datetime.datetime.utcnow()
         try:
             if retention_days < 30:
                 raise ValueError("Retention period must be at least 30 days for safety.")
@@ -140,7 +193,8 @@ class ArchivalService:
             ).all()
 
             if not logs_to_delete:
-                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"deleted_count": 0, "retention_days": retention_days})
+                duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"deleted_count": 0, "retention_days": retention_days}, duration_ms=duration_ms)
                 return 0
 
             deleted_count = len(logs_to_delete)
@@ -151,7 +205,8 @@ class ArchivalService:
             db.commit()
 
             summary = {"deleted_count": deleted_count, "retention_days": retention_days}
-            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary)
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, duration_ms=duration_ms)
 
             event_payload = summary
             asyncio.run(global_event_bus.broadcast(SystemEvent(
@@ -161,7 +216,8 @@ class ArchivalService:
             return deleted_count
         except Exception as e:
             db.rollback()
-            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e))
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
             raise e
 
     def flag_stuck_ingestion_jobs(self, db: Session, timeout_minutes: int, triggered_by: str) -> int:
@@ -171,6 +227,7 @@ class ArchivalService:
         Returns the number of jobs flagged.
         """
         task_name = "flag_stuck_ingestion_jobs"
+        start_time = datetime.datetime.utcnow()
         try:
             if timeout_minutes < 5:
                 raise ValueError("Timeout period must be at least 5 minutes for safety.")
@@ -184,7 +241,8 @@ class ArchivalService:
             ).all()
 
             if not stuck_jobs:
-                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"flagged_count": 0, "timeout_minutes": timeout_minutes})
+                duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"flagged_count": 0, "timeout_minutes": timeout_minutes}, duration_ms=duration_ms)
                 return 0
 
             flagged_count = 0
@@ -203,11 +261,13 @@ class ArchivalService:
 
             db.commit()
             summary = {"flagged_count": flagged_count, "timeout_minutes": timeout_minutes}
-            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary)
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, duration_ms=duration_ms)
             return flagged_count
         except Exception as e:
             db.rollback()
-            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e))
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
             raise e
 
     def flag_stale_governance_tasks(self, db: Session, timeout_days: int, triggered_by: str) -> int:
@@ -218,6 +278,7 @@ class ArchivalService:
         Returns the number of tasks flagged.
         """
         task_name = "flag_stale_governance_tasks"
+        start_time = datetime.datetime.utcnow()
         try:
             if timeout_days < 1:
                 raise ValueError("Timeout period must be at least 1 day.")
@@ -231,7 +292,8 @@ class ArchivalService:
             ).all()
 
             if not stale_tasks:
-                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"flagged_count": 0, "timeout_days": timeout_days})
+                duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+                self._log_task(db, task_name, "SUCCESS", triggered_by, summary={"flagged_count": 0, "timeout_days": timeout_days}, duration_ms=duration_ms)
                 return 0
 
             flagged_count = 0
@@ -250,9 +312,85 @@ class ArchivalService:
                     payload=event_payload
                 )))
             summary = {"flagged_count": flagged_count, "timeout_days": timeout_days}
-            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary)
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, duration_ms=duration_ms)
             return flagged_count
         except Exception as e:
             db.rollback()
-            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e))
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
             raise e
+
+    def check_for_unconfigured_pii_fields(self, db: Session, triggered_by: str) -> int:
+        """
+        Finds PII fields that do not have an explicit masking strategy assigned
+        and broadcasts an event if any are found.
+
+        Returns the number of unconfigured fields found.
+        """
+        task_name = "check_unconfigured_pii_fields"
+        start_time = datetime.datetime.utcnow()
+        try:
+            unconfigured_fields = db.query(models.ISOFieldDefinition).filter(
+                models.ISOFieldDefinition.is_pii == True,
+                models.ISOFieldDefinition.masking_strategy.is_(None)
+            ).all()
+
+            count = len(unconfigured_fields)
+            summary = {"unconfigured_pii_field_count": count}
+            
+            details = f"Found {count} PII fields with no masking strategy." if count > 0 else "All PII fields have an explicit masking strategy assigned."
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, details=details, duration_ms=duration_ms)
+            
+            if count > 0:
+                event_payload = {"count": count, "field_names": [f.technical_sys_name for f in unconfigured_fields], "message": details}
+                asyncio.run(global_event_bus.broadcast(SystemEvent(event_type="UNCONFIGURED_PII_DETECTED", source_context="ArchivalService.PIIConfigAuditor", payload=event_payload)))
+
+            return count
+        except Exception as e:
+            db.rollback()
+            duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
+            self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
+            raise e
+
+    def get_frequently_failing_tasks(self, db: Session, hours_window: int, failure_threshold: int) -> List:
+        """
+        Finds maintenance tasks that have failed more than a given threshold
+        within a specific time window.
+        """
+        cutoff_time = datetime.datetime.utcnow() - datetime.timedelta(hours=hours_window)
+        cutoff_time_str = cutoff_time.isoformat()
+
+        failing_tasks = db.query(
+            models.MaintenanceTaskLog.task_name,
+            func.count(models.MaintenanceTaskLog.log_id).label('failure_count')
+        ).filter(
+            models.MaintenanceTaskLog.status == 'FAILED',
+            models.MaintenanceTaskLog.triggered_at >= cutoff_time_str
+        ).group_by(
+            models.MaintenanceTaskLog.task_name
+        ).having(
+            func.count(models.MaintenanceTaskLog.log_id) > failure_threshold
+        ).order_by(
+            func.count(models.MaintenanceTaskLog.log_id).desc()
+        ).all()
+
+        return failing_tasks
+
+    def get_maintenance_task_performance_stats(self, db: Session) -> List:
+        """
+        Retrieves performance statistics for each maintenance task.
+        """
+        stats = db.query(
+            models.MaintenanceTaskLog.task_name,
+            func.count(models.MaintenanceTaskLog.log_id).label('run_count'),
+            func.avg(models.MaintenanceTaskLog.duration_ms).label('avg_duration_ms'),
+            func.min(models.MaintenanceTaskLog.duration_ms).label('min_duration_ms'),
+            func.max(models.MaintenanceTaskLog.duration_ms).label('max_duration_ms')
+        ).group_by(
+            models.MaintenanceTaskLog.task_name
+        ).order_by(
+            models.MaintenanceTaskLog.task_name
+        ).all()
+        return stats
