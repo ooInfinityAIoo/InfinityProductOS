@@ -18,6 +18,10 @@ class UserRole(str, Enum):
     ADMIN = "admin"
     OPERATOR = "operator"
     AUDITOR = "auditor"
+    VIEWER = "viewer"
+    SALES = "sales"
+    RISK = "risk"
+    C_LEVEL = "c_level"
 
 class CurrentUser(BaseModel):
     id: str

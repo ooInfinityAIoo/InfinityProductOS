@@ -192,6 +192,41 @@ class MastersCountResponse(BaseModel):
     countries: int
     fees: int
 
+class TenantThemeCreate(BaseModel):
+    brand_name: str = Field(..., description="The name of the deploying bank or institution.")
+    logo_url: Optional[str] = Field(None, description="URL or Base64 string of the bank's logo.")
+
+class TenantThemeResponse(TenantThemeCreate):
+    tenant_id: str
+    class Config:
+        from_attributes = True
+
+class ConfigurationModuleTask(BaseModel):
+    module_name: str = Field(..., description="The name of the Canva studio to configure.")
+    owner: str = Field(..., description="The assigned team or user.")
+    sla_days: int = Field(..., description="Target days to complete configuration.")
+    is_configured: bool = Field(False, description="Whether the module has been fully configured.")
+
+class ProductApplicationPackageCreate(BaseModel):
+    package_name: str = Field(..., description="e.g., US Payment Hub")
+    business_domain: str = Field(..., description="e.g., Payments, Treasury")
+    jurisdiction_country_code: str = Field(..., description="e.g., US, IN")
+    base_currency_code: str = Field(..., description="e.g., USD, INR")
+    description: Optional[str] = None
+    configuration_plan: List[ConfigurationModuleTask] = Field(default_factory=list)
+
+class ProductApplicationPackageResponse(ProductApplicationPackageCreate):
+    package_id: str
+    status: str
+    implementation_status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ProductApplicationPackageListResponse(BaseModel):
+    packages: List[ProductApplicationPackageResponse]
+
 class ProductMasterResponse(BaseModel):
     product_id: str
     product_name: str
@@ -293,6 +328,7 @@ class PayloadMapperBlueprintResponse(BaseModel):
     mapper_name: str
     source_format: str
     target_format: str
+    status: str
     created_at: str
     created_by: str
     mappings: List[PayloadFieldMappingResponse] = []
@@ -347,6 +383,7 @@ class ISOFieldDefinitionCreate(BaseModel):
 
 class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
     field_id: str
+    status: str
     created_at: str
     created_by: str
 
@@ -512,6 +549,7 @@ class BusinessRuleSet(BaseModel):
     business_name: str = Field(..., description="A user-friendly name for this composite rule set.")
     token_code: str = Field(..., description="A unique token code for this rule set (e.g., 'BRE-CREDIT-POLICY-V1').")
     description: Optional[str] = Field(None, description="A detailed description of the rule set's purpose.")
+    status: str = Field("DRAFT", description="Lifecycle status of the rule set.")
     triggering_event_type: Optional[str] = Field(None, description="If set, this rule set will be automatically executed when the specified event occurs.")
     rules: List[BusinessRule] = Field(..., description="The ordered list of business rules.")
 
@@ -552,6 +590,9 @@ class InsightDefinitionCreate(BaseModel):
     description: Optional[str] = Field(None, description="A detailed description of what this insight detects and why it's valuable.")
     trigger_type: str = Field(..., description="The type of trigger for this insight ('EVENT' or 'SCHEDULED').")
     trigger_config: Dict[str, Any] = Field(..., description="Configuration for the trigger (e.g., {'event_type': 'NEW_TRANSACTION'}).")
+    dashboard_category: str = Field("GLOBAL", description="The dashboard this widget appears on: GLOBAL, 360_BUSINESS, TECHNICAL.")
+    applicable_roles: Optional[List[str]] = Field(["ADMIN"], description="The user roles authorized to view this insight widget.")
+    application_package_id: Optional[str] = Field(None, description="The specific product package this insight belongs to. Null for Global.")
     analysis_steps: List[OrchestrationStep] = Field(..., description="The sequence of orchestration steps to perform for the analysis.")
 
 class InsightDefinitionResponse(InsightDefinitionCreate):
@@ -602,6 +643,7 @@ class SymbolicFormulaCreate(BaseModel):
 
 class SymbolicFormulaResponse(SymbolicFormulaCreate):
     asset_id: str
+    status: str
     created_at: str
     created_by: str
     updated_at: Optional[str] = None
@@ -827,6 +869,8 @@ class ValueListGroup(BaseModel):
 class ScreenTemplateCreate(BaseModel):
     screen_name: str = Field(..., description="A unique name for the screen template.")
     description: Optional[str] = Field(None, description="A description of the screen's purpose.")
+    screen_template_category: str = Field("Business workflow Configurations", description="Category like 'Static Data screen', 'Master Screen', 'Product', etc.")
+    application_package_id: Optional[str] = Field(None, description="The Application Package ID if scoped to a package. Null if globally scoped.")
     product_id: Optional[str] = Field(None, description="The product this screen is associated with.")
     subproduct_id: Optional[str] = Field(None, description="The subproduct this screen is associated with.")
     workflow_id: Optional[str] = Field(None, description="The workflow this screen is part of.")
@@ -964,6 +1008,7 @@ class ApiConfigurationCreate(BaseModel):
 
 class ApiConfigurationResponse(ApiConfigurationCreate):
     api_id: str
+    status: str
     created_at: str
     created_by: str
     updated_at: Optional[str] = None
@@ -1064,3 +1109,19 @@ class BehavioralProfileListResponse(BaseModel):
 class PromptToCanvasResponse(BaseModel):
     message: str
     generated_manifest: WorkflowConfigurationCreate
+
+class WireframeToScreenRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64 encoded image string of the wireframe.")
+    image_mime_type: str = Field(default="image/jpeg", description="MIME type of the uploaded image.")
+
+class WireframeToScreenResponse(BaseModel):
+    message: str
+    components: List[ScreenComponent]
+
+class TranslateFieldRequest(BaseModel):
+    business_name: str = Field(..., description="The English business name to translate.")
+    domain_category: Optional[str] = Field(None, description="The financial domain for context (e.g., 'Retail Banking').")
+
+class TranslateFieldResponse(BaseModel):
+    message: str
+    translations: Dict[str, str] = Field(..., description="A dictionary of locale codes to translated names.")

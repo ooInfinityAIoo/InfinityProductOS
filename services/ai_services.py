@@ -760,6 +760,82 @@ class AIService:
 
         raise ValueError("I can currently only generate a blueprint for the 'similar subscriptions' insight.")
 
+    def generate_screen_from_wireframe(self, db: Session, image_base64: str, mime_type: str) -> dict:
+        """
+        Uses Vision-capable LLMs to extract UI components from a wireframe image
+        and attempts to auto-map them to the ISO Field Registry.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform wireframe extraction.")
+
+        # 1. Fetch available ISO fields to provide exact mapping context to the LLM
+        fields = db.query(models.ISOFieldDefinition).limit(200).all()
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            prompt = f"""
+            You are an expert UX Developer and Business Architect. Analyze the provided wireframe/UI image.
+            Identify all form fields, inputs, dropdowns, date pickers, and labels.
+            For each field, attempt to map it to the closest fitting ISO Field from this available registry list: [{field_context}].
+            If there is no logical match, leave 'field_binding' as an empty string "".
+            
+            Return your response STRICTLY as a JSON object matching this schema:
+            {{
+                "components": [
+                    {{
+                        "component_type": "text_input" | "number_input" | "dropdown" | "date_picker" | "label",
+                        "label_token": "The display label or title found in the image",
+                        "field_binding": "The exact technical_sys_name from the registry, or empty string",
+                        "category": "USER_DEFINED",
+                        "requirement_status": "MANDATORY" | "NON_MANDATORY"
+                    }}
+                ]
+            }}
+            """
+            
+            response = client.chat.completions.create(
+                model="gpt-4o", # Ensure a vision-capable model is used
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}]}],
+                response_format={ "type": "json_object" }
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            raise ValueError(f"AI Vision extraction failed: {str(e)}")
+
+    def generate_field_translations(self, business_name: str, domain_category: Optional[str] = "General Banking") -> dict:
+        """
+        Acts as a Global Multilingual Dictionary. Translates a given English business term
+        into standard international locales using precise financial terminology.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform translation.")
+
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            prompt = f"""
+            You are an expert financial translator and localization engineer. 
+            Translate the following English banking field name into highly accurate, professional financial terminology for the requested locales.
+            
+            Field Name: "{business_name}"
+            Business Context: "{domain_category}"
+            
+            Return your response STRICTLY as a JSON object where keys are the locale codes ("es", "fr", "de", "zh", "ja", "ar") and the values are the translated strings.
+            """
+            
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={ "type": "json_object" }
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            raise ValueError(f"AI translation generation failed: {str(e)}")
+
     def run_scheduled_insights(self, db: Session) -> dict:
         """
         Finds and executes all scheduled insights that are due to run at the current time.

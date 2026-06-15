@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import uuid
 import datetime
 
@@ -41,6 +41,34 @@ def list_insight_definitions(skip: int = 0, limit: int = 100, db: Session = Depe
     """
     insights = db.query(models.InsightDefinition).order_by(models.InsightDefinition.insight_name).offset(skip).limit(limit).all()
     return insights
+
+@router.get("/widgets", response_model=List[schemas.InsightDefinitionResponse], summary="Get Role-Based Insight Widgets")
+def get_dashboard_widgets(
+    dashboard_category: str = Query(..., description="GLOBAL, 360_BUSINESS, or TECHNICAL"),
+    application_package_id: Optional[str] = Query(None, description="The ID of the product package"),
+    db: Session = Depends(get_db), 
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Retrieves all insight blueprints configured as dashboard widgets for a specific context.
+    Automatically filters the returned widgets based on the user's RBAC role (e.g., Sales vs Risk).
+    """
+    query = db.query(models.InsightDefinition).filter(models.InsightDefinition.dashboard_category == dashboard_category.upper())
+    
+    if application_package_id:
+        query = query.filter(models.InsightDefinition.application_package_id == application_package_id)
+    else:
+        query = query.filter(models.InsightDefinition.application_package_id.is_(None))
+
+    all_insights = query.all()
+    
+    allowed_widgets = []
+    for insight in all_insights:
+        roles = insight.applicable_roles or ["ADMIN"]
+        if current_user.role.value.upper() in [r.upper() for r in roles] or current_user.role.value.upper() == "ADMIN":
+            allowed_widgets.append(insight)
+            
+    return allowed_widgets
 
 @router.get("/{insight_id}", response_model=schemas.InsightDefinitionResponse, summary="Get a Specific Insight Blueprint")
 def get_insight_definition(insight_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):

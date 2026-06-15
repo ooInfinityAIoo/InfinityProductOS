@@ -26,6 +26,8 @@ def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTempl
         screen_name=db_screen.screen_name,
         description=db_screen.description,
         status=db_screen.status,
+        screen_template_category=db_screen.screen_template_category,
+        application_package_id=db_screen.application_package_id,
         product_id=db_screen.product_id,
         subproduct_id=db_screen.subproduct_id,
         workflow_id=db_screen.workflow_id,
@@ -56,6 +58,8 @@ def create_screen_template(payload: schemas.ScreenTemplateCreate, db: Session = 
         screen_id=f"SCRN-{uuid.uuid4().hex[:12].upper()}",
         screen_name=payload.screen_name,
         description=payload.description,
+        screen_template_category=payload.screen_template_category,
+        application_package_id=payload.application_package_id,
         product_id=payload.product_id,
         subproduct_id=payload.subproduct_id,
         workflow_id=payload.workflow_id,
@@ -105,6 +109,8 @@ def update_screen_template(screen_id: str, payload: schemas.ScreenTemplateCreate
     # Update scalar fields
     db_screen.screen_name = payload.screen_name
     db_screen.description = payload.description
+    db_screen.screen_template_category = payload.screen_template_category
+    db_screen.application_package_id = payload.application_package_id
     db_screen.product_id = payload.product_id
     db_screen.subproduct_id = payload.subproduct_id
     db_screen.workflow_id = payload.workflow_id

@@ -308,6 +308,69 @@ def delete_fee(fee_charge_code: str, db: Session = Depends(get_db), current_user
     db.commit()
     return
 
+# --- Global Tenant Theme & Branding ---
+
+@router.get("/theme", response_model=schemas.TenantThemeResponse, summary="Get Global Branding Theme")
+def get_tenant_theme(db: Session = Depends(get_db)):
+    """Fetches the global UX white-label configuration."""
+    theme = db.query(models.TenantThemeConfiguration).filter(models.TenantThemeConfiguration.tenant_id == "DEFAULT").first()
+    if not theme:
+        # Auto-initialize default theme if it doesn't exist
+        theme = models.TenantThemeConfiguration(tenant_id="DEFAULT")
+        db.add(theme)
+        db.commit()
+        db.refresh(theme)
+    return theme
+
+@router.put("/theme", response_model=schemas.TenantThemeResponse, summary="Update Global Branding Theme")
+def update_tenant_theme(payload: schemas.TenantThemeCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """Updates the global UX white-label configuration for the platform."""
+    theme = db.query(models.TenantThemeConfiguration).filter(models.TenantThemeConfiguration.tenant_id == "DEFAULT").first()
+    if not theme:
+        theme = models.TenantThemeConfiguration(tenant_id="DEFAULT")
+        db.add(theme)
+
+    theme.brand_name = payload.brand_name
+    theme.logo_url = payload.logo_url
+    
+    db.commit()
+    db.refresh(theme)
+    return theme
+
+# --- Product Application Packages ---
+
+@router.post("/packages", response_model=schemas.ProductApplicationPackageResponse, status_code=status.HTTP_201_CREATED, summary="Initialize a Product Package")
+def create_product_package(payload: schemas.ProductApplicationPackageCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_package = models.ProductApplicationPackage(
+        package_id=f"PKG-{uuid.uuid4().hex[:8].upper()}",
+        created_at=datetime.datetime.utcnow().isoformat(),
+        implementation_status="IN_PROGRESS",
+        **payload.dict()
+    )
+    db.add(db_package)
+    db.commit()
+    db.refresh(db_package)
+    return db_package
+
+@router.get("/packages", response_model=schemas.ProductApplicationPackageListResponse, summary="List Product Packages")
+def list_product_packages(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    packages = db.query(models.ProductApplicationPackage).order_by(models.ProductApplicationPackage.created_at.desc()).offset(skip).limit(limit).all()
+    return {"packages": packages}
+
+@router.put("/packages/{package_id}/cancel", response_model=schemas.ProductApplicationPackageResponse, summary="Cancel an In-Progress Product Package")
+def cancel_product_package(package_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_package = db.query(models.ProductApplicationPackage).filter(models.ProductApplicationPackage.package_id == package_id).first()
+    if not db_package:
+        raise HTTPException(status_code=404, detail="Package not found")
+    if db_package.implementation_status != "IN_PROGRESS":
+        raise HTTPException(status_code=400, detail="Only IN_PROGRESS packages can be cancelled.")
+    
+    db_package.implementation_status = "CANCELLED"
+    db_package.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(db_package)
+    return db_package
+
 # --- Product and Subproduct Masters for Screen Designer ---
 
 @router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List All Products")

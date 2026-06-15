@@ -117,6 +117,7 @@ class ISOFieldDefinition(Base):
     domain_category = Column(String, nullable=False, index=True)  # e.g., HELOC, PAYMENTS, TREASURY
     subdomain_category = Column(String, nullable=True, index=True)  # e.g., FIGRE, RTGS, CLEARING
     description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, PENDING_APPROVAL, ACTIVE, DELETED
     is_mandatory = Column(Boolean, default=False)
     is_pii = Column(Boolean, default=False, nullable=False, index=True)
     masking_strategy = Column(String, nullable=True) # e.g., REDACT_ALL, SHOW_LAST_4, EMAIL
@@ -212,6 +213,7 @@ class WorkflowConfiguration(Base):
     product_context = Column(String, nullable=False)  # e.g., ICICI Bank Payments Hub
     sub_product = Column(String, nullable=True)
     version = Column(String, default="1.0.0")
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     is_active = Column(Boolean, default=True)
     description = Column(Text, nullable=True)
     
@@ -259,6 +261,7 @@ class SymbolicFormulaAsset(Base):
     target_output_field = Column(String, nullable=False) # e.g., interest_rate_margin
     mathematical_expression = Column(Text, nullable=False)
     parameters = Column(JSONB, nullable=True) # For static coefficients, e.g., {"alpha": 0.5, "beta_1": 1.2}
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
@@ -274,6 +277,7 @@ class CompositeFormulaBlueprint(Base):
     composite_id = Column(String, primary_key=True, index=True)
     business_name = Column(String, nullable=False, unique=True, index=True)
     token_code = Column(String, unique=True, nullable=False, index=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, nullable=False)
@@ -303,6 +307,7 @@ class BusinessRuleSet(Base):
     business_name = Column(String, nullable=False, unique=True, index=True)
     token_code = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     definition = Column(JSONB, nullable=False) # The full JSON definition of the rule set, including conditions and actions.
     created_at = Column(String, nullable=False)
     created_by = Column(String, nullable=False)
@@ -317,8 +322,12 @@ class InsightDefinition(Base):
     insight_name = Column(String, nullable=False, unique=True, index=True)
     insight_code = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     trigger_type = Column(String, nullable=False, index=True) # e.g., EVENT, SCHEDULED
     trigger_config = Column(JSONB, nullable=False) # e.g., {"event_type": "NEW_TRANSACTION"} or {"cron": "0 0 * * 0"}
+    dashboard_category = Column(String, nullable=False, default="GLOBAL", index=True) # GLOBAL, 360_BUSINESS, TECHNICAL
+    applicable_roles = Column(JSONB, nullable=True) # Array of roles: ["SALES", "RISK", "C_LEVEL"]
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
     analysis_steps = Column(JSONB, nullable=False) # A list of OrchestrationStep objects
     created_at = Column(String, nullable=False)
     created_by = Column(String, nullable=False)
@@ -405,15 +414,36 @@ class FeeConfiguration(Base):
     updated_at = Column(String, nullable=True)
     updated_by = Column(String, nullable=True)
 
+class ProductApplicationPackage(Base):
+    """
+    Level 1: The Top-Level Application Package (e.g., "Payment Hub", "Supply Chain Finance").
+    Holds the global jurisdiction and currency configuration for the deployment.
+    """
+    __tablename__ = "master_product_application_packages"
+    package_id = Column(String, primary_key=True, index=True)
+    package_name = Column(String, nullable=False, unique=True, index=True) 
+    business_domain = Column(String, nullable=False) # e.g., Payments, Treasury
+    jurisdiction_country_code = Column(String, nullable=False) # e.g., US, IN
+    base_currency_code = Column(String, nullable=False) # e.g., USD, INR
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    implementation_status = Column(String, nullable=False, default="NOT_STARTED", index=True) # NOT_STARTED, IN_PROGRESS, COMPLETED, CANCELLED
+    configuration_plan = Column(JSONB, nullable=True) # Array of modules, SLAs, and Owners
+    description = Column(Text, nullable=True)
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+
 class ProductMaster(Base):
+    """Level 2: The Core Product (e.g., "FEDWIRE", "CHIPS", "SWIFT")"""
     __tablename__ = "product_master"
     product_id = Column(String, primary_key=True, index=True)
-    product_name = Column(String, nullable=False, unique=True)
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=False, index=True)
+    product_name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
 
 class SubproductMaster(Base):
+    """Level 3: Product Variations (e.g., "FEDWIRE-B2B")"""
     __tablename__ = "subproduct_master"
     subproduct_id = Column(String, primary_key=True, index=True)
     subproduct_name = Column(String, nullable=False)
@@ -435,6 +465,7 @@ class PayloadMapperBlueprint(Base):
     mapper_name = Column(String, nullable=False)
     source_format = Column(String, nullable=False)  # SWIFT_MT, JSON, XML, FIX
     target_format = Column(String, default="ISO_20022_DICTIONARY")
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="API_USER")
     
@@ -516,7 +547,16 @@ class ScreenTemplate(Base):
     screen_id = Column(String, primary_key=True, index=True)
     screen_name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, IN_PROGRESS, PUBLISHED
+    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, PENDING_APPROVAL, ACTIVE, DELETED
+    
+    # GAP 4: The specific category of the screen UI
+    screen_template_category = Column(String, nullable=False, default="Business workflow Configurations", index=True) 
+    
+    # GAP 3 & 4: Hierarchical Scoping (If application_package_id is NULL, the screen is Global)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, nullable=True, index=True)
+    subproduct_id = Column(String, nullable=True, index=True)
+    workflow_id = Column(String, nullable=True)
     workflow_step_id = Column(String, nullable=True, index=True) # Aligned with payload
     definition = Column(JSONB, nullable=False) # The JSON definition of the screen layout and components
     created_at = Column(String, nullable=False)
@@ -560,6 +600,7 @@ class ApiConfiguration(Base):
     circuit_breaker_timeout_sec = Column(Integer, default=60, nullable=False) # Cooldown before half-open state
     
     description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
     updated_at = Column(String, nullable=True)
