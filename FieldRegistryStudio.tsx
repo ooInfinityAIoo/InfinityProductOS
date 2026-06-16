@@ -6,6 +6,7 @@ export const FieldRegistryStudio: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [localizedNames, setLocalizedNames] = useState<any>(null);
 
   // --- DYNAMIC API BINDINGS ---
   
@@ -18,6 +19,20 @@ export const FieldRegistryStudio: React.FC = () => {
       // Instantly refresh the table cache so the new row appears seamlessly!
       queryClient.invalidateQueries({ queryKey: ['fields'] });
       setIsDrawerOpen(false);
+      setLocalizedNames(null);
+    }
+  });
+
+  const translateMutation = useMutation({
+    mutationFn: async (payload: { business_name: string, domain_category: string }) => {
+      const res = await apiClient.post('/assistant/translate-field', payload);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setLocalizedNames(data.translations);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.detail || "Failed to translate.");
     }
   });
   
@@ -44,8 +59,24 @@ export const FieldRegistryStudio: React.FC = () => {
       domain_category: formData.get('domain_category'),
       data_type: formData.get('data_type'),
       is_pii: formData.get('is_pii') === 'on',
+      localized_names: localizedNames,
     };
     createFieldMutation.mutate(payload);
+  };
+
+  const handleAutoTranslate = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const form = (e.target as HTMLButtonElement).closest('form');
+    if (form) {
+      const formData = new FormData(form);
+      const bName = formData.get('preferred_business_name') as string;
+      const dCat = formData.get('domain_category') as string;
+      if (bName) {
+        translateMutation.mutate({ business_name: bName, domain_category: dCat || 'General Banking' });
+      } else {
+        alert("Please enter a Preferred Business Name first.");
+      }
+    }
   };
 
   return (
@@ -141,7 +172,7 @@ export const FieldRegistryStudio: React.FC = () => {
         <div className="absolute top-0 right-0 w-[450px] h-full bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-in-right">
           <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50">
             <h2 className="text-[15px] font-extrabold text-slate-800 tracking-tight">Register New ISO Field</h2>
-            <button onClick={() => setIsDrawerOpen(false)} className="text-slate-400 hover:text-slate-700 transition-colors">
+            <button onClick={() => { setIsDrawerOpen(false); setLocalizedNames(null); }} className="text-slate-400 hover:text-slate-700 transition-colors">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
           </div>
@@ -153,7 +184,12 @@ export const FieldRegistryStudio: React.FC = () => {
                 <input name="technical_sys_name" required placeholder="e.g., of_fintax_bal_01" className="w-full text-[13px] font-mono text-[#0176D3] border border-slate-300 rounded p-2.5 focus:border-[#0176D3] focus:ring-1 focus:ring-[#0176D3] outline-none" />
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Preferred Business Name</label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Preferred Business Name</label>
+                  <button onClick={handleAutoTranslate} disabled={translateMutation.isPending} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 disabled:opacity-50">
+                    {translateMutation.isPending ? 'Translating...' : '✨ Auto-Translate'}
+                  </button>
+                </div>
                 <input name="preferred_business_name" required placeholder="e.g., Principal Amount" className="w-full text-[13px] font-semibold text-slate-900 border border-slate-300 rounded p-2.5 focus:border-[#0176D3] focus:ring-1 focus:ring-[#0176D3] outline-none" />
               </div>
               <div>
@@ -176,6 +212,19 @@ export const FieldRegistryStudio: React.FC = () => {
                   </select>
                 </div>
               </div>
+              {localizedNames && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded p-4 shadow-sm animate-fade-in">
+                  <h3 className="text-[11px] font-extrabold text-indigo-800 uppercase tracking-wider mb-3">✨ AI Generated Localizations</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(localizedNames).map(([locale, translation]) => (
+                      <div key={locale}>
+                        <div className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider">{locale}</div>
+                        <div className="text-[12px] font-semibold text-indigo-900">{String(translation)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2 pt-2">
                 <input type="checkbox" name="is_pii" id="is_pii" className="w-4 h-4 text-[#0176D3] border-slate-300 rounded focus:ring-[#0176D3]" />
                 <label htmlFor="is_pii" className="text-[12px] font-bold text-slate-700">Contains PII (Personally Identifiable Information)</label>
@@ -183,7 +232,7 @@ export const FieldRegistryStudio: React.FC = () => {
             </div>
             
             <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-              <button type="button" onClick={() => setIsDrawerOpen(false)} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors">Cancel</button>
+              <button type="button" onClick={() => { setIsDrawerOpen(false); setLocalizedNames(null); }} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors">Cancel</button>
               <button type="submit" disabled={createFieldMutation.isPending} className="px-5 py-2.5 text-[13px] font-bold text-white bg-[#0176D3] rounded hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">{createFieldMutation.isPending ? 'Saving...' : 'Register Field'}</button>
             </div>
           </form>

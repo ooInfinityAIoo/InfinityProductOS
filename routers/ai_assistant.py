@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from typing import Dict, Any
@@ -97,6 +97,26 @@ def generate_screen_from_wireframe(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during vision extraction: {str(e)}")
 
+@router.post("/auto-map-file", response_model=schemas.AutoMapFileResponse, summary="Auto-map File to ISO Registry")
+async def auto_map_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Accepts a structured file (CSV, Excel) and uses AI to automatically infer the schema
+    and map its columns to the ISO Field Registry.
+    """
+    ai_service = AIService()
+    try:
+        file_bytes = await file.read()
+        result = ai_service.auto_map_file(db=db, file_bytes=file_bytes, filename=file.filename)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during auto-mapping: {str(e)}")
+
 @router.post("/translate-field", response_model=schemas.TranslateFieldResponse, summary="Generate Multilingual Financial Translations")
 def generate_field_translations(
     payload: schemas.TranslateFieldRequest,
@@ -115,3 +135,41 @@ def generate_field_translations(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during translation: {str(e)}")
+
+@router.post("/prompt-to-report", response_model=schemas.PromptToReportResponse, summary="Generate a Report Blueprint from a Natural Language Prompt")
+def generate_report_from_prompt(
+    payload: schemas.AICommandRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Accepts a natural language prompt and uses the AI Assistant to generate a complete
+    JSON blueprint for a new Report Dashboard, mapping fields to the ISO Registry.
+    """
+    ai_service = AIService()
+    try:
+        result = ai_service.generate_report_from_prompt(db=db, prompt=payload.prompt, current_user=current_user)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during report generation: {str(e)}")
+
+@router.post("/image-to-report", response_model=schemas.ImageToReportResponse, summary="Extract Report Layout from Image")
+def generate_report_from_image_route(
+    payload: schemas.ImageToReportRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Accepts a base64 encoded image of a report mockup or PDF screenshot.
+    Uses Vision AI to extract charts/metrics and auto-map them to the ISO Field Registry.
+    """
+    ai_service = AIService()
+    try:
+        result = ai_service.generate_report_from_image(db=db, image_base64=payload.image_base64, mime_type=payload.image_mime_type, current_user=current_user)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred during vision extraction: {str(e)}")

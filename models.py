@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float
+from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -40,41 +40,57 @@ class EvidencePacketRegistry(Base):
     blockchain_tx_hash = Column(String, nullable=True)
     variance_metric_logged = Column(Text, nullable=True)
     execution_status = Column(String, nullable=False, index=True)
-    created_at = Column(String, nullable=False, index=True)
+    created_at = Column(String, primary_key=True, nullable=False, index=True)
     updated_at = Column(String, nullable=True)
 
-    # Relationship to comments
-    comments = relationship("GovernanceTaskComment", back_populates="task", cascade="all, delete-orphan", lazy="joined")
+    __table_args__ = {
+        'postgresql_partition_by': 'RANGE (created_at)'
+    }
 
-# --- TRACKING CORES MATCHING SCREENSHOTS 00001 - 00005 ---
+    # Relationship to comments
+    comments = relationship("GovernanceTaskComment", primaryjoin="EvidencePacketRegistry.packet_id == GovernanceTaskComment.task_id", foreign_keys="[GovernanceTaskComment.task_id]", back_populates="task", cascade="all, delete-orphan", lazy="joined")
+
+# --- STEP A & B: FILE TEMPLATE DESIGNER (Layout & Extraction) ---
 class TemplateDesignerModel(Base):
     """
-    Captures Master Template Config (Screenshot 00005)
+    Defines the physical layout or AI extraction strategy for an Upload or Download file.
     """
     __tablename__ = "template_designer_blueprints"
 
     template_id = Column(String, primary_key=True, index=True)
     template_name = Column(String, nullable=False)
     template_type = Column(String, nullable=False)  # UPLOAD vs DOWNLOAD
-    product = Column(String, nullable=False)         # e.g., HELOC
-    sub_product = Column(String, nullable=True)      # e.g., FIGRE
     file_type = Column(String, nullable=False)        # XLSX, PDF, CSV, JPEG, XLS, XML
+    
+    # Extraction Strategy
+    extraction_mode = Column(String, default="STRUCTURED") # STRUCTURED vs AGENTIC_PROMPT
+    
+    # Structured File Properties
     is_multi_sheet = Column(Boolean, default=False)
     file_has_header_footer = Column(String, default="NONE") # HEADER, FOOTER, BOTH, NONE
     text_file_type = Column(String, nullable=True)   # DELIMITER vs FIXED_LENGTH
     delimiter_record_separator = Column(String, default=",")
+    
+    # Metadata
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+
+    fields = relationship("TemplateFieldAddressModel", back_populates="template", cascade="all, delete-orphan", lazy="joined")
 
 class TemplateFieldAddressModel(Base):
     """
-    Captures Field Address Mapping & Validations (Screenshots 00001, 00002, 00004)
+    Defines how to locate a specific data point in the file, or the AI Prompt used to extract it.
     """
     __tablename__ = "template_field_addresses"
 
     address_id = Column(String, primary_key=True, index=True)
-    template_id = Column(String, ForeignKey("template_designer_blueprints.template_id"), nullable=False)
-    source_file_field_name = Column(String, nullable=False)  # e.g., Principal
-    target_iso_field_name = Column(String, nullable=False)   # Linked Bloodstream Variable
-    reading_mode = Column(String, default="COLUMN")          # COLUMN, CELL, HYBRID
+    template_id = Column(String, ForeignKey("template_designer_blueprints.template_id", ondelete="CASCADE"), nullable=False)
+    
+    # The Extracted Key Name (Output to intermediate JSON)
+    extracted_field_name = Column(String, nullable=False)  
+    
+    reading_mode = Column(String, default="COLUMN")          # COLUMN, CELL, PROMPT
     
     # Structural File Addresses
     sheet_name = Column(String, nullable=True)
@@ -82,7 +98,7 @@ class TemplateFieldAddressModel(Base):
     start_row = Column(Integer, default=0)
     stop_row = Column(Integer, default=0)
     column_sequence_no = Column(Integer, default=0)
-    cell_address = Column(String, nullable=True)
+    cell_address_or_prompt = Column(String, nullable=True) # e.g., 'B2' or 'Extract the net income amount'
     
     # Fixed Length Properties & Padding (Screenshot 00001)
     fixed_length_start = Column(Integer, default=0)
@@ -100,6 +116,8 @@ class TemplateFieldAddressModel(Base):
     is_amount_decimal = Column(Boolean, default=False)
     decimal_places_precision = Column(Integer, default=2)
     currency_code = Column(String, default="USD")
+    
+    template = relationship("TemplateDesignerModel", back_populates="fields")
 
 # --- LAYER 3: ISO BUSINESS FIELD REGISTRY (SEMANTIC BLOODSTREAM) ---
 class ISOFieldDefinition(Base):
@@ -135,13 +153,13 @@ class GovernanceTaskComment(Base):
     __tablename__ = "governance_task_comments"
 
     comment_id = Column(String, primary_key=True, index=True)
-    task_id = Column(String, ForeignKey("evidence_packet_registry.packet_id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(String, nullable=False, index=True) # Removed strict DB-level FK to allow Evidence table partitioning
     author = Column(String, nullable=False)
     comment = Column(Text, nullable=False)
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
 
-    task = relationship("EvidencePacketRegistry", back_populates="comments")
+    task = relationship("EvidencePacketRegistry", primaryjoin="GovernanceTaskComment.task_id == EvidencePacketRegistry.packet_id", foreign_keys="[GovernanceTaskComment.task_id]", back_populates="comments")
 
 # --- LAYER 1: WORKFLOW DEFINITION PERSISTENCE ---
 class WorkflowNode(Base):
@@ -162,6 +180,7 @@ class WorkflowNode(Base):
     # Node Configuration
     orchestration_steps = Column(JSONB, nullable=True) # A list of OrchestrationStep objects
     events_broadcast = Column(JSONB, nullable=True)  # JSON array of event types
+    required_documents = Column(JSONB, nullable=True) # Array of required document/file types
     
     # SLA Configuration
     sla_days = Column(Integer, default=1)
@@ -214,10 +233,17 @@ class WorkflowConfiguration(Base):
     sub_product = Column(String, nullable=True)
     version = Column(String, default="1.0.0")
     status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     description = Column(Text, nullable=True)
     
     # Embedded configuration as JSON
+    # --- GAP 3: Sub-Workflow Data Scope Contracts ---
+    input_schema = Column(JSONB, nullable=True)  # Array of ISO field keys allowed IN
+    output_schema = Column(JSONB, nullable=True) # Array of ISO field keys allowed OUT
+    
     formulas_defined = Column(JSONB, nullable=True)  # JSON array of formula objects
     
     # Metadata
@@ -246,6 +272,25 @@ class WorkflowVersion(Base):
     workflow = relationship("WorkflowConfiguration")
 
 
+class WorkflowExecutionInstance(Base):
+    """
+    Layer 1/4: Tracks live, long-running workflow instances that are paused
+    (e.g., waiting for HUMAN_APPROVAL).
+    """
+    __tablename__ = "workflow_execution_instances"
+
+    instance_id = Column(String, primary_key=True, index=True)
+    workflow_id = Column(String, ForeignKey("workflow_configurations.workflow_id"), nullable=False, index=True)
+    parent_instance_id = Column(String, ForeignKey("workflow_execution_instances.instance_id"), nullable=True, index=True) # Enables nested Sub-Workflows
+    master_transaction_id = Column(String, nullable=True, index=True) # Ties infinite nested loops back to one origin
+    current_node_id = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="PAUSED", index=True) # PAUSED, COMPLETED, FAILED
+    current_context = Column(JSONB, nullable=False)
+    execution_trace = Column(JSONB, nullable=True)
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+
+
 # --- LAYER 4: SYMBOLIC CALCULATION ENGINE ---
 class SymbolicFormulaAsset(Base):
     """
@@ -262,6 +307,9 @@ class SymbolicFormulaAsset(Base):
     mathematical_expression = Column(Text, nullable=False)
     parameters = Column(JSONB, nullable=True) # For static coefficients, e.g., {"alpha": 0.5, "beta_1": 1.2}
     status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
@@ -308,6 +356,9 @@ class BusinessRuleSet(Base):
     token_code = Column(String, unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     definition = Column(JSONB, nullable=False) # The full JSON definition of the rule set, including conditions and actions.
     created_at = Column(String, nullable=False)
     created_by = Column(String, nullable=False)
@@ -332,6 +383,76 @@ class InsightDefinition(Base):
     created_at = Column(String, nullable=False)
     created_by = Column(String, nullable=False)
 
+class ReportBlueprint(Base):
+    """
+    Defines a visual reporting dashboard or a headless BI dataset.
+    Supports both Native React widgets and embedded Third-Party BI (Power BI/Cognos).
+    """
+    __tablename__ = "report_blueprints"
+    
+    report_id = Column(String, primary_key=True, index=True)
+    report_name = Column(String, nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    is_third_party_embedded = Column(Boolean, default=False)
+    third_party_embed_url = Column(String, nullable=True) # Used if embedded Power BI
+    expose_as_headless_api = Column(Boolean, default=False) # Exposes the dataset for external BI ingestion
+    widgets = Column(JSONB, nullable=False) # Array of chart definitions, data bindings, and layout grid coordinates
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+
+class ReconciliationTemplate(Base):
+    """
+    Defines the logic blueprint for universal data comparison (Reconciliation Engine Canva).
+    """
+    __tablename__ = "reconciliation_templates"
+
+    reconciliation_template_id = Column(String, primary_key=True, index=True)
+    reconciliation_name = Column(String, nullable=False, unique=True, index=True)
+    reconciliation_category = Column(String, nullable=False, index=True) # e.g., NOSTRO_VOSTRO, SYSTEM_TO_SYSTEM
+    source_dataset_name = Column(String, nullable=False)
+    target_dataset_name = Column(String, nullable=False)
+    matching_rules = Column(JSONB, nullable=False) # List of match criteria, tolerances, linked rules/calcs
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    description = Column(Text, nullable=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+
+class DocumentMaster(Base):
+    """
+    Layer 5: Common Core Masters.
+    Defines standardized document types required for workflow orchestration convergence.
+    """
+    __tablename__ = "document_master"
+    document_id = Column(String, primary_key=True, index=True)
+    document_name = Column(String, nullable=False, unique=True, index=True) # e.g., "Signed Tax Return"
+    document_format = Column(String, nullable=False, default="ANY") # e.g., "PDF", "CSV", "EXCEL", "ANY"
+    description = Column(Text, nullable=True)
+    extraction_template_id = Column(String, ForeignKey("template_designer_blueprints.template_id"), nullable=True) # The Layout Template used to read the file
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+
+class ReconciliationExecutionJob(Base):
+    """
+    Tracks the asynchronous execution state of a massive reconciliation job.
+    Provides checkpointing for resumability across distributed Celery workers.
+    """
+    __tablename__ = "reconciliation_execution_jobs"
+    job_id = Column(String, primary_key=True, index=True)
+    template_id = Column(String, ForeignKey("reconciliation_templates.reconciliation_template_id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="PENDING", index=True) # PENDING, PROCESSING, COMPLETED, FAILED
+    total_records = Column(Integer, nullable=True)
+    processed_records = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(String, nullable=False)
+    completed_at = Column(String, nullable=True)
+
 class DomainApiContract(Base):
     """
     Defines a domain-driven API contract blueprint, designed in the API Designer Studio.
@@ -350,69 +471,30 @@ class DomainApiContract(Base):
     updated_by = Column(String, nullable=True)
 
 # --- LAYER 5: COMMON CORE MASTERS ---
-class OperationalCalendar(Base):
-    __tablename__ = "master_calendar"
-    calendar_id = Column(String, primary_key=True, index=True)
-    calendar_type = Column(String, nullable=False)
-    calendar_year = Column(Integer, nullable=False)
-    weekly_holiday_mask = Column(String, nullable=False)
-    financial_year_start_date = Column(String, nullable=False)
-    financial_year_end_date = Column(String, nullable=False)
-    calendar_description = Column(String, nullable=True)
-    is_active_flag = Column(Boolean, default=True)
-    created_at = Column(String, nullable=False)
-    created_by = Column(String, default="SYSTEM")
-    updated_at = Column(String, nullable=True)
-    updated_by = Column(String, nullable=True)
-
-class AccountProfile(Base):
-    __tablename__ = "master_account_profile"
-    account_number = Column(String, primary_key=True, index=True)
-    account_name_title = Column(String, nullable=False)
-    currency_code = Column(String, nullable=False)
-    clearing_system_member_id = Column(String, nullable=False)
-    data_residency_region = Column(String, nullable=False, index=True) # ISO 3166-1 alpha-2 code
-    branch_location_name = Column(String, nullable=True)
-    is_frozen_flag = Column(Boolean, default=False)
+class DynamicMasterRecord(Base):
+    """
+    Dynamic configuration store for any Master data screen built in the UI.
+    Replaces hardcoded tables (Currencies, Accounts, etc.) with pure JSONB.
+    """
+    __tablename__ = "dynamic_master_records"
+    record_id = Column(String, primary_key=True, index=True)
+    screen_id = Column(String, ForeignKey("screen_templates.screen_id"), nullable=False, index=True)
+    record_data = Column(JSONB, nullable=False)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
     updated_at = Column(String, nullable=True)
     updated_by = Column(String, nullable=True)
     
-    # --- OPTIMISTIC CONCURRENCY CONTROL (OCC) ---
-    # Protects against lost updates when concurrent users edit the same profile.
-    version_id = Column(Integer, nullable=False, default=1)
+    __table_args__ = (
+        Index("ix_dynamic_master_records_data_gin", "record_data", postgresql_using="gin"),
+    )
 
+    # --- OPTIMISTIC CONCURRENCY CONTROL (OCC) ---
+    version_id = Column(Integer, nullable=False, default=1)
     __mapper_args__ = {
         "version_id_col": version_id
     }
-
-class CountryJurisdiction(Base):
-    __tablename__ = "master_country_jurisdiction"
-    country_iso_code = Column(String, primary_key=True, index=True)
-    country_name_text = Column(String, nullable=False)
-    region_continent_name = Column(String, nullable=False)
-    check_digit_type_code = Column(String, nullable=True)
-    target_central_bank_routing_code = Column(String, nullable=True)
-    iban_mandatory_flag = Column(Boolean, default=False)
-    created_at = Column(String, nullable=False)
-    created_by = Column(String, default="SYSTEM")
-    updated_at = Column(String, nullable=True)
-    updated_by = Column(String, nullable=True)
-
-class FeeConfiguration(Base):
-    __tablename__ = "master_fee_configuration"
-    fee_charge_code = Column(String, primary_key=True, index=True)
-    fee_type_name = Column(String, nullable=False)
-    effective_start_date = Column(String, nullable=False)
-    effective_end_date = Column(String, nullable=False)
-    fee_amount_value = Column(Float, nullable=False)
-    fee_category_name = Column(String, nullable=True)
-    is_active_flag = Column(Boolean, default=True)
-    created_at = Column(String, nullable=False)
-    created_by = Column(String, default="SYSTEM")
-    updated_at = Column(String, nullable=True)
-    updated_by = Column(String, nullable=True)
 
 class ProductApplicationPackage(Base):
     """
@@ -455,32 +537,38 @@ class SubproductMaster(Base):
     product = relationship("ProductMaster")
 
 
-# --- LAYER 4: DYNAMIC PAYLOAD TRANSFORMATION MAPPERS ---
+# --- STEP C: TRANSFORMATION MAPPING DESIGNER ---
 class PayloadMapperBlueprint(Base):
     """
-    GUI-configured mapping canvas blueprint (e.g., SWIFT MT103 to ISO20022 Pacs.008)
+    Maps extracted Template JSON to Downstream/DB formats, invoking Rules & Math.
     """
     __tablename__ = "payload_mapper_blueprints"
     mapper_id = Column(String, primary_key=True, index=True)
     mapper_name = Column(String, nullable=False)
-    source_format = Column(String, nullable=False)  # SWIFT_MT, JSON, XML, FIX
+    source_template_id = Column(String, ForeignKey("template_designer_blueprints.template_id"), nullable=True) # Links to Layout
     target_format = Column(String, default="ISO_20022_DICTIONARY")
+    
+    # --- GAP 2: Outbound Data Support ---
+    mapping_direction = Column(String, default="INBOUND") # INBOUND (Read to ISO) vs OUTBOUND (ISO to Write)
     status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="API_USER")
+    file_control_totals = Column(JSONB, nullable=True) # E.g., [{"sum_field": "amount", "target_cell_field": "summary_total"}]
     
     # Relationship to automatically load all field mappings associated with this blueprint.
     mappings = relationship("PayloadFieldMapping", back_populates="blueprint", cascade="all, delete-orphan", lazy="joined")
 
 class PayloadFieldMapping(Base):
     """
-    Individual GUI canvas links connecting source payload paths to the target ISO registry,
-    along with conditional hooks to the Rules Engine and Calculation Engine.
+    Translates an extracted field into the target system field, applying math/rules.
     """
     __tablename__ = "payload_field_mappings"
     mapping_id = Column(String, primary_key=True, index=True)
     mapper_id = Column(String, ForeignKey("payload_mapper_blueprints.mapper_id", ondelete="CASCADE"), nullable=False)
-    source_path = Column(String, nullable=False)        # e.g., 'Block4.Tag32A' or '$.transaction.amount'
+    source_extracted_field = Column(String, nullable=False) # e.g., 'net_income' from Template
     target_iso_field = Column(String, nullable=False)   # e.g., 'of_fintax_bal_01'
     
     # GUI Canvas Linked Hooks
@@ -601,6 +689,9 @@ class ApiConfiguration(Base):
     
     description = Column(Text, nullable=True)
     status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
     updated_at = Column(String, nullable=True)
@@ -619,7 +710,11 @@ class UserInteractionEvent(Base):
     event_type = Column(String, nullable=False, index=True) # e.g., SCREEN_VIEW, BUTTON_CLICK, FIELD_UPDATE
     target_component_id = Column(String, nullable=True) # e.g., the ID of a button or input field
     payload = Column(JSONB, nullable=True) # Rich context, e.g., {"field_value": "new text", "screen_name": "Login"}
-    timestamp = Column(String, nullable=False, index=True)
+    timestamp = Column(String, primary_key=True, nullable=False, index=True)
+
+    __table_args__ = {
+        'postgresql_partition_by': 'RANGE (timestamp)'
+    }
 
 class CustomerBehavioralProfile(Base):
     """
@@ -636,6 +731,21 @@ class CustomerBehavioralProfile(Base):
     net_worth_estimate = Column(Float, nullable=True)
     last_calculated_at = Column(String, nullable=False)
     profile_version = Column(Integer, default=1)
+
+class BehavioralProfileUpdateJob(Base):
+    """
+    Layer 8: Fault Tolerance.
+    Tracks the asynchronous execution state of Behavioral AI profile updates.
+    Provides checkpointing for resumability across massive datasets.
+    """
+    __tablename__ = "behavioral_profile_update_jobs"
+    job_id = Column(String, primary_key=True, index=True)
+    status = Column(String, nullable=False, default="PENDING", index=True) # PENDING, PROCESSING, COMPLETED, FAILED
+    total_users = Column(Integer, nullable=True)
+    processed_users = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(String, nullable=False)
+    completed_at = Column(String, nullable=True)
 
 class TransactionalOutboxEvent(Base):
     """

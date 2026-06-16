@@ -45,7 +45,7 @@ export const WorkflowCanvas: React.FC = () => {
         id: n.node_id,
         type: 'customBankingNode',
         position: { x: n.canvas_x_position || Math.random() * 300, y: n.canvas_y_position || Math.random() * 300 },
-        data: { id: n.node_code, seq: n.sequence_number, title: n.node_title, slaDays: n.sla_days || 1 }
+        data: { id: n.node_code, seq: n.sequence_number, title: n.node_title, slaDays: n.sla_days || 1, orchestration_steps: n.orchestration_steps, screen_template: n.screen_template, required_documents: n.required_documents }
       }));
 
       const mappedEdges: Edge[] = (activeWorkflow.edges || []).map((e: any) => ({

@@ -9,6 +9,11 @@ import asyncio
 import os
 import json
 from openai import OpenAI
+import base64
+import fitz
+import csv
+import io
+import openpyxl
 
 import models
 import schemas
@@ -661,62 +666,103 @@ class AIService:
         # If no intent is matched
         raise ValueError("I'm sorry, I didn't understand that command. I can currently add currencies (e.g., 'add JPY currency').")
 
-    def _update_all_behavioral_profiles(self, db: Session) -> dict:
-        """
-        Analyzes all user interaction events to build or update customer behavioral profiles.
-        This is the core logic for the scheduled background job.
-        """
-        from itertools import groupby
-
-        all_interactions = db.query(models.UserInteractionEvent).order_by(models.UserInteractionEvent.user_id, models.UserInteractionEvent.timestamp).all()
-
-        updated_profiles_count = 0
-        
-        for user_id, interactions_group in groupby(all_interactions, key=lambda x: x.user_id):
-            interactions = list(interactions_group)
-            
-            # --- Calculate Ranked Journeys (by counting target components) ---
-            journey_counts = Counter(e.target_component_id for e in interactions if e.target_component_id)
-            ranked_journeys = [{"journey_id": j, "interaction_count": c} for j, c in journey_counts.most_common(5)]
-
-            # --- Calculate Common Devices (from payload) ---
-            device_fingerprints = [e.payload.get("device_fingerprint") for e in interactions if e.payload and e.payload.get("device_fingerprint")]
-            common_devices = [{"fingerprint": d, "count": c} for d, c in Counter(device_fingerprints).most_common(3)]
-
-            # --- Calculate Typical Locations (from payload) ---
-            locations = [e.payload.get("geo_location") for e in interactions if e.payload and e.payload.get("geo_location")]
-            typical_locations = [{"location": loc, "count": c} for loc, c in Counter(locations).most_common(3)]
-
-            # --- Create or Update the Profile ---
-            profile_data = {
-                "user_id": user_id,
-                "ranked_journeys": ranked_journeys,
-                "common_devices": common_devices,
-                "typical_locations": typical_locations,
-                "last_calculated_at": datetime.datetime.utcnow().isoformat(),
-            }
-            
-            # Use merge to either insert a new profile or update an existing one
-            new_profile = models.CustomerBehavioralProfile(**profile_data)
-            db.merge(new_profile)
-            updated_profiles_count += 1
-
-        db.commit()
-        return {"profiles_updated": updated_profiles_count, "total_interactions_analyzed": len(all_interactions)}
-
     def run_and_log_behavioral_profile_update(self, db: Session, triggered_by: str) -> dict:
         """
         A wrapper function for the scheduler that executes the profile update and logs the result.
+        Upgraded to use Asynchronous Checkpointing to prevent OOM and ensure Resumability (Pillar 8).
         """
+        from itertools import groupby
+        
         task_name = "update_behavioral_profiles"
         start_time = datetime.datetime.utcnow()
+        
+        # 1. Resume Check: Look for an interrupted job
+        job = db.query(models.BehavioralProfileUpdateJob).filter(
+            models.BehavioralProfileUpdateJob.status.in_(["PENDING", "PROCESSING"])
+        ).first()
+
+        if not job:
+            job_id = f"BEHAV-JOB-{uuid.uuid4().hex[:8].upper()}"
+            job = models.BehavioralProfileUpdateJob(
+                job_id=job_id,
+                status="PROCESSING",
+                created_at=start_time.isoformat()
+            )
+            db.add(job)
+            db.commit()
+
         try:
-            summary = self._update_all_behavioral_profiles(db)
+            # 2. Establish Bounds: Get all unique users
+            unique_users = db.query(models.UserInteractionEvent.user_id).distinct().all()
+            user_ids = [u[0] for u in unique_users]
+            
+            if job.total_users is None:
+                job.total_users = len(user_ids)
+                db.commit()
+
+            CHUNK_SIZE = 100 # Process 100 users per checkpoint to prevent OOM
+            start_index = job.processed_users or 0
+            updated_profiles_count = 0
+
+            # 3. Process Chunk Vectorially and Checkpoint
+            for i in range(start_index, len(user_ids), CHUNK_SIZE):
+                chunk_user_ids = user_ids[i:i + CHUNK_SIZE]
+                
+                # Fetch interactions ONLY for this chunk of users (Preventing OOM)
+                interactions = db.query(models.UserInteractionEvent).filter(
+                    models.UserInteractionEvent.user_id.in_(chunk_user_ids)
+                ).order_by(models.UserInteractionEvent.user_id, models.UserInteractionEvent.timestamp).all()
+
+                for user_id, interactions_group in groupby(interactions, key=lambda x: x.user_id):
+                    user_interactions = list(interactions_group)
+                    
+                    # --- Calculate Ranked Journeys ---
+                    journey_counts = Counter(e.target_component_id for e in user_interactions if e.target_component_id)
+                    ranked_journeys = [{"journey_id": j, "interaction_count": c} for j, c in journey_counts.most_common(5)]
+
+                    # --- Calculate Common Devices ---
+                    device_fingerprints = [e.payload.get("device_fingerprint") for e in user_interactions if e.payload and e.payload.get("device_fingerprint")]
+                    common_devices = [{"fingerprint": d, "count": c} for d, c in Counter(device_fingerprints).most_common(3)]
+
+                    # --- Calculate Typical Locations ---
+                    locations = [e.payload.get("geo_location") for e in user_interactions if e.payload and e.payload.get("geo_location")]
+                    typical_locations = [{"location": loc, "count": c} for loc, c in Counter(locations).most_common(3)]
+
+                    # --- Create or Update the Profile ---
+                    profile_data = {
+                        "user_id": user_id,
+                        "ranked_journeys": ranked_journeys,
+                        "common_devices": common_devices,
+                        "typical_locations": typical_locations,
+                        "last_calculated_at": datetime.datetime.utcnow().isoformat(),
+                    }
+                    
+                    new_profile = models.CustomerBehavioralProfile(**profile_data)
+                    db.merge(new_profile)
+                    updated_profiles_count += 1
+                
+                # 4. Save State Checkpoint! If server crashes after this, we resume at next chunk.
+                job.processed_users = i + len(chunk_user_ids)
+                db.commit()
+
+            # 5. Finalize Job
+            job.status = "COMPLETED"
+            job.completed_at = datetime.datetime.utcnow().isoformat()
+            db.commit()
+
+            summary = {"profiles_updated": updated_profiles_count, "total_users_analyzed": len(user_ids), "job_id": job.job_id}
             duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
             self._log_task(db, task_name, "SUCCESS", triggered_by, summary=summary, duration_ms=duration_ms)
             return summary
+
         except Exception as e:
             db.rollback()
+            try:
+                job.status = "FAILED"
+                job.error_message = str(e)
+                db.commit()
+            except Exception:
+                pass
             duration_ms = int((datetime.datetime.utcnow() - start_time).total_seconds() * 1000)
             self._log_task(db, task_name, "FAILED", triggered_by, details=str(e), duration_ms=duration_ms)
             raise e
@@ -769,6 +815,41 @@ class AIService:
         if not openai_api_key:
             raise ValueError("OpenAI API key not configured. Cannot perform wireframe extraction.")
 
+        # Handle Document Conversions (PDF to Image)
+        if mime_type == 'application/pdf':
+            try:
+                pdf_bytes = base64.b64decode(image_base64)
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                if len(doc) > 0:
+                    page = doc.load_page(0) # Render the first page of the PDF
+                    pix = page.get_pixmap(dpi=150)
+                    image_bytes = pix.tobytes("jpeg")
+                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                    mime_type = 'image/jpeg'
+                else:
+                    raise ValueError("Uploaded PDF has no pages.")
+                doc.close()
+            except Exception as e:
+                raise ValueError(f"Failed to parse PDF file into image: {str(e)}")
+
+        # Check if structured data (CSV/Excel) to extract headers and samples
+        text_payload = None
+        if mime_type in ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] or mime_type.endswith('csv') or mime_type.endswith('excel'):
+            try:
+                file_bytes = base64.b64decode(image_base64)
+                if 'csv' in mime_type:
+                    decoded_file = file_bytes.decode('utf-8')
+                    csv_reader = csv.reader(io.StringIO(decoded_file))
+                    rows = [row for _, row in zip(range(5), csv_reader)]
+                    text_payload = "Data Sample:\n" + "\n".join([", ".join(r) for r in rows if r])
+                else:
+                    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+                    sheet = wb.active
+                    rows = [row for _, row in zip(range(5), sheet.iter_rows(values_only=True))]
+                    text_payload = "Data Sample:\n" + "\n".join([", ".join([str(c) for c in r if c is not None]) for r in rows if r])
+            except Exception as e:
+                raise ValueError(f"Failed to parse structured file: {str(e)}")
+
         # 1. Fetch available ISO fields to provide exact mapping context to the LLM
         fields = db.query(models.ISOFieldDefinition).limit(200).all()
         field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
@@ -776,8 +857,9 @@ class AIService:
         try:
             client = OpenAI(api_key=openai_api_key)
             prompt = f"""
-            You are an expert UX Developer and Business Architect. Analyze the provided wireframe/UI image.
-            Identify all form fields, inputs, dropdowns, date pickers, and labels.
+            You are an expert UX Developer and Business Architect. Analyze the provided wireframe image OR data sample.
+            If an image is provided, identify all form fields, inputs, dropdowns, date pickers, and labels.
+            If a data sample is provided, infer the logical form fields required to collect or display this data.
             For each field, attempt to map it to the closest fitting ISO Field from this available registry list: [{field_context}].
             If there is no logical match, leave 'field_binding' as an empty string "".
             
@@ -795,9 +877,17 @@ class AIService:
             }}
             """
             
+            if text_payload:
+                messages = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Analyze this data sample and build a UI screen to input or display this data:\n{text_payload}"}
+                ]
+            else:
+                messages = [{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}]}]
+            
             response = client.chat.completions.create(
-                model="gpt-4o", # Ensure a vision-capable model is used
-                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}]}],
+                model="gpt-4o",
+                messages=messages,
                 response_format={ "type": "json_object" }
             )
             
@@ -836,6 +926,270 @@ class AIService:
         except Exception as e:
             raise ValueError(f"AI translation generation failed: {str(e)}")
 
+    def generate_report_from_prompt(self, db: Session, prompt: str, current_user: schemas.CurrentUser) -> dict:
+        """
+        Parses a natural language prompt to generate a complete ReportBlueprint.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform AI report generation.")
+
+        # Provide the LLM with the context of all available fields from the bloodsteam
+        fields = db.query(models.ISOFieldDefinition).limit(200).all()
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+        
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            system_prompt = f"""
+            You are an expert Data Analyst and BI Dashboard Designer. Analyze the provided user prompt.
+            Determine the required charts/widgets and map them to the closest fitting ISO Field from this available registry list: [{field_context}].
+            
+            Return your response STRICTLY as a JSON object matching this schema:
+            {{
+                "report_name": "A suitable name for the dashboard",
+                "description": "A description of the dashboard",
+                "widgets": [
+                    {{
+                        "widget_id": "WGT-12345",
+                        "chart_type": "PIE_CHART | BAR_CHART | LINE_CHART | DATA_GRID | KPI_CARD",
+                        "title": "Widget title",
+                        "data_source_entity": "EvidencePacketRegistry",
+                        "x_axis_field": "technical_sys_name for grouping/X-axis",
+                        "y_axis_field": "technical_sys_name for measurement/Y-axis",
+                        "aggregation_method": "SUM | COUNT | AVG",
+                        "grid_layout": {{"x": 0, "y": 0, "w": 6, "h": 4}}
+                    }}
+                ]
+            }}
+            """
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
+                response_format={ "type": "json_object" }
+            )
+            
+            parsed_response = json.loads(response.choices[0].message.content)
+            
+            # Construct the Pydantic-compliant ReportBlueprint payload
+            report_blueprint = schemas.ReportBlueprintCreate(
+                report_name=parsed_response.get("report_name", "AI Generated Dashboard"),
+                description=parsed_response.get("description", f"Generated by AI from prompt: '{prompt}'"),
+                is_third_party_embedded=False,
+                expose_as_headless_api=False,
+                widgets=[schemas.ReportWidgetConfig(**w) for w in parsed_response.get("widgets", [])]
+            )
+
+            return {
+                "message": "Successfully generated a blueprint for the reporting dashboard.",
+                "generated_report_blueprint": report_blueprint.dict(),
+                "notes": ["You can save this blueprint and edit it further in the Report Designer Canva."]
+            }
+        except Exception as e:
+            raise ValueError(f"AI report generation failed: {str(e)}")
+
+    def generate_report_from_image(self, db: Session, image_base64: str, mime_type: str, current_user: schemas.CurrentUser) -> dict:
+        """
+        Uses Vision-capable LLMs to extract charts and layout from a report screenshot/image
+        and map them to the ISO Field Registry to generate a ReportBlueprint.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform wireframe extraction.")
+
+        # Handle Document Conversions (PDF to Image)
+        if mime_type == 'application/pdf':
+            try:
+                pdf_bytes = base64.b64decode(image_base64)
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                if len(doc) > 0:
+                    page = doc.load_page(0) # Render the first page of the PDF
+                    pix = page.get_pixmap(dpi=150)
+                    image_bytes = pix.tobytes("jpeg")
+                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                    mime_type = 'image/jpeg'
+                else:
+                    raise ValueError("Uploaded PDF has no pages.")
+                doc.close()
+            except Exception as e:
+                raise ValueError(f"Failed to parse PDF file into image: {str(e)}")
+
+        # Check if structured data (CSV/Excel) to extract headers and samples
+        text_payload = None
+        if mime_type in ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] or mime_type.endswith('csv') or mime_type.endswith('excel'):
+            try:
+                file_bytes = base64.b64decode(image_base64)
+                if 'csv' in mime_type:
+                    decoded_file = file_bytes.decode('utf-8')
+                    csv_reader = csv.reader(io.StringIO(decoded_file))
+                    rows = [row for _, row in zip(range(5), csv_reader)]
+                    text_payload = "Data Sample:\n" + "\n".join([", ".join(r) for r in rows if r])
+                else:
+                    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+                    sheet = wb.active
+                    rows = [row for _, row in zip(range(5), sheet.iter_rows(values_only=True))]
+                    text_payload = "Data Sample:\n" + "\n".join([", ".join([str(c) for c in r if c is not None]) for r in rows if r])
+            except Exception as e:
+                raise ValueError(f"Failed to parse structured file: {str(e)}")
+
+        fields = db.query(models.ISOFieldDefinition).limit(200).all()
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            prompt = f"""
+            You are an expert BI Dashboard Designer. Analyze the provided image of a report OR the structured data sample.
+            If an image is provided, identify the charts, data grids, and KPI cards present.
+            If a data sample is provided, deduce the most insightful charts and aggregations to visualize this data.
+            For each widget, determine the best fitting ISO Field from this registry for the X and Y axes: [{field_context}].
+            Estimate a reasonable React-Grid-Layout coordinate object `grid_layout` (x, y, w, h) based on its visual position (assume a 12-column grid format).
+            
+            Return your response STRICTLY as a JSON object matching this schema:
+            {{
+                "report_name": "A suitable name based on the image",
+                "description": "Description of the visual report",
+                "widgets": [
+                    {{
+                        "widget_id": "WGT-123456",
+                        "chart_type": "PIE_CHART" | "BAR_CHART" | "LINE_CHART" | "DATA_GRID" | "KPI_CARD",
+                        "title": "Widget title extracted from image",
+                        "data_source_entity": "EvidencePacketRegistry",
+                        "x_axis_field": "technical_sys_name",
+                        "y_axis_field": "technical_sys_name",
+                        "aggregation_method": "SUM" | "COUNT" | "AVG",
+                        "grid_layout": {{"x": 0, "y": 0, "w": 6, "h": 4}}
+                    }}
+                ]
+            }}
+            """
+            
+            if text_payload:
+                messages = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Analyze this dataset and build a business intelligence dashboard with appropriate charts:\n{text_payload}"}
+                ]
+            else:
+                messages = [{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}]}]
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                response_format={ "type": "json_object" }
+            )
+            
+            parsed_response = json.loads(response.choices[0].message.content)
+            
+            report_blueprint = schemas.ReportBlueprintCreate(
+                report_name=parsed_response.get("report_name", "AI Extracted Dashboard"),
+                description=parsed_response.get("description", "Extracted from uploaded report image."),
+                is_third_party_embedded=False,
+                expose_as_headless_api=False,
+                widgets=[schemas.ReportWidgetConfig(**w) for w in parsed_response.get("widgets", [])]
+            )
+            
+            return {
+                "message": "Successfully extracted report layout and bindings.",
+                "generated_report_blueprint": report_blueprint.dict()
+            }
+        except Exception as e:
+            raise ValueError(f"AI Vision extraction failed: {str(e)}")
+
+    def auto_map_file(self, db: Session, file_bytes: bytes, filename: str) -> dict:
+        """
+        Analyzes an uploaded file (CSV/Excel), extracts headers and sample data,
+        and uses an LLM to auto-map them to the ISO Field Registry.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform auto-mapping.")
+
+        headers = []
+        sample_row = []
+        file_type = "CSV"
+        
+        try:
+            if filename.endswith('.csv'):
+                decoded_file = file_bytes.decode('utf-8')
+                csv_reader = csv.reader(io.StringIO(decoded_file))
+                headers = next(csv_reader, [])
+                sample_row = next(csv_reader, [])
+                file_type = "CSV"
+            elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+                wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+                sheet = wb.active
+                rows = list(sheet.iter_rows(values_only=True, max_row=2))
+                if len(rows) > 0: headers = [str(h) if h is not None else f"Column_{i}" for i, h in enumerate(rows[0])]
+                if len(rows) > 1: sample_row = [str(c) if c is not None else "" for c in rows[1]]
+                file_type = "XLSX"
+            else:
+                raise ValueError("Unsupported file format for auto-mapping. Use CSV or Excel.")
+        except Exception as e:
+            raise ValueError(f"Failed to parse file for auto-mapping: {str(e)}")
+
+        fields = db.query(models.ISOFieldDefinition).limit(500).all()
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            prompt = f"""
+            You are an expert Data Architect. I am providing you with the headers and a sample row from a {file_type} file.
+            Map each header to the most appropriate ISO Field from this registry: [{field_context}].
+            If no field closely matches the header's intent or data type, set 'is_new_field_required' to true, 'suggested_iso_field' to null, and infer the 'inferred_data_type' (e.g., 'Text', 'Amount', 'Date', 'Decimal', 'Alphanumeric').
+            
+            Headers: {headers}
+            Sample Row: {sample_row}
+            
+            Return STRICTLY a JSON object matching this schema:
+            {{ "suggested_mappings": [ {{ "source_path": "header_name", "suggested_iso_field": "technical_sys_name_or_null", "confidence_score": 0.95, "is_new_field_required": false, "inferred_data_type": "Text" }} ] }}
+            """
+            
+            response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], response_format={ "type": "json_object" })
+            parsed_response = json.loads(response.choices[0].message.content)
+            
+            return {
+                "message": "Successfully auto-mapped file headers to ISO Registry.", 
+                "suggested_mappings": parsed_response.get("suggested_mappings", []), 
+                "file_type": file_type,
+                "headers": headers,
+                "sample_row": sample_row
+            }
+        except Exception as e:
+            raise ValueError(f"AI auto-mapping failed: {str(e)}")
+
+    def extract_unstructured_payload(self, text_content: str, prompt_mappings: List[Dict[str, str]]) -> Dict[str, Any]:
+        """
+        Uses an LLM Agent to extract structured data from messy unstructured text (like PDFs) 
+        based on a dynamic list of business prompts.
+        """
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OpenAI API key not configured. Cannot perform unstructured extraction.")
+
+        try:
+            client = OpenAI(api_key=openai_api_key)
+            system_prompt = f"""
+            You are an expert Data Extraction Agent. I am providing you with unstructured document text.
+            Extract the data points according to the specific instructions provided.
+            Return STRICTLY a JSON object where keys are the 'target_field' identifiers and values are the extracted strings/numbers.
+            If a value cannot be found, return null for that key. Do not make up information.
+
+            Extraction Instructions:
+            {json.dumps(prompt_mappings, indent=2)}
+            """
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Document Text:\n{text_content[:100000]}"} # Safely bound text length
+                ],
+                response_format={ "type": "json_object" }
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            raise ValueError(f"AI unstructured extraction failed: {str(e)}")
+
     def run_scheduled_insights(self, db: Session) -> dict:
         """
         Finds and executes all scheduled insights that are due to run at the current time.
@@ -858,19 +1212,12 @@ class AIService:
         if not insights_to_run:
             return {"executed_count": 0, "details": "No scheduled insights were due to run."}
 
-        # 3. Execute the due insights
-        orchestrator = InsightsOrchestrator(db=db)
-        execution_details = []
+        # 3. Execute the due insights via distributed Celery task dispatch
+        from tasks import execute_insight_task
         for insight in insights_to_run:
-            try:
-                print(f"Executing scheduled insight: {insight.insight_name}")
-                # Start with an empty context for a scheduled insight
-                result_context, logs = orchestrator.execute_steps(insight.analysis_steps, {})
-                execution_details.append({"insight_code": insight.insight_code, "status": "SUCCESS", "logs": logs})
-            except Exception as e:
-                execution_details.append({"insight_code": insight.insight_code, "status": "FAILED", "error": str(e)})
+            execute_insight_task.delay(insight.insight_id)
 
-        return {"executed_count": len(insights_to_run), "details": execution_details}
+        return {"executed_count": len(insights_to_run), "details": "Dispatched to parallel Celery worker queue."}
 
 
 class InsightsOrchestrator:
@@ -961,10 +1308,14 @@ class InsightsOrchestrator:
                     target_event_type = step.get("target_event_type")
                     if target_event_type:
                         logs.append(f"Broadcasting event: {target_event_type}")
+                        trace_depth = context.get("__trace_depth__", 0) + 1
+                        correlation_id = context.get("__correlation_id__", f"CORR-{uuid.uuid4().hex[:12]}")
                         asyncio.run(global_event_bus.broadcast(SystemEvent(
                             event_type=target_event_type,
                             source_context="InsightsOrchestrator",
-                            payload=context
+                            payload=context,
+                            trace_depth=trace_depth,
+                            correlation_id=correlation_id
                         )))
             except Exception as e:
                 logs.append(f"[ERROR] Insight analysis step failed: {str(e)}")

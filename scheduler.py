@@ -133,6 +133,33 @@ def run_scheduled_insights():
     finally:
         db.close()
 
+def run_outbox_relay():
+    """
+    Scheduled job to relay transactional outbox events to the message broker.
+    Guarantees 'At-Least-Once' delivery decoupled from the primary web transactions.
+    """
+    db = SessionLocal()
+    try:
+        import models
+        import asyncio
+        from event_bus import global_event_bus, SystemEvent
+        
+        events = db.query(models.TransactionalOutboxEvent).filter(models.TransactionalOutboxEvent.status == "PENDING").limit(100).all()
+        if not events:
+            return
+            
+        for outbox_event in events:
+            system_event = SystemEvent(**outbox_event.payload)
+            asyncio.run(global_event_bus.broadcast(system_event, db=None))
+            outbox_event.status = "PUBLISHED"
+        db.commit()
+        print(f"[{datetime.datetime.utcnow()}] Scheduled task 'run_outbox_relay' finished. Relayed {len(events)} events.")
+    except Exception as e:
+        db.rollback()
+        print(f"[{datetime.datetime.utcnow()}] ERROR during scheduled task 'run_outbox_relay': {e}")
+    finally:
+        db.close()
+
 
 # --- Scheduler Initialization ---
 
@@ -150,5 +177,6 @@ def start_scheduler():
     scheduler.add_job(run_check_unconfigured_pii, 'interval', days=1, id='check_unconfigured_pii_task', replace_existing=True)
     scheduler.add_job(run_update_behavioral_profiles, 'interval', hours=1, id='update_behavioral_profiles_task', replace_existing=True)
     scheduler.add_job(run_scheduled_insights, 'interval', minutes=1, id='run_scheduled_insights_task', replace_existing=True)
+    scheduler.add_job(run_outbox_relay, 'interval', seconds=5, id='outbox_relay_task', replace_existing=True)
     scheduler.start()
     print("✓ Background scheduler started with maintenance jobs.")

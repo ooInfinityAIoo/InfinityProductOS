@@ -79,3 +79,11 @@ Integrity: Hard-coded financial logic is PROHIBITED. All math must be represente
 Compliance: Every state transition must be recorded in the Immutable Event Store.
 
 7. Global Isolation & Localization Manifesto: InfinityProductOS mandates absolute structural multi-localization. No text element, address template, numerical scale calculation, or PII storage profile may exist in a single-region assumption. The platform natively forces localized tokenization at Layer 1, tenant-jurisdiction separation at Layer 3, currency-precision awareness at Layer 4, and geographically sharded storage topologies at Layer 5."
+
+8. Fault Tolerance & Stateful Resumability
+Requirement: The platform must survive infrastructure failures, pod evictions, and network partitions without data corruption, double-processing, or loss of state.
+
+Execution Checkpoints: Massive batch operations (Reconciliation, Data Ingestion) MUST be decoupled from synchronous web requests and processed via distributed workers (e.g., Celery) using an "Asynchronous Checkpointing" pattern. Progress must be saved incrementally.
+Idempotent State Finalization: All financial state changes orchestrated by the Workflow Engine MUST be wrapped in strict, atomic database transactions. If a node crashes mid-execution, the transaction rolls back completely to prevent partial or corrupt ledger entries.
+Circuit Breaking: All outbound integration APIs MUST configure and enforce consecutive failure thresholds to protect the platform's internal thread pools from cascading downstream outages.
+Guaranteed Delivery: The Event Bus MUST utilize the "Transactional Outbox Pattern" to ensure events are securely committed to the database alongside business state changes before being dispatched to message brokers.

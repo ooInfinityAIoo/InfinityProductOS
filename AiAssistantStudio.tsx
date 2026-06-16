@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client';
 export const AiAssistantStudio: React.FC = () => {
   const queryClient = useQueryClient();
   const [prompt, setPrompt] = useState('');
-  const [intent, setIntent] = useState<'RULE' | 'INSIGHT' | 'COMMAND'>('RULE');
+  const [intent, setIntent] = useState<'RULE' | 'INSIGHT' | 'REPORT' | 'COMMAND'>('RULE');
   const [responseLog, setResponseLog] = useState<any>(null);
 
   // --- DYNAMIC AI BINDINGS ---
@@ -14,6 +14,7 @@ export const AiAssistantStudio: React.FC = () => {
       let endpoint = '';
       if (intent === 'RULE') endpoint = '/assistant/prompt-to-rule';
       else if (intent === 'INSIGHT') endpoint = '/assistant/prompt-to-insight';
+      else if (intent === 'REPORT') endpoint = '/assistant/prompt-to-report';
       else endpoint = '/assistant/execute-command';
 
       const res = await apiClient.post(endpoint, { prompt });
@@ -24,6 +25,7 @@ export const AiAssistantStudio: React.FC = () => {
       // Invalidate relevant caches to refresh other canvases behind the scenes!
       if (intent === 'RULE') queryClient.invalidateQueries({ queryKey: ['rules'] });
       if (intent === 'INSIGHT') queryClient.invalidateQueries({ queryKey: ['insights'] });
+      if (intent === 'REPORT') queryClient.invalidateQueries({ queryKey: ['reports'] });
       setPrompt(''); // Clear prompt for next command
     },
     onError: (err: any) => {
@@ -55,6 +57,7 @@ export const AiAssistantStudio: React.FC = () => {
             <div className="flex bg-slate-100 p-1 rounded-md border border-slate-200">
               <button onClick={() => setIntent('RULE')} className={`flex-1 text-xs py-2 rounded font-bold transition-all ${intent === 'RULE' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Business Rule</button>
               <button onClick={() => setIntent('INSIGHT')} className={`flex-1 text-xs py-2 rounded font-bold transition-all ${intent === 'INSIGHT' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Smart Insight</button>
+              <button onClick={() => setIntent('REPORT')} className={`flex-1 text-xs py-2 rounded font-bold transition-all ${intent === 'REPORT' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>BI Report</button>
               <button onClick={() => setIntent('COMMAND')} className={`flex-1 text-xs py-2 rounded font-bold transition-all ${intent === 'COMMAND' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Sys Command</button>
             </div>
           </div>
@@ -67,6 +70,7 @@ export const AiAssistantStudio: React.FC = () => {
               placeholder={
                 intent === 'RULE' ? "e.g., 'If the transaction amount is greater than 10000 then require manager approval.'" :
                 intent === 'INSIGHT' ? "e.g., 'Detect similar subscriptions to alert the customer.'" :
+                intent === 'REPORT' ? "e.g., 'Create a pie chart showing total payment volume by currency.'" :
                 "e.g., 'Add GBP currency'"
               }
               className="flex-1 w-full text-[14px] text-slate-900 border border-slate-300 rounded-md p-4 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none shadow-inner"

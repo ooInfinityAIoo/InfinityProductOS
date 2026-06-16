@@ -16,8 +16,10 @@ export const BusinessRulesStudio: React.FC = () => {
   const [conditionField, setConditionField] = useState('');
   const [conditionOperator, setConditionOperator] = useState('EQUAL_TO');
   const [conditionValue, setConditionValue] = useState('');
+  const [actionType, setActionType] = useState('SET_VALUE');
   const [actionTargetField, setActionTargetField] = useState('');
   const [actionValue, setActionValue] = useState('');
+  const [calculationToken, setCalculationToken] = useState('');
 
   // --- DYNAMIC API BINDINGS ---
   
@@ -31,6 +33,12 @@ export const BusinessRulesStudio: React.FC = () => {
   const { data: fieldsData } = useQuery({
     queryKey: ['fields-all'],
     queryFn: async () => (await apiClient.get('/fields/registry?limit=1000')).data
+  });
+
+  // 3. Fetch Calculations (For the Execution actions)
+  const { data: calcData } = useQuery({
+    queryKey: ['calculations'],
+    queryFn: async () => (await apiClient.get('/calculations/')).data
   });
 
   const createRuleMutation = useMutation({
@@ -51,9 +59,10 @@ export const BusinessRulesStudio: React.FC = () => {
             ],
             actions: [
               {
-                action_type: 'SET_VALUE',
-                target_field: actionTargetField,
-                value: actionValue
+                action_type: actionType,
+                target_field: actionType === 'SET_VALUE' ? actionTargetField : undefined,
+                value: actionType === 'SET_VALUE' ? actionValue : undefined,
+                calculation_token: actionType === 'EXECUTE_CALCULATION' ? calculationToken : undefined
               }
             ]
           }
@@ -72,8 +81,10 @@ export const BusinessRulesStudio: React.FC = () => {
       setDescription('');
       setConditionField('');
       setConditionValue('');
+      setActionType('SET_VALUE');
       setActionTargetField('');
       setActionValue('');
+      setCalculationToken('');
     }
   });
 
@@ -162,16 +173,35 @@ export const BusinessRulesStudio: React.FC = () => {
               </div>
 
               <div className="bg-[#F0F7FF] border border-[#CCE0FF] rounded p-5 space-y-4">
-                <h3 className="text-[12px] font-extrabold text-[#0052CC] uppercase tracking-wider">THEN Action (SET VALUE)</h3>
-                <div className="flex gap-4 items-center">
-                  <select value={actionTargetField} onChange={(e) => setActionTargetField(e.target.value)} className="flex-1 text-[12px] border border-[#CCE0FF] rounded p-2 outline-none focus:border-[#0176D3] bg-white">
-                    <option value="" disabled>Select Output ISO Field...</option>
-                    {fieldsData?.fields?.map((f: any) => (
-                      <option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name} ({f.technical_sys_name})</option>
-                    ))}
+                <div className="flex items-center gap-3">
+                  <h3 className="text-[12px] font-extrabold text-[#0052CC] uppercase tracking-wider">THEN Action</h3>
+                  <select value={actionType} onChange={(e) => setActionType(e.target.value)} className="text-[11px] font-bold text-[#0052CC] border border-[#CCE0FF] rounded p-1 outline-none bg-white">
+                    <option value="SET_VALUE">Set Static Value</option>
+                    <option value="EXECUTE_CALCULATION">Execute Math Formula</option>
                   </select>
-                  <span className="text-slate-400 font-bold text-[12px]">=</span>
-                  <input type="text" placeholder="New Static Value" value={actionValue} onChange={(e) => setActionValue(e.target.value)} className="flex-1 text-[12px] border border-[#CCE0FF] rounded p-2 outline-none focus:border-[#0176D3]" />
+                </div>
+                <div className="flex gap-4 items-center">
+                  {actionType === 'SET_VALUE' ? (
+                    <>
+                      <select value={actionTargetField} onChange={(e) => setActionTargetField(e.target.value)} className="flex-1 text-[12px] border border-[#CCE0FF] rounded p-2 outline-none focus:border-[#0176D3] bg-white">
+                        <option value="" disabled>Select Output ISO Field...</option>
+                        {fieldsData?.fields?.map((f: any) => (
+                          <option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name} ({f.technical_sys_name})</option>
+                        ))}
+                      </select>
+                      <span className="text-slate-400 font-bold text-[12px]">=</span>
+                      <input type="text" placeholder="New Static Value" value={actionValue} onChange={(e) => setActionValue(e.target.value)} className="flex-1 text-[12px] border border-[#CCE0FF] rounded p-2 outline-none focus:border-[#0176D3]" />
+                    </>
+                  ) : (
+                    <>
+                      <select value={calculationToken} onChange={(e) => setCalculationToken(e.target.value)} className="flex-1 text-[12px] font-mono text-[#0176D3] border border-[#CCE0FF] rounded p-2 outline-none focus:border-[#0176D3] bg-white">
+                        <option value="" disabled>Select Target Symbolic Formula...</option>
+                        {calcData?.formulas?.map((f: any) => (
+                          <option key={f.token_code} value={f.token_code}>{f.business_name} ({f.token_code})</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -23,7 +23,7 @@ import schemas
 import openpyxl
 
 # --- Router Imports ---
-from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights
+from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights, reconciliation_engine, reporting, documents, templates
 
 api_description = """
 **Infinity ProductOS Core Execution Engine API** 🚀
@@ -35,16 +35,19 @@ It exposes the stateless execution engines, governance guardrails, and dynamic "
 * **Workflow Engine**: Manages state transitions and Directed Acyclic Graph (DAG) executions.
 * **Business Rules Engine**: Evaluates complex IF-THEN logic matrices.
 * **Calculation Engine**: Evaluates symbolic financial mathematical expressions securely.
-* **DataGateway Engine**: Asynchronous multi-file ingestion and payload mapping blueprints.
+* **File Template Designer**: Handles Step A/B structure and layout mapping for files.
+* **Transformation Mapper**: Step C integration to transform and route structured payloads.
 * **Insights Factory**: Orchestrates scheduled and event-driven AI insights.
 * **Governance Hub**: Enforces 4-Eye checks, PII masking, and immutable execution logging.
+* **Report Builder**: Drag-and-drop Canva dashboards and Headless BI connections.
 """
 
 tags_metadata = [
     {"name": "Workflow Engine", "description": "Layer 1 & 4: Manage and execute DAG workflows."},
     {"name": "Business Rule Engine", "description": "Layer 4: Define and evaluate IF-THEN logic sets."},
     {"name": "Calculation Engine", "description": "Layer 4: Define and evaluate symbolic financial math."},
-    {"name": "DataGateway Engine", "description": "Layer 3 & 4: Payload mappers for multi-format integration."},
+    {"name": "File Template Designer", "description": "Step A & B: Define physical file layouts and agentic extraction prompts."},
+    {"name": "DataGateway Engine", "description": "Step C: Transform extracted templates to downstream schemas via Rules & Math."},
     {"name": "Data Ingestion", "description": "Layer 4: Asynchronous background bulk file processing (Celery)."},
     {"name": "Governance Hub", "description": "Layer 5 & 6: 4-Eye exception queue, execution logs, and auditing."},
     {"name": "Insights Factory", "description": "Layer 2: AI-driven smart insights and orchestration."},
@@ -53,6 +56,7 @@ tags_metadata = [
     {"name": "Event Repository", "description": "Layer 4: Distributed event catalog and Kafka streaming management."},
     {"name": "Field Registry", "description": "Layer 3: The Semantic Bloodstream. Central ISO 20022 dictionary."},
     {"name": "Common Core Masters", "description": "Layer 5: Master configurations for calendars, currencies, fees, etc."},
+    {"name": "Report Builder", "description": "Dashboard Canvas metrics, headless data exposure, and embedded BI."},
 ]
 
 app = FastAPI(
@@ -110,6 +114,10 @@ app.include_router(ai_assistant.router)
 app.include_router(insights.router)
 app.include_router(events.router)
 app.include_router(domain_apis.router)
+app.include_router(reconciliation_engine.router)
+app.include_router(reporting.router)
+app.include_router(documents.router)
+app.include_router(templates.router)
 
 @app.get("/")
 def read_root():

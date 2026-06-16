@@ -40,14 +40,49 @@ export const MasterHeaderNav: React.FC = () => {
         <button onClick={() => setActiveModule('ai-assistant')} className="text-[13px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded shadow-sm hover:bg-indigo-600 hover:text-white transition-colors flex items-center gap-1.5">
           <span>✨</span> Infinity AI
         </button>
-        <button onClick={() => setActiveModule('ingestion-pipeline')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
-          Data Ingestion
-        </button>
+        
+        {/* DATA INGESTION GATEWAY DROPDOWN */}
+        <div className="relative group h-full flex items-center py-5">
+          <button className="text-[13px] font-bold text-slate-800 hover:text-[#0176D3] flex items-center gap-1 cursor-default">
+            Data Ingestion Gateway ▾
+          </button>
+          <div className="absolute top-[100%] left-0 w-72 bg-white border border-slate-200 rounded-md shadow-xl hidden group-hover:flex flex-col z-50 overflow-hidden">
+            <button onClick={() => setActiveModule('ingestion-pipeline')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 transition-colors">
+              <div className="text-[12px] font-bold text-[#0176D3]">1. File Upload & Dispatcher</div>
+              <div className="text-[10px] text-slate-500 font-normal mt-0.5">Execute your templates with live files.</div>
+            </button>
+            <button onClick={() => setActiveModule('file-template-designer')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">2. File Template Designer</div>
+              <div className="text-[10px] text-slate-500 font-normal mt-0.5">Define Layouts & Prompts (Steps A & B).</div>
+            </button>
+            <button onClick={() => setActiveModule('dge-canvas')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">3. Transformation Mapping</div>
+              <div className="text-[10px] text-slate-500 font-normal mt-0.5">Map Extractions to Targets (Step C).</div>
+            </button>
+            <button onClick={() => setActiveModule('document-master')} className="px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">4. Document Checklist Definition</div>
+              <div className="text-[10px] text-slate-500 font-normal mt-0.5">Define master prerequisite documents.</div>
+            </button>
+          </div>
+        </div>
+
         <button onClick={() => setActiveModule('business-rules')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
           Rules Engine
         </button>
+        <button onClick={() => setActiveModule('behavioral-profiles')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Behavioral AI
+        </button>
         <button onClick={() => setActiveModule('calculation-engine')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
           Calculation Engine
+        </button>
+        <button onClick={() => setActiveModule('reconciliation-engine')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Reconciliation Engine
+        </button>
+        <button onClick={() => setActiveModule('recon-tracking')} className="text-[13px] font-semibold text-[#0052CC] bg-blue-50 border border-blue-100 px-2 py-1 rounded hover:bg-[#0052CC] hover:text-white transition-colors">
+          Recon Tracker
+        </button>
+        <button onClick={() => setActiveModule('insights-factory')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Insights Factory
         </button>
         <button onClick={() => setActiveModule('screen-designer')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
           Screen Designer
@@ -55,8 +90,14 @@ export const MasterHeaderNav: React.FC = () => {
         <button onClick={() => setActiveModule('api-designer')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
           API Designer
         </button>
-        <button onClick={() => setActiveModule('dge-canvas')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
-          Payload Mappers
+        <button onClick={() => setActiveModule('event-repository')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Event Repository
+        </button>
+        <button onClick={() => setActiveModule('execution-audit')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Execution Trace
+        </button>
+        <button onClick={() => setActiveModule('report-designer')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
+          Report Builder
         </button>
         <button onClick={() => setActiveModule('field-registry')} className="text-[13px] font-semibold text-slate-600 hover:text-slate-900">
           Master Configuration

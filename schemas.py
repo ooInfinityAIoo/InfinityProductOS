@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 # =====================================================================
@@ -30,99 +30,16 @@ class WorkflowTemplateCreate(BaseModel):
 
 
 # =====================================================================
-# --- NEW ISO 20022 COMMON CORE MASTERS VALIDATION SCHEMAS ---
+# --- DYNAMIC COMMON CORE MASTERS SCHEMAS ---
 # =====================================================================
 
-# --- SCREEN A: CURRENCY DEFINITION VALIDATOR ---
-class CurrencyDefinitionCreate(BaseModel):
-    currency_code: str = Field(..., description="ISO 3-Letter Currency Code Mapping")
-    currency_name: str = Field(..., description="Standard Textual Identification Name")
-    fraction_digits: int = Field(2, description="Decimal Rounding Formatting Limit Scale")
-    source_currency_code: str = Field(..., description="Base Source Comparison Currency")
-    target_currency_code: str = Field(..., description="Target Multiplier Currency")
-    exchange_rate: float = Field(..., description="Numerical Multiplier Factor Value")
-    associated_calendar_id: Optional[str] = Field(None, description="Linked Profile Calendar Anchor")
+class DynamicMasterRecordCreate(BaseModel):
+    record_data: Dict[str, Any] = Field(..., description="The JSON payload matching the Screen Designer form.")
+    status: str = Field("DRAFT", description="Record lifecycle status.")
 
-    @validator('currency_code', 'source_currency_code', 'target_currency_code')
-    def validate_iso_currency_codes(cls, v):
-        code = v.strip().upper()
-        if len(code) != 3:
-            raise ValueError("ISO standard restriction: Currency designations must be exactly 3 characters.")
-        return code
-
-    @validator('exchange_rate')
-    def validate_rate_multiplier(cls, v):
-        if v <= 0:
-            raise ValueError("Financial valuation logic rule: Exchange rate multiplier factor must be greater than zero.")
-        return v
-
-
-# --- SCREEN B: OPERATIONAL CALENDAR VALIDATOR ---
-class OperationalCalendarCreate(BaseModel):
-    calendar_type: str = Field(..., description="Routing or Currency Rule Category Tracking Profile")
-    calendar_year: int = Field(..., description="Numeric 4-Digit processing target year")
-    weekly_holiday_mask: str = Field(..., description="Shorthand character mask tracking rest days")
-    financial_year_start_date: str = Field(..., description="YYYY-MM-DD financial loop activation date")
-    financial_year_end_date: str = Field(..., description="YYYY-MM-DD operational framework sunset expiration date")
-    calendar_description: Optional[str] = Field(None, description="Explanatory operational documentation details")
-    is_active_flag: bool = Field(True, description="System master validation status flag toggle")
-
-    @validator('calendar_year')
-    def validate_four_digit_year(cls, v):
-        if v < 1900 or v > 2100:
-            raise ValueError("Formatting rule: Target year parameter must match standard 4-digit YYYY arrays.")
-        return v
-
-
-# --- SCREEN C: ACCOUNT PROFILE VALIDATOR ---
-class AccountProfileCreate(BaseModel):
-    account_number: str = Field(..., description="Structural Unique alphanumeric account unique string layout")
-    account_name_title: str = Field(..., description="Textual identification name profile heading string")
-    currency_code: str = Field(..., description="ISO code linked directly to active currency master row lookup keys")
-    clearing_system_member_id: str = Field(..., description="Systemic clearing route sorting member tracking code")
-    data_residency_region: str = Field(..., description="The ISO 3166-1 alpha-2 country code for data residency compliance (e.g., DE, IN, US).")
-    branch_location_name: Optional[str] = Field(None, description="Localized processing bank center desk name string")
-    is_frozen_flag: bool = Field(False, description="Strict operational freeze switch block constraint control")
-
-    @validator('currency_code')
-    def clean_ccy_string(cls, v):
-        return v.strip().upper()
-
-
-# --- SCREEN D: COUNTRY JURISDICTION VALIDATOR ---
-class CountryJurisdictionCreate(BaseModel):
-    country_iso_code: str = Field(..., description="ISO 2-character country alphabet marker sequence patterns")
-    country_name_text: str = Field(..., description="Official state territorial designation string parameters")
-    region_continent_name: str = Field(..., description="Regional localization group array criteria category label")
-    check_digit_type_code: Optional[str] = Field(None, description="Algorithmic validation processing identifier routing tag")
-    target_central_bank_routing_code: Optional[str] = Field(None, description="Sovereign clearing interface anchor ledger index node")
-    iban_mandatory_flag: bool = Field(False, description="Enforces mandatory formatting check execution rules context")
-
-    @validator('country_iso_code')
-    def validate_alpha2_length(cls, v):
-        code = v.strip().upper()
-        if len(code) != 2:
-            raise ValueError("ISO standard restriction: Country designation codes must be an exact 2-character string.")
-        return code
-
-
-# --- SCREEN E: FEE CONFIGURATION VALIDATOR ---
-class FeeConfigurationCreate(BaseModel):
-    fee_charge_code: str = Field(..., description="Shorthand identification string mapping ledger lookup unique index keys")
-    fee_type_name: str = Field(..., description="Calculation engine strategy selector path routing design pattern blueprint")
-    effective_start_date: str = Field(..., description="Date profile component validation threshold start node")
-    effective_end_date: str = Field(..., description="Expiry date pick restriction control checkpoint criteria tag")
-    fee_amount_value: float = Field(0.00, description="Absolute baseline financial balance pricing limit value parameter")
-    fee_category_name: Optional[str] = Field(None, description="General ledger bookkeeping split parameter category code text")
-    is_active_flag: bool = Field(True, description="Master transaction execution eligibility evaluation checkbox flag")
-
-    @validator('fee_amount_value')
-    def check_floor_limits(cls, v):
-        if v < 0.00:
-            raise ValueError("Financial parameters boundary: System fee pricing parameters cannot drop below 0.00.")
-        return v
-
-class CurrencyDefinitionResponse(CurrencyDefinitionCreate):
+class DynamicMasterRecordResponse(DynamicMasterRecordCreate):
+    record_id: str
+    screen_id: str
     created_at: str
     created_by: str
     updated_at: Optional[str] = None
@@ -130,67 +47,9 @@ class CurrencyDefinitionResponse(CurrencyDefinitionCreate):
     class Config:
         from_attributes = True
 
-class OperationalCalendarResponse(OperationalCalendarCreate):
-    calendar_id: str
-    created_at: str
-    created_by: str
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
-    class Config:
-        from_attributes = True
-
-class AccountProfileResponse(AccountProfileCreate):
-    created_at: str
-    created_by: str
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
-    class Config:
-        from_attributes = True
-
-class CountryJurisdictionResponse(CountryJurisdictionCreate):
-    created_at: str
-    created_by: str
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
-    class Config:
-        from_attributes = True
-
-class FeeConfigurationResponse(FeeConfigurationCreate):
-    created_at: str
-    created_by: str
-    updated_at: Optional[str] = None
-    updated_by: Optional[str] = None
-    class Config:
-        from_attributes = True
-
-class CurrencyDefinitionListResponse(BaseModel):
-    currencies: List[CurrencyDefinitionResponse]
-
-class OperationalCalendarListResponse(BaseModel):
-    calendars: List[OperationalCalendarResponse]
-
-class AccountProfileListResponse(BaseModel):
-    accounts: List[AccountProfileResponse]
-
-class CountryJurisdictionListResponse(BaseModel):
-    countries: List[CountryJurisdictionResponse]
-
-class FeeConfigurationListResponse(BaseModel):
-    fees: List[FeeConfigurationResponse]
-
-class MastersSearchResults(BaseModel):
-    currencies: List[CurrencyDefinitionResponse] = []
-    calendars: List[OperationalCalendarResponse] = []
-    accounts: List[AccountProfileResponse] = []
-    countries: List[CountryJurisdictionResponse] = []
-    fees: List[FeeConfigurationResponse] = []
-
-class MastersCountResponse(BaseModel):
-    currencies: int
-    calendars: int
-    accounts: int
-    countries: int
-    fees: int
+class DynamicMasterRecordListResponse(BaseModel):
+    records: List[DynamicMasterRecordResponse]
+    total_count: int
 
 class TenantThemeCreate(BaseModel):
     brand_name: str = Field(..., description="The name of the deploying bank or institution.")
@@ -248,6 +107,18 @@ class SubproductMasterResponse(BaseModel):
 class SubproductMasterListResponse(BaseModel):
     subproducts: List[SubproductMasterResponse]
 
+class DocumentMasterCreate(BaseModel):
+    document_name: str = Field(..., description="e.g., 'Signed Tax Return'")
+    document_format: str = Field("ANY", description="Expected format: PDF, CSV, EXCEL, ANY")
+    description: Optional[str] = None
+    extraction_template_id: Optional[str] = Field(None, description="The ID of the File Layout Template used to read this document.")
+
+class DocumentMasterResponse(DocumentMasterCreate):
+    document_id: str
+    created_at: str
+    created_by: str
+    class Config:
+        from_attributes = True
 
 # =====================================================================
 # --- DATA INGESTION SCHEMAS ---
@@ -303,8 +174,37 @@ class ArchivalStatsResponse(BaseModel):
 # --- PHASE 4: DYNAMIC PAYLOAD TRANSFORMATION SCHEMAS ---
 # =====================================================================
 
+class TemplateFieldAddressModelCreate(BaseModel):
+    extracted_field_name: str = Field(..., description="The key to output in the JSON (e.g. 'amount')")
+    reading_mode: str = Field("COLUMN", description="COLUMN, CELL, or PROMPT")
+    sheet_name: Optional[str] = None
+    sheet_sequence_no: int = 1
+    start_row: int = 0
+    stop_row: int = 0
+    column_sequence_no: int = 0
+    cell_address_or_prompt: Optional[str] = None
+    fixed_length_start: int = 0
+    fixed_length_end: int = 0
+    padding_character: str = "0"
+    padding_position: str = "PREFIX"
+    data_type_spec: str = "Text"
+    mandatory_status: str = "Optional"
+    max_length: int = 9
+    min_length: int = 9
+    populate_default_value: bool = False
+    default_value_fallback: Optional[str] = None
+    is_amount_decimal: bool = False
+    decimal_places_precision: int = 2
+    currency_code: str = "USD"
+
+class TemplateFieldAddressModelResponse(TemplateFieldAddressModelCreate):
+    address_id: str
+    template_id: str
+    class Config:
+        from_attributes = True
+
 class PayloadFieldMappingCreate(BaseModel):
-    source_path: str = Field(..., description="Source JSONPath, XML node, or SWIFT tag (e.g., '$.amount', 'Tag32A')")
+    source_extracted_field: str = Field(..., description="The key extracted from the File Template (e.g., 'net_income')")
     target_iso_field: str = Field(..., description="Target ISO Field Registry mapping (e.g., 'of_fintax_bal_01')")
     transformation_rule_code: Optional[str] = Field(None, description="Linked BRE rule to execute during mapping")
     calculation_token_code: Optional[str] = Field(None, description="Linked calculation token (e.g., 'CALC-REG-099')")
@@ -319,15 +219,22 @@ class PayloadFieldMappingResponse(PayloadFieldMappingCreate):
 
 class PayloadMapperBlueprintCreate(BaseModel):
     mapper_name: str = Field(..., description="Name of the Canvas Mapping (e.g., 'SWIFT MT103 to ISO Pacs.008')")
-    source_format: str = Field(..., description="Input format type (e.g., SWIFT_MT, JSON, XML)")
+    source_template_id: Optional[str] = Field(None, description="Links to the physical Layout Template")
     target_format: str = Field("ISO_20022_DICTIONARY", description="Target standard format")
+    mapping_direction: str = Field("INBOUND", description="INBOUND (Ingest to ISO) or OUTBOUND (Extract from ISO to File)")
+    file_control_totals: Optional[List[Dict[str, Any]]] = Field(None, description="Array of mathematical file-level validation checks.")
     mappings: List[PayloadFieldMappingCreate] = Field(default_factory=list)
+    application_package_id: Optional[str] = Field(None, description="The specific product package this mapper belongs to. Null for Global.")
+    product_id: Optional[str] = Field(None, description="The specific product this mapper belongs to. Null for Global.")
+    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this mapper belongs to. Null for Global.")
 
 class PayloadMapperBlueprintResponse(BaseModel):
     mapper_id: str
     mapper_name: str
-    source_format: str
+    source_template_id: Optional[str] = None
+    mapping_direction: str
     target_format: str
+    file_control_totals: Optional[List[Dict[str, Any]]] = None
     status: str
     created_at: str
     created_by: str
@@ -338,6 +245,29 @@ class PayloadMapperBlueprintResponse(BaseModel):
 
 class PayloadMapperBlueprintListResponse(BaseModel):
     mappers: List[PayloadMapperBlueprintResponse]
+
+class TemplateDesignerModelCreate(BaseModel):
+    template_name: str = Field(..., description="Name of the template")
+    template_type: str = Field(..., description="UPLOAD or DOWNLOAD")
+    file_type: str = Field(..., description="XLSX, PDF, CSV, JPEG, XLS, XML")
+    extraction_mode: str = Field("STRUCTURED", description="STRUCTURED or AGENTIC_PROMPT")
+    is_multi_sheet: bool = False
+    file_has_header_footer: str = "NONE"
+    text_file_type: Optional[str] = None
+    delimiter_record_separator: str = ","
+    fields: List[TemplateFieldAddressModelCreate] = Field(default_factory=list)
+
+class TemplateDesignerModelResponse(TemplateDesignerModelCreate):
+    template_id: str
+    status: str
+    created_at: str
+    created_by: str
+    fields: List[TemplateFieldAddressModelResponse] = []
+    class Config:
+        from_attributes = True
+
+class TemplateDesignerModelListResponse(BaseModel):
+    templates: List[TemplateDesignerModelResponse]
 
 # =====================================================================
 # --- PHASE 1: FIELD REGISTRY & WORKFLOW PERSISTENCE SCHEMAS ---
@@ -410,6 +340,7 @@ class WorkflowNodeCreate(BaseModel):
     canvas_y_position: int = Field(default=0, description="Canvas Y coordinate")
     orchestration_steps: Optional[List['OrchestrationStep']] = Field(None, description="An ordered list of mixed-engine orchestration steps to execute.")
     events_broadcast: Optional[List[str]] = Field(None, description="Events to broadcast")
+    required_documents: Optional[List[Union[str, DocumentChecklistItem]]] = Field(None, description="Categorized list of required document types needed to proceed.")
     sla_days: int = Field(default=1, description="SLA target in days")
     sla_anchor_field: Optional[str] = Field(None, description="Field to anchor SLA calculation")
     screen_template: Optional[str] = Field(None, description="Screen template for UI rendering")
@@ -429,6 +360,12 @@ class WorkflowNodeResponse(WorkflowNodeCreate):
 class WorkflowNodeListResponse(BaseModel):
     nodes: List[WorkflowNodeResponse]
 
+class DocumentChecklistItem(BaseModel):
+    document_name: str = Field(..., description="The name of the document from Document Master.")
+    checklist_category: str = Field("UPLOAD", description="UPLOAD, DOWNLOAD, or COVENANT")
+    is_mandatory: bool = Field(True, description="Whether this document is strictly required to proceed.")
+    linked_covenant_rule: Optional[str] = Field(None, description="Linked BRE rule for COVENANT type.")
+    override_mapper_id: Optional[str] = Field(None, description="Optional override for the document's default extraction blueprint.")
 
 # --- WORKFLOW EDGE SCHEMAS ---
 class WorkflowEdgeCreate(BaseModel):
@@ -453,9 +390,14 @@ class WorkflowConfigurationCreate(BaseModel):
     product_context: str = Field(..., description="Product context (e.g., ICICI Bank Payments Hub)")
     sub_product: Optional[str] = Field(None, description="Sub-product specification")
     description: Optional[str] = Field(None, description="Workflow documentation")
+    input_schema: Optional[List[str]] = Field(None, description="ISO fields required as input context.")
+    output_schema: Optional[List[str]] = Field(None, description="ISO fields guaranteed as output context.")
     formulas_defined: Optional[List[dict]] = Field(None, description="Mathematical formulas")
     nodes: Optional[List[WorkflowNodeCreate]] = Field(None, description="Workflow nodes")
     edges: Optional[List[WorkflowEdgeCreate]] = Field(None, description="Workflow connections")
+    application_package_id: Optional[str] = Field(None, description="The specific product package this workflow belongs to.")
+    product_id: Optional[str] = Field(None, description="The specific product this workflow belongs to.")
+    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this workflow belongs to.")
 
 
 class WorkflowConfigurationResponse(BaseModel):
@@ -467,6 +409,8 @@ class WorkflowConfigurationResponse(BaseModel):
     version: str
     is_active: bool
     description: Optional[str] = None
+    input_schema: Optional[List[str]] = None
+    output_schema: Optional[List[str]] = None
     formulas_defined: Optional[List[dict]] = None
     created_at: str
     created_by: str
@@ -499,6 +443,9 @@ class WorkflowVersionResponse(BaseModel):
 
 class RevertToVersionRequest(BaseModel):
     version_id: str = Field(..., description="The ID of the historical version to revert to.")
+
+class WorkflowResumeRequest(BaseModel):
+    additional_context: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional context to merge into the paused state.")
 
 # =====================================================================
 # --- BUSINESS RULE ENGINE (BRE) SCHEMAS ---
@@ -552,6 +499,9 @@ class BusinessRuleSet(BaseModel):
     status: str = Field("DRAFT", description="Lifecycle status of the rule set.")
     triggering_event_type: Optional[str] = Field(None, description="If set, this rule set will be automatically executed when the specified event occurs.")
     rules: List[BusinessRule] = Field(..., description="The ordered list of business rules.")
+    application_package_id: Optional[str] = Field(None, description="The specific product package this rule set belongs to. Null for Global.")
+    product_id: Optional[str] = Field(None, description="The specific product this rule set belongs to. Null for Global.")
+    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this rule set belongs to. Null for Global.")
 
 # =====================================================================
 # --- ORCHESTRATION ENGINE SCHEMAS ---
@@ -562,11 +512,14 @@ class OrchestrationStepType(str, Enum):
     CALCULATION = "CALCULATION"
     API_CALL = "API_CALL"
     EVENT_BROADCAST = "EVENT_BROADCAST"
+    RECONCILIATION = "RECONCILIATION"
+    SUB_WORKFLOW = "SUB_WORKFLOW"
+    GENERATE_DOCUMENT = "GENERATE_DOCUMENT"
 
 class OrchestrationStep(BaseModel):
     sequence_number: int = Field(..., description="The execution order for this step within the node (lower numbers run first).")
     step_type: OrchestrationStepType = Field(..., description="The type of engine to invoke for this step.")
-    target_token: Optional[str] = Field(None, description="The token_code or ID of the asset to execute (for BUSINESS_RULE, CALCULATION, API_CALL).")
+    target_token: Optional[str] = Field(None, description="The ID of the asset or sub-workflow to execute.")
     target_event_type: Optional[str] = Field(None, description="The event type to broadcast (for EVENT_BROADCAST).")
     invocation_rule_token: Optional[str] = Field(None, description="If provided, this step will only be executed if the referenced Business Rule Set evaluates to true.")
 
@@ -602,6 +555,145 @@ class InsightDefinitionResponse(InsightDefinitionCreate):
 
     class Config:
         from_attributes = True
+
+# =====================================================================
+# --- REPORT DESIGNER & BI SCHEMAS ---
+# =====================================================================
+
+class ChartType(str, Enum):
+    BAR_CHART = "BAR_CHART"
+    LINE_CHART = "LINE_CHART"
+    PIE_CHART = "PIE_CHART"
+    DATA_GRID = "DATA_GRID"
+    KPI_CARD = "KPI_CARD"
+    EMBEDDED_BI = "EMBEDDED_BI" # Power BI / Cognos / Tableau
+
+class ReportWidgetConfig(BaseModel):
+    widget_id: str = Field(..., description="Unique ID for the widget.")
+    chart_type: ChartType = Field(..., description="The visual representation type.")
+    title: str = Field(..., description="Display title of the widget.")
+    data_source_entity: str = Field(..., description="The backend table or event stream to query (e.g., 'EvidencePacketRegistry', 'UserInteractionEvent').")
+    x_axis_field: Optional[str] = Field(None, description="The ISO Field technical name for the X-axis grouping.")
+    y_axis_field: Optional[str] = Field(None, description="The ISO Field technical name for the Y-axis measurement.")
+    aggregation_method: Optional[str] = Field("COUNT", description="Standard SQL agg (SUM, AVG, COUNT) or a CalculationEngine Token Code.")
+    grid_layout: Dict[str, int] = Field(..., description="React-Grid-Layout coordinates: {'x': 0, 'y': 0, 'w': 6, 'h': 4}")
+
+class ReportBlueprintCreate(BaseModel):
+    report_name: str = Field(..., description="A user-friendly name for the dashboard.")
+    description: Optional[str] = Field(None, description="What this report visualizes.")
+    is_third_party_embedded: bool = Field(False, description="True if this report is just an iframe wrapper for external BI.")
+    third_party_embed_url: Optional[str] = Field(None, description="The secure embed URL for Power BI/Cognos.")
+    expose_as_headless_api: bool = Field(False, description="True if the widget data bindings should be exposed as an OData API for external ingestion.")
+    widgets: List[ReportWidgetConfig] = Field(default_factory=list, description="The native charts and data grids.")
+    application_package_id: Optional[str] = Field(None, description="Package scoping for isolation.")
+
+class ReportBlueprintResponse(ReportBlueprintCreate):
+    report_id: str
+    status: str
+    created_at: str
+    created_by: str
+    
+    class Config:
+        from_attributes = True
+
+class ReportBlueprintListResponse(BaseModel):
+    reports: List[ReportBlueprintResponse]
+    total_count: int
+
+# =====================================================================
+# --- RECONCILIATION ENGINE SCHEMAS ---
+# =====================================================================
+
+class MatchType(str, Enum):
+    EXACT = "EXACT"
+    FUZZY = "FUZZY"
+    TOLERANCE = "TOLERANCE"
+
+class ReconciliationCategory(str, Enum):
+    NOSTRO_VOSTRO = "NOSTRO_VOSTRO"
+    MIGRATION = "MIGRATION"
+    FILE_TO_FILE = "FILE_TO_FILE"
+    CONTROL_TOTALS = "CONTROL_TOTALS"
+    DATA_COMPARE = "DATA_COMPARE"
+    SYSTEM_TO_SYSTEM = "SYSTEM_TO_SYSTEM"
+
+class MatchingRule(BaseModel):
+    source_field: str = Field(..., description="Field from the source dataset.")
+    target_field: str = Field(..., description="Field from the target dataset.")
+    match_type: MatchType = Field(..., description="Type of matching to perform.")
+    tolerance_value: Optional[float] = Field(None, description="Allowed variance if using TOLERANCE match type.")
+    fuzzy_score_cutoff: Optional[int] = Field(None, description="Score 0-100 if using FUZZY match type.")
+    pre_calculation_token: Optional[str] = Field(None, description="Calculation token to apply to source before comparing.")
+    business_rule_token: Optional[str] = Field(None, description="Rule token to evaluate before considering a match valid.")
+
+class ReconciliationTemplateCreate(BaseModel):
+    reconciliation_name: str = Field(..., description="Name of the template (e.g., 'CHIPS Daily Settlement').")
+    reconciliation_category: ReconciliationCategory = Field(..., description="Category of the reconciliation.")
+    source_dataset_name: str = Field(..., description="Logical name of the left-side data.")
+    target_dataset_name: str = Field(..., description="Logical name of the right-side data.")
+    matching_rules: List[MatchingRule] = Field(..., description="The criteria for matching records.")
+    description: Optional[str] = None
+    status: str = Field("DRAFT", description="Lifecycle status.")
+    application_package_id: Optional[str] = Field(None, description="The Application Package ID if scoped to a package.")
+    product_id: Optional[str] = Field(None, description="The product this reconciliation is associated with.")
+    subproduct_id: Optional[str] = Field(None, description="The subproduct this reconciliation is associated with.")
+
+class ReconciliationTemplateResponse(ReconciliationTemplateCreate):
+    reconciliation_template_id: str
+    created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ReconciliationTemplateListResponse(BaseModel):
+    templates: List[ReconciliationTemplateResponse]
+    total_count: int
+
+class ReconciliationResult(BaseModel):
+    reconciliation_execution_id: str = Field(..., description="Unique execution ID generated during workflow run.")
+    reconciliation_template_id: str = Field(..., description="The template blueprint invoked.")
+    matched_records: List[Dict[str, Any]]
+    unmatched_source_records: List[Dict[str, Any]]
+    unmatched_target_records: List[Dict[str, Any]]
+    variance_breaches: List[Dict[str, Any]]
+
+class ReconciliationExecutionJobResponse(BaseModel):
+    job_id: str
+    template_id: str
+    status: str
+    total_records: Optional[int] = None
+    processed_records: int
+    error_message: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class ReconciliationTrackingJob(BaseModel):
+    job_id: str
+    reconciliation_name: str
+    category: str
+    product_id: Optional[str] = None
+    subproduct_id: Optional[str] = None
+    status: str
+    total_records: Optional[int] = None
+    processed_records: int
+    error_message: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+    sla_status: str
+
+class ReconciliationTrackingStats(BaseModel):
+    total: int
+    failed: int
+    completed: int
+    processing: int
+
+class ReconciliationTrackingResponse(BaseModel):
+    tracking_jobs: List[ReconciliationTrackingJob]
+    stats: ReconciliationTrackingStats
 
 # =====================================================================
 # --- EVENT REPOSITORY SCHEMAS ---
@@ -640,6 +732,9 @@ class SymbolicFormulaCreate(BaseModel):
     mathematical_expression: str = Field(..., description="Symbolic Formula Mathematical String Expression")
     parameters: Optional[Dict[str, Any]] = Field(None, description="A JSON object for static coefficients or parameters used in the formula.")
     description: Optional[str] = Field(None, description="A detailed description of the formula's business purpose and context.")
+    application_package_id: Optional[str] = Field(None, description="The specific product package this formula belongs to. Null for Global.")
+    product_id: Optional[str] = Field(None, description="The specific product this formula belongs to. Null for Global.")
+    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this formula belongs to. Null for Global.")
 
 class SymbolicFormulaResponse(SymbolicFormulaCreate):
     asset_id: str
@@ -875,6 +970,9 @@ class ScreenTemplateCreate(BaseModel):
     subproduct_id: Optional[str] = Field(None, description="The subproduct this screen is associated with.")
     workflow_id: Optional[str] = Field(None, description="The workflow this screen is part of.")
     workflow_step_id: Optional[str] = Field(None, description="The specific workflow step this screen is for.")
+    status: Optional[str] = Field(None, description="Optional status update (e.g., DELETED, INACTIVE).")
+    linked_api_id: Optional[str] = Field(None, description="The ID of a linked API configuration.")
+    pending_api_config: Optional[Dict[str, Any]] = Field(None, description="An inline API Configuration to be created atomically with this screen.")
     definition: List[ScreenComponent] = Field(default_factory=list, description="The list of UI components that make up the screen.")
     action_buttons: List[ScreenActionButton] = Field(default_factory=list, description="The list of global action buttons for the screen.")
     value_list_groups: List[ValueListGroup] = Field(default_factory=list, description="Definitions for grouped dropdowns.")
@@ -1005,6 +1103,9 @@ class ApiConfigurationCreate(BaseModel):
     circuit_breaker_timeout_sec: int = Field(60, description="The cooldown duration in seconds before the circuit breaker tests recovery.")
     
     description: Optional[str] = Field(None, description="A description of the API's purpose.")
+    application_package_id: Optional[str] = Field(None, description="The specific product package this API belongs to. Null for Global.")
+    product_id: Optional[str] = Field(None, description="The specific product this API belongs to. Null for Global.")
+    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this API belongs to. Null for Global.")
 
 class ApiConfigurationResponse(ApiConfigurationCreate):
     api_id: str
@@ -1109,6 +1210,19 @@ class BehavioralProfileListResponse(BaseModel):
 class PromptToCanvasResponse(BaseModel):
     message: str
     generated_manifest: WorkflowConfigurationCreate
+    
+class PromptToReportResponse(BaseModel):
+    message: str
+    generated_report_blueprint: ReportBlueprintCreate
+    notes: List[str] = Field(default_factory=list)
+
+class ImageToReportRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64 encoded image string of the report mockup.")
+    image_mime_type: str = Field(default="image/jpeg", description="MIME type of the uploaded image.")
+
+class ImageToReportResponse(BaseModel):
+    message: str
+    generated_report_blueprint: ReportBlueprintCreate
 
 class WireframeToScreenRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 encoded image string of the wireframe.")
@@ -1125,3 +1239,17 @@ class TranslateFieldRequest(BaseModel):
 class TranslateFieldResponse(BaseModel):
     message: str
     translations: Dict[str, str] = Field(..., description="A dictionary of locale codes to translated names.")
+
+class AutoMapFieldSuggestion(BaseModel):
+    source_path: str
+    suggested_iso_field: Optional[str] = None
+    confidence_score: float = 0.0
+    is_new_field_required: bool = False
+    inferred_data_type: str = "Text"
+
+class AutoMapFileResponse(BaseModel):
+    message: str
+    suggested_mappings: List[AutoMapFieldSuggestion]
+    file_type: str
+    headers: Optional[List[str]] = None
+    sample_row: Optional[List[str]] = None

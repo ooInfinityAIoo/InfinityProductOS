@@ -56,6 +56,7 @@ class WorkflowExecutor:
         self.formulas_by_token_code = cache.formulas_by_token_code
         self.composite_formulas_by_token_code = cache.composite_formulas_by_token_code
         self.rule_sets_by_token_code = cache.rule_sets_by_token_code
+        self.recon_templates_by_id = cache.recon_templates_by_id
             
         # Initialize unified outbound integration dispatcher
         self.integration_dispatcher = IntegrationDispatcher(self.api_configs_by_id)
@@ -273,11 +274,135 @@ class WorkflowExecutor:
                         self.execution_trace.append(f"[WARN] EVENT_BROADCAST step is missing a 'target_event_type'. Skipping.")
                         continue
                     self.execution_trace.append(f"Executing step: EVENT_BROADCAST for event type '{target_event_type}'")
+                    
+                    trace_depth = context.get("__trace_depth__", 0) + 1
+                    correlation_id = context.get("__correlation_id__", f"CORR-{uuid.uuid4().hex[:12]}")
                     asyncio.run(global_event_bus.broadcast(SystemEvent(
                         event_type=target_event_type,
                         source_context=f"OrchestrationStep:{node.node_id}",
-                        payload=context # Broadcast the current context as the payload
-                    )))
+                        payload=context, # Broadcast the current context as the payload
+                        trace_depth=trace_depth,
+                        correlation_id=correlation_id
+                    ), db=self.db))
+
+                elif step_type == "SUB_WORKFLOW":
+                    if not target_token:
+                        self.execution_trace.append(f"[WARN] SUB_WORKFLOW step is missing a 'target_token' (workflow_id). Skipping.")
+                        continue
+                    self.execution_trace.append(f"Executing step: SUB_WORKFLOW '{target_token}'")
+                    
+                    try:
+                        # Instantiate a new executor for the nested sub-workflow
+                        sub_executor = WorkflowExecutor(db=self.db, workflow_id=target_token)
+                        
+                        # --- GAP 3: Input Scope Isolation ---
+                        child_input = context.copy()
+                        if sub_executor.workflow.input_schema:
+                            self.execution_trace.append(f"Applying strict input schema filter for Sub-Workflow.")
+                            child_input = {k: context.get(k) for k in sub_executor.workflow.input_schema}
+
+                        # --- GAP 1: Intelligent Sub-Workflow Resumption Check ---
+                        child_instance_key = f"__child_instance_{target_token}_{step.get('sequence_number')}__"
+                        existing_child_id = context.get(child_instance_key)
+                        
+                        if existing_child_id:
+                            child_instance = self.db.query(models.WorkflowExecutionInstance).filter(models.WorkflowExecutionInstance.instance_id == existing_child_id, models.WorkflowExecutionInstance.status == "PAUSED").first()
+                            if child_instance:
+                                self.execution_trace.append(f"Resuming existing Sub-Workflow '{target_token}' (Instance: {existing_child_id})")
+                                sub_result = sub_executor.execute(initial_payload=child_input, resume_from_node_id=child_instance.current_node_id, resume_trace=child_instance.execution_trace)
+                            else:
+                                sub_result = sub_executor.execute(initial_payload=child_input)
+                        else:
+                            sub_result = sub_executor.execute(initial_payload=child_input)
+                        
+                        # Merge the execution traces for a unified audit log
+                        self.execution_trace.append(f"--- Sub-Workflow '{target_token}' Trace Start ---")
+                        self.execution_trace.extend(sub_result.get("trace", []))
+                        self.execution_trace.append(f"--- Sub-Workflow '{target_token}' Trace End ---")
+                        
+                        if sub_result.get("status") == "PAUSED":
+                            self.execution_trace.append(f"Sub-workflow '{target_token}' paused. Cascading pause to parent.")
+                            # Inject a special signal into the context so the main execute loop knows to pause
+                            context["__sub_workflow_paused__"] = sub_result
+                            context[child_instance_key] = sub_result.get("instance_id") # Store for safe resumption!
+                        elif sub_result.get("status") == "FAILED":
+                            raise ValueError(f"Nested Sub-workflow '{target_token}' failed.")
+                        else:
+                            # --- GAP 3: Output Scope Isolation ---
+                            if child_instance_key in context: del context[child_instance_key]
+                            child_output = sub_result.get("final_context", {})
+                            if sub_executor.workflow.output_schema:
+                                self.execution_trace.append(f"Applying strict output schema filter from Sub-Workflow.")
+                                child_output = {k: child_output.get(k) for k in sub_executor.workflow.output_schema if k in child_output}
+                            context.update(child_output)
+                    except Exception as e:
+                        self.execution_trace.append(f"[ERROR] Sub-workflow execution failed: {str(e)}")
+                        raise ValueError(f"Sub-Workflow Engine Failure: {str(e)}")
+
+                elif step_type == "GENERATE_DOCUMENT":
+                    # --- GAP 2: Outbound Reverse Mapping to generate structured file payloads ---
+                    mapper_id = target_token
+                    self.execution_trace.append(f"Executing step: GENERATE_DOCUMENT using mapper '{mapper_id}'")
+                    mapper = self.db.query(models.PayloadMapperBlueprint).filter(models.PayloadMapperBlueprint.mapper_id == mapper_id).first()
+                    
+                    if not mapper or mapper.mapping_direction != "OUTBOUND":
+                        self.execution_trace.append(f"[WARN] Valid OUTBOUND Mapper '{mapper_id}' not found. Skipping.")
+                        continue
+                    
+                    generated_payload = {}
+                    for mapping in mapper.mappings:
+                        iso_val = context.get(mapping.target_iso_field, mapping.default_value)
+                        if mapping.calculation_token_code:
+                             calc_engine = CalculationEngine(formula_library=self.formulas_by_token_code)
+                             calc_res = calc_engine.execute_formula_by_token(mapping.calculation_token_code, context)
+                             iso_val = calc_res["final_context"].get(mapping.target_iso_field, iso_val)
+                             self.execution_trace.extend(calc_res["logs"])
+                        generated_payload[mapping.source_extracted_field] = iso_val
+                        
+                    if "generated_documents" not in context:
+                        context["generated_documents"] = {}
+                    context["generated_documents"][mapper_id] = generated_payload
+                    self.execution_trace.append(f"Successfully generated outbound payload mapping for '{mapper_id}'.")
+
+                elif step_type == "RECONCILIATION":
+                    self.execution_trace.append(f"Executing step: RECONCILIATION '{target_token}'")
+                    from routers.reconciliation_engine import ReconciliationEngine
+                    
+                    template = self.recon_templates_by_id.get(target_token)
+                    if not template:
+                        self.execution_trace.append(f"[WARN] Reconciliation Template '{target_token}' not found. Skipping.")
+                        continue
+                        
+                    source_data = context.get(template.source_dataset_name, [])
+                    target_data = context.get(template.target_dataset_name, [])
+                    
+                    if not isinstance(source_data, list) or not isinstance(target_data, list):
+                        self.execution_trace.append(f"[ERROR] Source or Target datasets are not lists. Skipping.")
+                        continue
+                        
+                    # Pre-process datasets with Calculation Engine
+                    calc_engine = CalculationEngine(formula_library=self.formulas_by_token_code)
+                    for rule in template.matching_rules:
+                        calc_token = rule.get("pre_calculation_token")
+                        if calc_token:
+                            for row in source_data:
+                                calc_result = calc_engine.execute_formula_by_token(calc_token, row)
+                                row.update(calc_result["final_context"])
+                                
+                    recon_engine = ReconciliationEngine()
+                    try:
+                        recon_result = recon_engine.match_sets(source_data, target_data, template.matching_rules)
+                        context["reconciliation_results"] = recon_result
+                        self.execution_trace.append(f"Reconciliation '{template.reconciliation_name}' complete. Matched: {len(recon_result['matched'])}, Variances: {len(recon_result['variance'])}.")
+                        
+                        # Layer 6 Governance: If there are variances or unmatched, halt workflow & broadcast
+                        if len(recon_result['variance']) > 0 or len(recon_result['unmatched_a']) > 0 or len(recon_result['unmatched_b']) > 0:
+                            error_msg = f"Reconciliation '{template.reconciliation_name}' failed with {len(recon_result['variance'])} variances, {len(recon_result['unmatched_a'])} unmatched source, and {len(recon_result['unmatched_b'])} unmatched target records."
+                            self.execution_trace.append(f"[RECON_ERROR] {error_msg}")
+                            raise ValueError(error_msg)
+                    except Exception as e:
+                        self.execution_trace.append(f"[ERROR] Reconciliation execution failed: {str(e)}")
+                        raise ValueError(f"Reconciliation Engine Failure: {str(e)}")
 
         # --- Final Layer 6 Governance Checks for Financial Nodes ---
         # After all actions, apply hardcoded governance guardrails.
@@ -301,7 +426,7 @@ class WorkflowExecutor:
 
         return context
 
-    def execute(self, initial_payload: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, initial_payload: Dict[str, Any], resume_from_node_id: str = None, resume_trace: list = None) -> Dict[str, Any]:
         """
         Runs the entire workflow from start to finish by traversing the graph.
 
@@ -325,12 +450,23 @@ class WorkflowExecutor:
         self.execution_trace.append(f"Starting execution for workflow: {self.workflow.workflow_name}")
         self.execution_trace.append(f"Initial Payload (Masked): {masked_context_for_log}")
 
-        try:
-            start_node = sorted(self.workflow.nodes, key=lambda n: n.sequence_number)[0]
-        except IndexError:
-            return {"status": "FAILED", "message": "Cannot find a starting node.", "trace": self.execution_trace}
-
-        active_nodes = [start_node]
+        is_resume_iteration = False
+        if resume_from_node_id:
+            self.execution_trace = resume_trace or []
+            self.execution_trace.append(f"--- Resuming execution from node: {resume_from_node_id} ---")
+            
+            if resume_from_node_id in self.nodes_by_id:
+                active_nodes = [self.nodes_by_id[resume_from_node_id]]
+                is_resume_iteration = True
+            else:
+                return {"status": "FAILED", "message": f"Resumed node {resume_from_node_id} not found.", "trace": self.execution_trace}
+        else:
+            try:
+                start_node = sorted(self.workflow.nodes, key=lambda n: n.sequence_number)[0]
+            except IndexError:
+                return {"status": "FAILED", "message": "Cannot find a starting node.", "trace": self.execution_trace}
+            active_nodes = [start_node]
+            
         max_steps = len(self.nodes_by_id) * 2 + 5  # Increased safety buffer for forks/joins
         step_count = 0
 
@@ -343,9 +479,94 @@ class WorkflowExecutor:
             next_step_node_ids = set()
 
             for node in active_nodes:
+                # --- LAYER 4 GOVERNANCE: DOCUMENT PREREQUISITES CHECKLIST ---
+                if node.required_documents:
+                    missing_docs = []
+                    for doc_req in node.required_documents:
+                        if isinstance(doc_req, str):
+                            if doc_req not in current_context:
+                                missing_docs.append(doc_req)
+                        elif isinstance(doc_req, dict) and doc_req.get("is_mandatory", True):
+                            if doc_req.get("document_name") not in current_context:
+                                missing_docs.append(doc_req.get("document_name"))
+                    if missing_docs:
+                        self.execution_trace.append(f"Pausing execution at node '{node.node_title}'. Missing required documents: {missing_docs}")
+                        import uuid
+                        import datetime
+                        
+                        instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+                        instance = models.WorkflowExecutionInstance(
+                            instance_id=instance_id,
+                            workflow_id=self.workflow.workflow_id,
+                            current_node_id=node.node_id,
+                            status="PAUSED",
+                            current_context=current_context, # Save raw context to preserve fields for resumption
+                            execution_trace=self.execution_trace,
+                            created_at=datetime.datetime.utcnow().isoformat()
+                        )
+                        self.db.add(instance)
+                        self.db.commit()
+                        
+                        return {"status": "PAUSED", "workflow_id": self.workflow.workflow_id, "instance_id": instance_id, "trace": self.execution_trace, "missing_documents": missing_docs}
+
+                if node.node_code == "HUMAN_APPROVAL":
+                    if is_resume_iteration and node.node_id == resume_from_node_id:
+                        self.execution_trace.append(f"Human approval confirmed for node '{node.node_title}'. Proceeding.")
+                    else:
+                        self.execution_trace.append(f"Pausing execution at node '{node.node_title}' for human approval.")
+                        import uuid
+                        import datetime
+                        
+                        instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+                        instance = models.WorkflowExecutionInstance(
+                            instance_id=instance_id,
+                            workflow_id=self.workflow.workflow_id,
+                            current_node_id=node.node_id,
+                            status="PAUSED",
+                            current_context=current_context,
+                            execution_trace=self.execution_trace,
+                            created_at=datetime.datetime.utcnow().isoformat()
+                        )
+                        self.db.add(instance)
+                        self.db.commit()
+                        
+                        return {"status": "PAUSED", "workflow_id": self.workflow.workflow_id, "instance_id": instance_id, "trace": self.execution_trace}
+
                 try:
                     # Execute the node's primary actions, including governance checks
                     current_context = self._execute_node_actions(node, current_context)
+                    
+                    # --- LAYER 4: RECURSIVE SUB-WORKFLOW PAUSE BUBBLING ---
+                    if "__sub_workflow_paused__" in current_context:
+                        sub_result = current_context.pop("__sub_workflow_paused__")
+                        self.execution_trace.append(f"Pausing execution at parent node '{node.node_title}' due to paused nested sub-workflow.")
+                        import uuid
+                        import datetime
+                        
+                        instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+                        
+                        # Tie the child instance to this parent instance in the database
+                        child_instance_id = sub_result.get("instance_id")
+                        if child_instance_id:
+                            child_instance = self.db.query(models.WorkflowExecutionInstance).filter(models.WorkflowExecutionInstance.instance_id == child_instance_id).first()
+                            if child_instance:
+                                child_instance.parent_instance_id = instance_id
+                                self.db.commit()
+
+                        instance = models.WorkflowExecutionInstance(
+                            instance_id=instance_id,
+                            workflow_id=self.workflow.workflow_id,
+                            current_node_id=node.node_id,
+                            status="PAUSED",
+                            current_context=current_context, # Save raw context to preserve fields for resumption
+                            execution_trace=self.execution_trace,
+                            created_at=datetime.datetime.utcnow().isoformat()
+                        )
+                        self.db.add(instance)
+                        self.db.commit()
+                        
+                        return {"status": "PAUSED", "workflow_id": self.workflow.workflow_id, "instance_id": instance_id, "trace": self.execution_trace, "missing_documents": sub_result.get("missing_documents")}
+
                 except ValueError as e:
                     self.execution_trace.append(f"[FATAL_GOVERNANCE_ERROR] Path terminated at node '{node.node_title}': {str(e)}")
                     # This path is now dead, so we just 'continue' to the next active_node in the current step
@@ -372,16 +593,21 @@ class WorkflowExecutor:
                     self.execution_trace.append(f"No valid conditional path found from node '{node.node_title}'. This path terminates here.")
 
             active_nodes = next_step_nodes
+            is_resume_iteration = False # Reset after first iteration
         
         if step_count >= max_steps:
             self.execution_trace.append("[ERROR] Execution halted. Maximum step count exceeded, possible infinite loop detected.")
             
             # --- BROADCAST FAILURE EVENT ---
+            trace_depth = current_context.get("__trace_depth__", 0) + 1
+            correlation_id = current_context.get("__correlation_id__", f"CORR-{uuid.uuid4().hex[:12]}")
             asyncio.run(global_event_bus.broadcast(SystemEvent(
                 event_type="WORKFLOW_FAILED",
                 source_context=f"WorkflowExecutor:{self.workflow.workflow_id}",
-                payload={"reason": "Max steps exceeded", "final_context": self.masking_service.mask_pii_data(current_context, self.pii_field_properties)}
-            )))
+                payload={"reason": "Max steps exceeded", "final_context": self.masking_service.mask_pii_data(current_context, self.pii_field_properties)},
+                trace_depth=trace_depth,
+                correlation_id=correlation_id
+            ), db=self.db))
             
             return {"status": "FAILED", "workflow_id": self.workflow.workflow_id, "final_context": self.masking_service.mask_pii_data(current_context, self.pii_field_properties), "trace": self.execution_trace}
 
@@ -391,10 +617,14 @@ class WorkflowExecutor:
         self.execution_trace.append("--- Workflow execution finished ---")
         
         # --- BROADCAST COMPLETION EVENT ---
+        trace_depth = current_context.get("__trace_depth__", 0) + 1
+        correlation_id = current_context.get("__correlation_id__", f"CORR-{uuid.uuid4().hex[:12]}")
         asyncio.run(global_event_bus.broadcast(SystemEvent(
             event_type="WORKFLOW_COMPLETED",
             source_context=f"WorkflowExecutor:{self.workflow.workflow_id}",
-            payload={"final_context": masked_final_context}
-        )))
+            payload={"final_context": masked_final_context},
+            trace_depth=trace_depth,
+            correlation_id=correlation_id
+        ), db=self.db))
         
         return {"status": "COMPLETED", "workflow_id": self.workflow.workflow_id, "final_context": masked_final_context, "trace": self.execution_trace}

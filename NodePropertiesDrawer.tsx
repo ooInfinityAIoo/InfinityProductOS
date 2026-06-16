@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Node } from 'reactflow';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient } from '../../api/client';
 
 interface NodePropertiesDrawerProps {
   node: Node | null;
@@ -7,7 +9,102 @@ interface NodePropertiesDrawerProps {
 }
 
 export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node, onClose }) => {
+  const [orchestrationSteps, setOrchestrationSteps] = useState<any[]>([]);
+  const [screenTemplate, setScreenTemplate] = useState<string>('');
+  const [requiredDocuments, setRequiredDocuments] = useState<any[]>([]);
+  const [newDocName, setNewDocName] = useState('');
+  const [newDocCategory, setNewDocCategory] = useState('UPLOAD');
+  const [newDocMandatory, setNewDocMandatory] = useState(true);
+  const [newDocRule, setNewDocRule] = useState('');
+
+  // Hydrate local state when a new node is selected
+  useEffect(() => {
+    if (node) {
+      setOrchestrationSteps(node.data.orchestration_steps || []);
+      setScreenTemplate(node.data.screen_template || '');
+      // Handle legacy string arrays vs new object arrays
+      const docs = node.data.required_documents || [];
+      const normalizedDocs = docs.map((doc: any) => {
+        if (typeof doc === 'string') {
+          return { document_name: doc, checklist_category: 'UPLOAD', is_mandatory: true, linked_covenant_rule: null };
+        }
+        return doc;
+      });
+      setRequiredDocuments(normalizedDocs);
+    }
+  }, [node]);
+
+  // --- FETCH NEURAL CONNECTIONS (OTHER STUDIOS) ---
+  const { data: rulesData } = useQuery({
+    queryKey: ['rules'],
+    queryFn: async () => (await apiClient.get('/rules/')).data
+  });
+  const { data: calcData } = useQuery({
+    queryKey: ['calculations'],
+    queryFn: async () => (await apiClient.get('/calculations/')).data
+  });
+  const { data: apiData } = useQuery({
+    queryKey: ['integrations'],
+    queryFn: async () => (await apiClient.get('/integrations/')).data
+  });
+  const { data: screenData } = useQuery({
+    queryKey: ['screens'],
+    queryFn: async () => (await apiClient.get('/screens/')).data
+  });
+  
+  // --- SYNAPTIC LINK: Fetch Live Event Dictionary ---
+  const { data: eventStatus } = useQuery({
+    queryKey: ['event-status'],
+    queryFn: async () => (await apiClient.get('/events/status')).data
+  });
+  const { data: docsData } = useQuery({
+    queryKey: ['documents'],
+    queryFn: async () => (await apiClient.get('/documents/')).data
+  });
+  const { data: workflowsData } = useQuery({
+    queryKey: ['workflows'],
+    queryFn: async () => (await apiClient.get('/workflows/')).data
+  });
+  const { data: reconData } = useQuery({
+    queryKey: ['recon-templates'],
+    queryFn: async () => (await apiClient.get('/reconciliation/templates')).data
+  });
+  const eventTypes = eventStatus ? Object.keys(eventStatus.listeners) : [];
+
   if (!node) return null;
+
+  const handleAddStep = () => {
+    setOrchestrationSteps([
+      ...orchestrationSteps, 
+      { sequence_number: (orchestrationSteps.length + 1) * 10, step_type: 'BUSINESS_RULE', target_token: '' }
+    ]);
+  };
+
+  const handleStepChange = (index: number, field: string, value: any) => {
+    const newSteps = [...orchestrationSteps];
+    newSteps[index][field] = value;
+    if (field === 'step_type') {
+       newSteps[index].target_token = ''; // Reset target when type changes
+       newSteps[index].target_event_type = '';
+    }
+    setOrchestrationSteps(newSteps);
+  };
+
+  const handleAddDocument = () => {
+    if (newDocName.trim()) {
+      setRequiredDocuments([
+        ...requiredDocuments, 
+        { 
+          document_name: newDocName.trim(), 
+          checklist_category: newDocCategory, 
+          is_mandatory: newDocMandatory, 
+          linked_covenant_rule: newDocCategory === 'COVENANT' ? newDocRule : null 
+        }
+      ]);
+      setNewDocName('');
+      setNewDocRule('');
+    }
+  };
 
   return (
     <div className="absolute top-0 right-0 w-[400px] h-full bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col animate-slide-in-right">
@@ -41,17 +138,122 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
             </div>
           </div>
 
+          {/* DOCUMENT PREREQUISITES */}
           <div className="pt-4 border-t border-slate-100">
-            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Layer 4 Orchestration</label>
-            <div className="bg-[#F0F7FF] border border-[#CCE0FF] p-4 rounded-md">
-              <p className="text-[12px] text-[#0052CC] mb-3 leading-relaxed">Configure logic rules, API triggers, and calculations for this step to process payload transformations.</p>
-              <button className="text-[12px] font-bold text-[#0052CC] bg-white border border-[#0052CC] hover:bg-[#0052CC] hover:text-white px-4 py-2 rounded transition-colors w-full shadow-sm">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Advanced Document Checklists</label>
+            <p className="text-[10px] text-slate-500 mb-2">Define Upload, Download, and Covenant prerequisites.</p>
+            <div className="space-y-2 mb-3">
+              {requiredDocuments.map((doc, idx) => (
+                <div key={idx} className="flex flex-col bg-amber-50 border border-amber-200 px-3 py-2 rounded text-[11px] font-bold text-amber-800 relative">
+                  <button onClick={() => setRequiredDocuments(requiredDocuments.filter((_, i) => i !== idx))} className="absolute top-2 right-2 text-amber-600 hover:text-red-500"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                  <div className="flex items-center gap-2 mb-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> {doc.document_name}</div>
+                  <div className="flex gap-2 text-[9px] font-mono">
+                    <span className="bg-amber-100 px-1 rounded">{doc.checklist_category}</span>
+                    <span className={doc.is_mandatory ? 'text-red-600' : 'text-slate-500'}>{doc.is_mandatory ? 'MANDATORY' : 'OPTIONAL'}</span>
+                    {doc.linked_covenant_rule && <span className="text-[#0176D3]">Rule: {doc.linked_covenant_rule}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <select value={newDocName} onChange={(e) => setNewDocName(e.target.value)} className="text-[11px] border border-slate-300 rounded p-1.5 outline-none focus:border-[#0176D3] bg-white">
+                <option value="" disabled>Select Core Document...</option>
+                {docsData?.map((d: any) => (
+                  <option key={d.document_id} value={d.document_name}>{d.document_name} ({d.document_format})</option>
+                ))}
+              </select>
+              <select value={newDocCategory} onChange={(e) => setNewDocCategory(e.target.value)} className="text-[11px] border border-slate-300 rounded p-1.5 outline-none focus:border-[#0176D3] bg-white">
+                <option value="UPLOAD">UPLOAD</option>
+                <option value="DOWNLOAD">DOWNLOAD</option>
+                <option value="COVENANT">COVENANT</option>
+              </select>
+            </div>
+            {newDocCategory === 'COVENANT' && (
+              <div className="mb-2">
+                <select value={newDocRule} onChange={(e) => setNewDocRule(e.target.value)} className="w-full text-[11px] border border-slate-300 rounded p-1.5 outline-none focus:border-[#0176D3] bg-white">
+                  <option value="">Select Covenant Rule (Optional)...</option>
+                  {rulesData?.map((r: any) => (<option key={r.token_code} value={r.token_code}>{r.business_name} ({r.token_code})</option>))}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600"><input type="checkbox" checked={newDocMandatory} onChange={(e) => setNewDocMandatory(e.target.checked)} /> Mandatory Check</label>
+              <button disabled={!newDocName} onClick={handleAddDocument} className="bg-slate-800 text-white px-3 py-1 rounded text-[10px] font-bold hover:bg-slate-900 transition-colors disabled:opacity-50">Add</button>
+            </div>
+          </div>
+
+          {/* THE SCREEN DESIGNER SYNAPSE */}
+          <div className="pt-4 border-t border-slate-100">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Assigned User Interface (Screen Canva)</label>
+            <select 
+               value={screenTemplate} 
+               onChange={(e) => setScreenTemplate(e.target.value)} 
+               className="w-full text-[13px] text-slate-900 border border-slate-300 rounded p-2.5 focus:border-[#0176D3] outline-none bg-white"
+            >
+              <option value="">No UI Screen Required (Background Task)</option>
+              {screenData?.screens?.map((s: any) => (
+                <option key={s.screen_id} value={s.screen_id}>{s.screen_name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* THE ORCHESTRATION SYNAPSE */}
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Layer 4 Orchestration Steps</label>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-md space-y-3">
+              
+              {orchestrationSteps.length === 0 && (
+                 <p className="text-[11px] text-slate-400 italic text-center">No logic assets attached.</p>
+              )}
+
+              {orchestrationSteps.map((step, idx) => (
+                <div key={idx} className="bg-white border border-slate-200 p-2 rounded flex gap-2 items-center shadow-sm">
+                   <span className="text-[9px] font-bold text-slate-400 bg-slate-100 p-1 rounded shrink-0">{step.sequence_number}</span>
+                   <select 
+                     value={step.step_type} 
+                     onChange={(e) => handleStepChange(idx, 'step_type', e.target.value)} 
+                     className="w-28 text-[10px] font-bold border border-slate-200 rounded p-1 outline-none bg-slate-50 text-slate-700"
+                   >
+                     <option value="BUSINESS_RULE">Rule Engine</option>
+                     <option value="CALCULATION">Math Engine</option>
+                     <option value="API_CALL">API Webhook</option>
+                     <option value="SUB_WORKFLOW">Sub-Workflow</option>
+                     <option value="RECONCILIATION">Recon Engine</option>
+                     <option value="EVENT_BROADCAST">Fire Event</option>
+                   </select>
+                   
+                   {step.step_type === 'EVENT_BROADCAST' ? (
+                     <input type="text" placeholder="e.g., TX_FAILED" value={step.target_event_type || ''} onChange={(e) => handleStepChange(idx, 'target_event_type', e.target.value)} className="flex-1 text-[10px] border border-slate-200 rounded p-1 outline-none font-mono text-amber-600" />
+                   ) : (
+                     <select 
+                       value={step.target_token} 
+                       onChange={(e) => handleStepChange(idx, 'target_token', e.target.value)} 
+                       className="flex-1 text-[10px] border border-slate-200 rounded p-1 outline-none font-mono text-[#0176D3]"
+                     >
+                       <option value="" disabled>Select Asset...</option>
+                       {step.step_type === 'BUSINESS_RULE' && rulesData?.map((r: any) => <option key={r.token_code} value={r.token_code}>{r.token_code}</option>)}
+                       {step.step_type === 'CALCULATION' && calcData?.formulas?.map((f: any) => <option key={f.token_code} value={f.token_code}>{f.token_code}</option>)}
+                       {step.step_type === 'API_CALL' && apiData?.integrations?.map((a: any) => <option key={a.api_id} value={a.api_id}>{a.api_name}</option>)}
+                       {step.step_type === 'SUB_WORKFLOW' && workflowsData?.map((w: any) => <option key={w.workflow_id} value={w.workflow_id}>{w.workflow_name}</option>)}
+                       {step.step_type === 'RECONCILIATION' && reconData?.templates?.map((t: any) => <option key={t.reconciliation_template_id} value={t.reconciliation_template_id}>{t.reconciliation_name}</option>)}
+                     </select>
+                   )}
+                </div>
+              ))}
+
+              <button onClick={handleAddStep} className="text-[11px] font-bold text-[#0176D3] bg-white border border-[#0176D3] hover:bg-[#0176D3] hover:text-white px-4 py-1.5 rounded transition-colors w-full shadow-sm mt-2">
                 + Add Orchestration Step
               </button>
             </div>
           </div>
         </div>
       </div>
+      
+      <datalist id="event-types-list">
+        {eventTypes.map(et => <option key={et} value={et} />)}
+      </datalist>
 
       <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button onClick={onClose} className="px-5 py-2.5 text-[13px] font-bold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors">Cancel</button>

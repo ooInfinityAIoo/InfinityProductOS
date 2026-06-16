@@ -130,8 +130,8 @@ async def requeue_ingestion_job(
             detail=f"Job cannot be re-queued. Status is '{job.status}'. Only FAILED jobs can be re-queued."
         )
 
-    if not file.filename.lower().endswith(('.csv', '.xlsx', '.xml', '.pdf', '.dbf')):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type. Please upload a CSV, XLSX, XML, PDF, or DBF file.")
+    if not file.filename.lower().endswith(('.csv', '.xls', '.xlsx', '.xml', '.pdf', '.dbf', '.doc', '.docx', '.txt')):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type. Please upload a valid document or data file.")
 
     file_contents = await file.read()
 
@@ -155,41 +155,48 @@ async def requeue_ingestion_job(
     return job
 
 @router.post("/files/{mapper_id}/{workflow_id}", status_code=status.HTTP_202_ACCEPTED, summary="Upload a File for Processing")
-async def upload_file_for_processing(
+async def upload_files_for_processing(
     mapper_id: str,
     workflow_id: str,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
+    instance_id: Optional[str] = Query(None, description="Comma-separated target instance IDs for resuming paused workflows"),
+    document_type: Optional[str] = Query(None, description="The document checklist type being fulfilled"),
     x_tenant_region: Optional[str] = Header("DEFAULT"),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_designer_privileges)
 ):
     """
-    Accepts a file and processes its records asynchronously using a specified mapper and workflow.
-    This endpoint implements the 'Asynchronous Multi-File Upload Processing Pipeline' from Layer 4 of the architecture.
+    Accepts MULTIPLE files and processes their records asynchronously.
+    Supports M:N routing: Multiple files can trigger multiple workflows (Fan-Out) 
+    or resume multiple paused instances (Convergence).
     """
-    if not file.filename.lower().endswith(('.csv', '.xlsx', '.xml', '.pdf', '.dbf')):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type. Please upload a CSV, XLSX, XML, PDF, or DBF file.")
+    job_ids = []
+    
+    for file in files:
+        if not file.filename.lower().endswith(('.csv', '.xls', '.xlsx', '.xml', '.pdf', '.dbf', '.doc', '.docx', '.txt')):
+            continue # Skip unsupported files in the batch
 
-    job_id = f"JOB-{uuid.uuid4().hex[:12].upper()}"
-    file_contents = await file.read()
+        job_id = f"JOB-{uuid.uuid4().hex[:12].upper()}"
+        file_contents = await file.read()
 
-    # Create the job record in the database
-    new_job = models.IngestionJob(
-        job_id=job_id,
-        filename=file.filename,
-        status="PENDING",
-        mapper_id=mapper_id,
-        workflow_id=workflow_id,
-        created_by=current_user.id,
-        created_at=datetime.datetime.utcnow().isoformat()
-    )
-    db.add(new_job)
-    db.commit()
+        new_job = models.IngestionJob(
+            job_id=job_id,
+            filename=file.filename,
+            status="PENDING",
+            mapper_id=mapper_id,
+            workflow_id=workflow_id, # Can be a comma-separated list of workflows
+            created_by=current_user.id,
+            created_at=datetime.datetime.utcnow().isoformat()
+        )
+        db.add(new_job)
+        db.commit()
 
-    # Dispatch the heavy processing to the distributed task queue (e.g., Celery).
-    # This call is non-blocking and executes in a separate worker process.
-    file_contents_b64 = base64.b64encode(file_contents).decode('utf-8')
-    process_file_task.delay(job_id, mapper_id, workflow_id, file_contents_b64, file.filename, x_tenant_region)
-    print(f"Dispatching job {job_id} to distributed task queue.")
+        # Dispatch to distributed workers, passing the multi-routing parameters
+        file_contents_b64 = base64.b64encode(file_contents).decode('utf-8')
+        process_file_task.delay(job_id, mapper_id, workflow_id, file_contents_b64, file.filename, x_tenant_region, instance_id, document_type)
+        job_ids.append(job_id)
 
-    return {"message": "File accepted for asynchronous processing.", "job_id": job_id, "filename": file.filename}
+    if not job_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid files provided for ingestion.")
+
+    return {"message": f"{len(job_ids)} files accepted for asynchronous M:N processing.", "job_ids": job_ids}

@@ -32,6 +32,7 @@ def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTempl
         subproduct_id=db_screen.subproduct_id,
         workflow_id=db_screen.workflow_id,
         workflow_step_id=db_screen.workflow_step_id,
+sign        linked_api_id=db_screen.linked_api_id,
         created_at=db_screen.created_at,
         updated_at=db_screen.updated_at, # This was missing in the original helper
         created_by=db_screen.created_by,
@@ -53,6 +54,19 @@ def create_screen_template(payload: schemas.ScreenTemplateCreate, db: Session = 
         "action_buttons": [b.dict(exclude_unset=True) for b in payload.action_buttons],
         "value_list_groups": [g.dict() for g in payload.value_list_groups]
     }
+    
+    # GAP 2: Atomic Creation of the pending API
+    linked_api_id = payload.linked_api_id
+    if payload.pending_api_config:
+        linked_api_id = f"API-{uuid.uuid4().hex[:8].upper()}"
+        new_api = models.ApiConfiguration(
+            api_id=linked_api_id,
+            created_by=current_user.id,
+            created_at=datetime.datetime.utcnow().isoformat(),
+            status="DRAFT", # Ensure the API starts in DRAFT mode initially
+            **payload.pending_api_config
+        )
+        db.add(new_api)
 
     new_template = models.ScreenTemplate(
         screen_id=f"SCRN-{uuid.uuid4().hex[:12].upper()}",
@@ -64,6 +78,7 @@ def create_screen_template(payload: schemas.ScreenTemplateCreate, db: Session = 
         subproduct_id=payload.subproduct_id,
         workflow_id=payload.workflow_id,
         workflow_step_id=payload.workflow_step_id,
+        linked_api_id=linked_api_id,
         definition=full_definition,
         created_by=current_user.id,
         created_at=datetime.datetime.utcnow().isoformat(),
@@ -115,6 +130,17 @@ def update_screen_template(screen_id: str, payload: schemas.ScreenTemplateCreate
     db_screen.subproduct_id = payload.subproduct_id
     db_screen.workflow_id = payload.workflow_id
     db_screen.workflow_step_id = payload.workflow_step_id
+    db_screen.linked_api_id = payload.linked_api_id
+    
+    # GAP 4: Tying the Deactivation Lifecycles
+    if payload.status:
+        db_screen.status = payload.status
+        if payload.status in ["DELETED", "INACTIVE"] and db_screen.linked_api_id:
+            linked_api = db.query(models.ApiConfiguration).filter(models.ApiConfiguration.api_id == db_screen.linked_api_id).first()
+            if linked_api:
+                linked_api.status = payload.status
+                linked_api.updated_at = datetime.datetime.utcnow().isoformat()
+                
     db_screen.updated_at = datetime.datetime.utcnow().isoformat()
 
     # Pack and update the JSONB definition field

@@ -13,6 +13,7 @@ class AssetCache:
         self.formulas_by_token_code = {f.token_code: f for f in db.query(models.SymbolicFormulaAsset).all()}
         self.composite_formulas_by_token_code = {c.token_code: c for c in db.query(models.CompositeFormulaBlueprint).all()}
         self.rule_sets_by_token_code = {rs.token_code: rs for rs in db.query(models.BusinessRuleSet).all()}
+        self.recon_templates_by_id = {r.reconciliation_template_id: r for r in db.query(models.ReconciliationTemplate).all()}
         
         # Pre-load PII fields for Layer 6 data masking
         pii_fields_from_db = db.query(

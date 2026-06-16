@@ -108,6 +108,9 @@ def process_calculation_model(payload: dict, db: Session) -> dict:
         token_code=token_code,
         target_output_field=target_output_field,
         mathematical_expression=mathematical_expression,
+        application_package_id=payload.get("application_package_id"),
+        product_id=payload.get("product_id"),
+        subproduct_id=payload.get("subproduct_id"),
         created_at=datetime.datetime.utcnow().isoformat(),
         created_by=payload.get("created_by", "SYSTEM")
     )

@@ -176,3 +176,13 @@ def get_most_active_users(
 
     # The query returns Row objects that Pydantic can serialize since field names match the response model.
     return {"users": active_users, "total_count": total_count or 0}
+
+@router.get("/behavioral-profiles", response_model=schemas.BehavioralProfileListResponse, summary="Get Behavioral AI Profiles")
+def get_behavioral_profiles(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_admin_or_auditor)
+):
+    profiles = db.query(models.CustomerBehavioralProfile).order_by(desc(models.CustomerBehavioralProfile.last_calculated_at)).offset(skip).limit(limit).all()
+    return {"profiles": profiles}

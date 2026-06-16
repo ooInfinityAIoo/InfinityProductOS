@@ -17,6 +17,8 @@ class SystemEvent(BaseModel):
     event_type: str  # STATE_TRANSITION, RULES_EXECUTION, CALCULATION_OUTPUT, EXCEPTION_ERROR
     source_context: str
     payload: Dict[str, Any]
+    trace_depth: int = Field(default=0, description="Used to detect and break infinite recursion loops.")
+    correlation_id: str = Field(default_factory=lambda: f"CORR-{uuid.uuid4().hex[:12]}")
 
 try:
     from confluent_kafka import Producer
@@ -100,8 +102,32 @@ class EventBusEngine:
         self._dropped_events.clear()
         return count
 
-    async def broadcast(self, event: SystemEvent):
+    async def broadcast(self, event: SystemEvent, db=None):
+        """
+        Broadcasts an event. If 'db' is provided, it utilizes the Transactional Outbox 
+        Pattern by writing to the database instead of emitting immediately.
+        """
         evt_type = event.event_type.upper()
+        
+        if db is not None:
+            import models
+            outbox_event = models.TransactionalOutboxEvent(
+                event_id=event.event_id,
+                aggregate_type="System",
+                aggregate_id=event.source_context,
+                event_type=event.event_type,
+                payload=event.dict(),
+                created_at=event.broadcast_at,
+                status="PENDING"
+            )
+            db.add(outbox_event)
+            return # Let the caller's transaction boundary commit this safely
+            
+        # LAYER 4 ENTERPRISE GOVERNANCE: Infinite Loop Detection
+        if event.trace_depth > 10:
+            print(f"[EVENT BUS] 🛑 INFINITE LOOP PREVENTED. Event '{evt_type}' dropped. Trace depth exceeded.")
+            return
+            
         if self._is_paused:
             self._dropped_events.append(event)
             print(f"[EVENT BUS - PAUSED] Dropped event: {evt_type} from {event.source_context}")

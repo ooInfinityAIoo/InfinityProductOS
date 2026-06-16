@@ -19,7 +19,8 @@ def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: S
     """
     Creates a new payload transformation mapper blueprint, including all its field mappings, in a single atomic transaction.
     
-    This corresponds to the 'Dynamic Payload Transformation' module in the architecture.
+    This corresponds to the 'Dynamic Payload Transformation' module (Step C) in the architecture,
+    responsible for mapping intermediate extracted fields to final ISO structures with rules/math.
     """
     mapper_id = f"MAP-{uuid.uuid4().hex[:8].upper()}"
 
@@ -27,8 +28,13 @@ def create_mapper_blueprint(payload: schemas.PayloadMapperBlueprintCreate, db: S
     new_blueprint = models.PayloadMapperBlueprint(
         mapper_id=mapper_id,
         mapper_name=payload.mapper_name,
-        source_format=payload.source_format,
+        source_template_id=payload.source_template_id,
         target_format=payload.target_format,
+        mapping_direction=payload.mapping_direction,
+        file_control_totals=payload.file_control_totals,
+        application_package_id=payload.application_package_id,
+        product_id=payload.product_id,
+        subproduct_id=payload.subproduct_id,
         created_at=datetime.datetime.utcnow().isoformat(),
         created_by=current_user.id,
     )
@@ -96,8 +102,13 @@ def update_mapper_blueprint(mapper_id: str, payload: schemas.PayloadMapperBluepr
     try:
         # Update scalar properties
         db_blueprint.mapper_name = payload.mapper_name
-        db_blueprint.source_format = payload.source_format
+        db_blueprint.source_template_id = payload.source_template_id
         db_blueprint.target_format = payload.target_format
+        db_blueprint.mapping_direction = payload.mapping_direction
+        db_blueprint.file_control_totals = payload.file_control_totals
+        db_blueprint.application_package_id = payload.application_package_id
+        db_blueprint.product_id = payload.product_id
+        db_blueprint.subproduct_id = payload.subproduct_id
 
         # Clear existing mappings. SQLAlchemy's cascade will handle deletion.
         db_blueprint.mappings.clear()
