@@ -1,7 +1,8 @@
 import json
 import datetime
-from typing import Dict, Any
-from event_bus import SystemEvent
+from typing import Dict, Any, TYPE_CHECKING
+if TYPE_CHECKING:
+    from event_bus import SystemEvent
 import os
 import httpx
 
@@ -17,7 +18,7 @@ class SlackService:
         """
         self.webhook_url = os.getenv("SLACK_WEBHOOK_URL")
 
-    def send_workflow_event_message(self, event: SystemEvent):
+    def send_workflow_event_message(self, event: "SystemEvent"):
         """
         Formats and "sends" a Slack message based on a workflow event.
         """

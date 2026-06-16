@@ -25,6 +25,9 @@ RegionalSessionLocal = {
     for region, _eng in regional_engines.items()
 }
 
+engine = regional_engines["DEFAULT"]
+SessionLocal = RegionalSessionLocal["DEFAULT"]
+
 def get_db(x_tenant_region: Optional[str] = Header("DEFAULT")):
     """
     Dependency provider that yields a database session connected to the appropriate

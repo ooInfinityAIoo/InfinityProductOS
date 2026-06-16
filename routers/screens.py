@@ -32,7 +32,7 @@ def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTempl
         subproduct_id=db_screen.subproduct_id,
         workflow_id=db_screen.workflow_id,
         workflow_step_id=db_screen.workflow_step_id,
-sign        linked_api_id=db_screen.linked_api_id,
+        linked_api_id=db_screen.linked_api_id,
         created_at=db_screen.created_at,
         updated_at=db_screen.updated_at, # This was missing in the original helper
         created_by=db_screen.created_by,

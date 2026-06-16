@@ -1,8 +1,9 @@
 import json
 import datetime
-from typing import Dict, Any
+from typing import Dict, Any, TYPE_CHECKING
 import os
-from event_bus import SystemEvent
+if TYPE_CHECKING:
+    from event_bus import SystemEvent
 from jinja2 import Environment, FileSystemLoader
 
 class NotificationService:
@@ -18,7 +19,7 @@ class NotificationService:
         template_dir = os.path.join(os.path.dirname(__file__), '..', 'templates', 'notifications')
         self.env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
 
-    def send_workflow_event_email(self, event: SystemEvent):
+    def send_workflow_event_email(self, event: "SystemEvent"):
         """
         Formats and "sends" an email based on a workflow event using a Jinja2 template.
         """

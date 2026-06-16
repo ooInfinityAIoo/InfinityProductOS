@@ -6,7 +6,7 @@ import { usePlatformStore } from '../../store/usePlatformStore';
 import { ScreenList } from './ScreenList';
 import { ScreenCanvas } from './ScreenCanvas';
 import { DraftConfirmationModal } from './DraftConfirmationModal';
-import { ApiGeneratorModal } from './ApiGeneratorModal';
+import { ApiGeneratorModal } from '../integrations/ApiGeneratorModal';
 
 export const ScreenDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();

@@ -1,5 +1,6 @@
 import datetime
 import asyncio
+from typing import List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
 from models import IngestionJob, IngestionJobArchive, EvidencePacketRegistry, MaintenanceTaskLog

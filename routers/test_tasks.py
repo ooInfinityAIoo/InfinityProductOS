@@ -59,8 +59,14 @@ class TestTasksDBFIngestion(unittest.TestCase):
         dummy_b64 = base64.b64encode(b"mock_dbf_binary_header_content").decode('utf-8')
 
         # 5. Execute the Celery Task directly
-        mock_celery_self = MagicMock()
-        process_file_task(mock_celery_self, "JOB-DBF-1", "MAP-DBF-1", "WF-DBF-1", dummy_b64, "mainframe_export.dbf", "DEFAULT")
+        process_file_task.run(
+            job_id="JOB-DBF-1",
+            mapper_id="MAP-DBF-1",
+            workflow_id="WF-DBF-1",
+            file_contents_b64=dummy_b64,
+            filename="mainframe_export.dbf",
+            x_tenant_region="DEFAULT"
+        )
 
         # 6. Assertions & Validation
         # Verify the background worker successfully parsed and transformed the data

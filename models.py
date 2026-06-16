@@ -1,6 +1,18 @@
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float, Index, JSON
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
+
+class JSONB(TypeDecorator):
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_JSONB())
+        else:
+            return dialect.type_descriptor(JSON())
+
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -764,6 +776,28 @@ class TransactionalOutboxEvent(Base):
     # Auditing and Poller tracking
     created_at = Column(String, nullable=False, index=True)
     status = Column(String, default="PENDING", index=True)      # PENDING, PUBLISHED, FAILED
+
+
+class SimulationScenario(Base):
+    __tablename__ = "simulation_scenarios"
+    simulation_id = Column(String, primary_key=True, index=True)
+    simulation_name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    target_workflow_id = Column(String, nullable=False, index=True)
+    sample_size = Column(Integer, default=100)
+    scenario_variables = Column(JSONB, nullable=True)
+    historical_dataset_source = Column(String, nullable=True)
+    created_at = Column(String, nullable=False)
+
+class SimulationJob(Base):
+    __tablename__ = "simulation_jobs"
+    job_id = Column(String, primary_key=True, index=True)
+    simulation_id = Column(String, nullable=False, index=True)
+    status = Column(String, default="PENDING", index=True)
+    processed_records = Column(Integer, default=0)
+    total_records = Column(Integer, default=0)
+    results_summary = Column(JSONB, nullable=True)
+    created_at = Column(String, nullable=False)
 
 
 def init_db():

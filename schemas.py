@@ -1,6 +1,20 @@
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
+from enum import Enum
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    OPERATOR = "operator"
+    AUDITOR = "auditor"
+    VIEWER = "viewer"
+    SALES = "sales"
+    RISK = "risk"
+    C_LEVEL = "c_level"
+
+class CurrentUser(BaseModel):
+    id: str
+    role: UserRole
 
 # =====================================================================
 # --- FOUNDATIONAL WORKFLOW BLUEPRINT SCHEMAS ---
@@ -160,6 +174,27 @@ class IngestionJobArchiveFilterParams(BaseModel):
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=1000)
 
+class IngestionJobArchiveResponse(BaseModel):
+    job_id: str
+    filename: str
+    status: str
+    mapper_id: str
+    workflow_id: str
+    total_records: Optional[int] = None
+    processed_records: int
+    error_message: Optional[str] = None
+    created_by: Optional[str] = None
+    processing_started_at: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+    archived_at: str
+
+    class Config:
+        from_attributes = True
+
+class IngestionJobArchiveListResponse(BaseModel):
+    jobs: List[IngestionJobArchiveResponse]
+
 # =====================================================================
 # --- DATA ARCHIVAL SCHEMAS ---
 # =====================================================================
@@ -293,6 +328,13 @@ class FieldRegistryResponse(FieldRegistryBase):
 class FieldRegistryListResponse(BaseModel):
     fields: List[FieldRegistryResponse]
 
+class FieldRegistryFilterParams(BaseModel):
+    domain_category: Optional[str] = None
+    subdomain_category: Optional[str] = None
+    data_type: Optional[str] = None
+    skip: int = Field(0, ge=0)
+    limit: int = Field(100, ge=1, le=1000)
+
 
 # --- ISO FIELD REGISTRY SCHEMAS ---
 class ISOFieldDefinitionCreate(BaseModel):
@@ -324,6 +366,24 @@ class ISOFieldDefinitionListResponse(BaseModel):
     fields: List[ISOFieldDefinitionResponse]
     total_count: int
 
+class PIIFieldListResponse(BaseModel):
+    pii_fields: List[ISOFieldDefinitionResponse]
+    total_count: int
+
+class PIIMaskingStrategyStatItem(BaseModel):
+    masking_strategy: Optional[str]
+    count: int
+
+class PIIMaskingStrategyStatsResponse(BaseModel):
+    stats: List[PIIMaskingStrategyStatItem]
+
+class MaskingStrategyDefinition(BaseModel):
+    strategy_name: str
+    description: str
+
+class MaskingStrategyListResponse(BaseModel):
+    strategies: List[MaskingStrategyDefinition]
+
 class DomainCategoryListResponse(BaseModel):
     domain_categories: List[str]
 
@@ -331,7 +391,13 @@ class SubdomainCategoryListResponse(BaseModel):
     subdomain_categories: List[str]
 
 
-# --- WORKFLOW NODE SCHEMAS ---
+class DocumentChecklistItem(BaseModel):
+    document_name: str = Field(..., description="The name of the document from Document Master.")
+    checklist_category: str = Field("UPLOAD", description="UPLOAD, DOWNLOAD, or COVENANT")
+    is_mandatory: bool = Field(True, description="Whether this document is strictly required to proceed.")
+    linked_covenant_rule: Optional[str] = Field(None, description="Linked BRE rule for COVENANT type.")
+    override_mapper_id: Optional[str] = Field(None, description="Optional override for the document's default extraction blueprint.")
+
 class WorkflowNodeCreate(BaseModel):
     sequence_number: int = Field(..., description="Step sequence in workflow")
     node_title: str = Field(..., description="User-facing node label")
@@ -359,13 +425,6 @@ class WorkflowNodeResponse(WorkflowNodeCreate):
 
 class WorkflowNodeListResponse(BaseModel):
     nodes: List[WorkflowNodeResponse]
-
-class DocumentChecklistItem(BaseModel):
-    document_name: str = Field(..., description="The name of the document from Document Master.")
-    checklist_category: str = Field("UPLOAD", description="UPLOAD, DOWNLOAD, or COVENANT")
-    is_mandatory: bool = Field(True, description="Whether this document is strictly required to proceed.")
-    linked_covenant_rule: Optional[str] = Field(None, description="Linked BRE rule for COVENANT type.")
-    override_mapper_id: Optional[str] = Field(None, description="Optional override for the document's default extraction blueprint.")
 
 # --- WORKFLOW EDGE SCHEMAS ---
 class WorkflowEdgeCreate(BaseModel):
@@ -1002,9 +1061,15 @@ class BulkDeleteResponse(BaseModel):
     deleted_count: int
     message: str
 
-# =====================================================================
-# --- SYSTEM-WIDE DASHBOARD SCHEMAS ---
-# =====================================================================
+class GovernanceStatsResponse(BaseModel):
+    pending: int
+    resolved: int
+    total: int
+
+class ExecutionLogStatsResponse(BaseModel):
+    success: int
+    failed: int
+    total: int
 
 class SystemActivitySummaryResponse(BaseModel):
     total_workflows: int
@@ -1015,6 +1080,104 @@ class SystemActivitySummaryResponse(BaseModel):
     execution_logs: ExecutionLogStatsResponse
     total_comments: int
     total_maintenance_runs: int
+
+# =====================================================================
+# --- GOVERNANCE HUB SCHEMAS ---
+# =====================================================================
+
+class EvidencePacketRegistryResponse(BaseModel):
+    packet_id: str
+    operator_maker: str
+    authorizer_checker: str
+    raw_payload_reference: Optional[str] = None
+    blockchain_tx_hash: str
+    variance_metric_logged: Optional[str] = None
+    execution_status: str
+    created_at: str
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class GovernanceTaskSearchResponse(BaseModel):
+    tasks: List[EvidencePacketRegistryResponse]
+
+class GovernanceTaskFilterParams(BaseModel):
+    packet_id: Optional[str] = None
+    raw_payload_reference: Optional[str] = None
+    execution_status: Optional[str] = None
+    authorizer_sme: Optional[str] = None
+    skip: int = Field(0, ge=0)
+    limit: int = Field(100, ge=1, le=1000)
+
+class GovernanceTaskListResponse(BaseModel):
+    pending_tasks: List[EvidencePacketRegistryResponse]
+
+class GovernanceTaskDetailResponse(EvidencePacketRegistryResponse):
+    pass
+
+class TaskParticipant(BaseModel):
+    user_id: str
+    roles: List[str]
+
+class TaskParticipantListResponse(BaseModel):
+    task_id: str
+    participants: List[TaskParticipant]
+
+class GovernanceCommentCreate(BaseModel):
+    comment: str
+
+class GovernanceCommentUpdate(BaseModel):
+    comment: str
+
+class GovernanceCommentResponse(BaseModel):
+    comment_id: str
+    task_id: str
+    author: str
+    comment: str
+    created_at: str
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class ExecutionLogSearchResponse(BaseModel):
+    logs: List[EvidencePacketRegistryResponse]
+
+class ExecutionLogFilterParams(BaseModel):
+    packet_id: Optional[str] = None
+    raw_payload_reference: Optional[str] = None
+    execution_status: Optional[str] = None
+    operator_maker: Optional[str] = None
+    created_after: Optional[datetime] = None
+    created_before: Optional[datetime] = None
+    skip: int = Field(0, ge=0)
+    limit: int = Field(100, ge=1, le=1000)
+
+class GovernanceTaskResponse(BaseModel):
+    task_id: str
+    status: str
+    checker_identity: Optional[str] = None
+    resolution_action: Optional[str] = None
+    resolved_at: Optional[str] = None
+    governance_signature_token: Optional[str] = None
+
+class GovernanceAction(str, Enum):
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+
+class GovernanceTaskAction(BaseModel):
+    action: GovernanceAction
+
+class GovernanceBulkActionResponse(BaseModel):
+    success_count: int
+    failed_count: int
+    details: List[Dict[str, Any]]
+
+class GovernanceBulkActionRequest(BaseModel):
+    task_ids: List[str]
+    action: GovernanceAction
+    comment: Optional[str] = ""
 
 # =====================================================================
 # --- SYSTEM HEALTH SCHEMAS ---
@@ -1253,3 +1416,56 @@ class AutoMapFileResponse(BaseModel):
     file_type: str
     headers: Optional[List[str]] = None
     sample_row: Optional[List[str]] = None
+
+class DomainApiContractCreate(BaseModel):
+    api_name: str
+    description: Optional[str] = None
+    request_contract: Optional[List[str]] = None
+    response_contract: Optional[List[str]] = None
+
+class DomainApiContractResponse(BaseModel):
+    api_contract_id: str
+    api_name: str
+    description: Optional[str] = None
+    status: str
+    request_contract: Optional[List[str]] = None
+    response_contract: Optional[List[str]] = None
+    created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class DomainApiStateChangeResponse(BaseModel):
+    message: str
+    api_contract_id: str
+    new_status: str
+
+class SimulationScenarioCreate(BaseModel):
+    simulation_name: str
+    description: Optional[str] = None
+    target_workflow_id: str
+    sample_size: Optional[int] = 100
+    scenario_variables: Optional[Dict[str, Any]] = None
+    historical_dataset_source: Optional[str] = "SYNTHETIC_GENERATION"
+
+class SimulationScenarioResponse(SimulationScenarioCreate):
+    simulation_id: str
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+class SimulationJobResponse(BaseModel):
+    job_id: str
+    simulation_id: str
+    status: str
+    processed_records: int
+    total_records: int
+    results_summary: Optional[Dict[str, Any]] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True

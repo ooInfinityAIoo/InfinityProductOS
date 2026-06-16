@@ -31,12 +31,16 @@ class CurrentUser(BaseModel):
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") # tokenUrl is not used in this flow but is required
 
-jwks_client = jwt.PyJWKClient(f"{OIDC_DOMAIN}.well-known/jwks.json")
+jwks_client = None
+if OIDC_DOMAIN:
+    jwks_client = jwt.PyJWKClient(f"{OIDC_DOMAIN}.well-known/jwks.json")
 
 def get_current_user_from_jwt(token: str = Depends(oauth2_scheme)) -> CurrentUser:
     """
     Decodes and validates a JWT, returning a CurrentUser model.
     """
+    if not jwks_client:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OIDC/JWT client not configured.")
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token).key
         payload = jwt.decode(

@@ -159,5 +159,3 @@ def list_subproducts(product_id: str, db: Session = Depends(get_db), current_use
         models.SubproductMaster.product_id == product_id
     ).order_by(models.SubproductMaster.subproduct_name).all()
     return {"subproducts": subproducts}
-
-```

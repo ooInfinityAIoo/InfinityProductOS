@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 // --- Type Definitions (Will eventually be synced from OpenAPI) ---
 export type LanguageCode = 'EN' | 'ES' | 'DE';
-docuexport type UserRole = 'ADMIN' | 'OPERATOR' | 'AUDITOR' | 'VIEWER' | 'SALES' | 'RISK' | 'C_LEVEL';
+export type UserRole = 'ADMIN' | 'OPERATOR' | 'AUDITOR' | 'VIEWER' | 'SALES' | 'RISK' | 'C_LEVEL';
 export type ViewMode = 'LIST' | 'CREATE' | 'EDIT' | 'VIEW';
 
 export interface PlatformState {

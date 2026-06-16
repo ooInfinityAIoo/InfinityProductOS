@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import models
 import json
 import asyncio
@@ -190,8 +190,13 @@ class WorkflowExecutor:
         self.execution_trace.append(f"Entering Node: '{node.node_title}' (Seq: {node.sequence_number})")
 
         self.events_this_step = [] # Initialize list to hold events generated in this step
-        # --- LAYER 4 GOVERNANCE CHECK (CURRENCY) ---
-        if node.calculations: # Only run check if node performs math
+        has_calcs = getattr(node, "calculations", False)
+        if not has_calcs and node.orchestration_steps:
+            for step in node.orchestration_steps:
+                if isinstance(step, dict) and step.get("step_type") == "CALCULATION":
+                    has_calcs = True
+                    break
+        if has_calcs:
             self._validate_currency_consistency(context)
 
         # 1. Execute the unified orchestration steps for this node

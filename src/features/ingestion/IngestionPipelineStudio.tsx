@@ -79,7 +79,7 @@ export const IngestionPipelineStudio: React.FC = () => {
             >
               <option value="" disabled>Select Mapper Blueprint...</option>
               {mappersData?.mappers?.map((m: any) => (
-                <option key={m.mapper_id} value={m.mapper_id}>{m.mapper_name} ({m.source_format} -> {m.target_format})</option>
+                <option key={m.mapper_id} value={m.mapper_id}>{m.mapper_name} ({m.source_format} {"->"} {m.target_format})</option>
               ))}
             </select>
           </div>

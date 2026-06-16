@@ -28,8 +28,8 @@ export const EventRepositoryStudio: React.FC = () => {
     refetchInterval: 3000 // Poll every 3 seconds for that "live" feel
   });
 
-  const eventTypes = Object.keys(statusData?.listeners || {});
-  const totalSubscriptions = Object.values(statusData?.listeners || {}).reduce((acc: number, listeners: any) => acc + listeners.length, 0);
+  const eventTypes = Object.keys((statusData as any)?.listeners || {});
+  const totalSubscriptions = Object.values((statusData as any)?.listeners || {}).reduce((acc: number, listeners: any) => acc + (listeners?.length || 0), 0) as number;
 
   return (
     <div className="flex flex-col gap-6 h-[750px] animate-fade-in">

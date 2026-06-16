@@ -35,3 +35,26 @@ def get_active_db_sessions(db: Session = Depends(get_db), current_user: CurrentU
     """
     if db.bind.dialect.name != 'postgresql':
         return schemas.DatabaseSessionListResponse(
+            sessions=[],
+            message="Feature only supported when running on PostgreSQL."
+        )
+    
+    try:
+        result = db.execute(text("SELECT pid, usename, client_addr, state, query FROM pg_stat_activity WHERE datname = current_database();"))
+        sessions = []
+        for row in result:
+            sessions.append(
+                schemas.DatabaseSession(
+                    pid=row.pid,
+                    usename=row.usename,
+                    client_addr=str(row.client_addr) if row.client_addr else None,
+                    state=row.state,
+                    query=row.query
+                )
+            )
+        return schemas.DatabaseSessionListResponse(sessions=sessions)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve database sessions: {str(e)}"
+        )
