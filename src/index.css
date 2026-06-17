@@ -1,3 +1,70 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans bg-[#FAFBFD] antialiased selection:bg-indigo-100 selection:text-indigo-900;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.03) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.02) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.01) 0px, transparent 50%);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* Glassmorphism Classes */
+.glass-card {
+  @apply bg-white/75 backdrop-blur-md border border-white/20 shadow-glass transition-all duration-300;
+}
+
+.glass-card-hover {
+  @apply hover:bg-white/90 hover:border-white/40 hover:shadow-glass-hover hover:-translate-y-0.5;
+}
+
+.glass-navbar {
+  @apply bg-white/80 backdrop-blur-lg border-b border-slate-200/50;
+}
+
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 font-extrabold;
+}
+
+.gradient-text-emerald {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-emerald-600 to-teal-500 font-extrabold;
+}
+
+.gradient-text-amber {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-amber-600 to-orange-500 font-extrabold;
+}
+
+/* React Flow custom styling adjustments for visual elegance */
+.react-flow__node {
+  @apply rounded-xl border-slate-200/80 shadow-md font-sans !important;
+}
+
+.react-flow__handle {
+  @apply bg-indigo-500 border-2 border-white w-2.5 h-2.5 !important;
+}

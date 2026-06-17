@@ -28,17 +28,19 @@ function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 font-sans">
+    <div className="min-h-screen text-slate-800 font-sans antialiased">
       <MasterHeaderNav />
       
-      <main className="max-w-[1650px] mx-auto mt-6 px-6">
+      <main className="max-w-[1680px] mx-auto mt-8 px-6 pb-12 animate-fade-in">
         <Suspense fallback={
-          <div className="flex flex-col h-[750px] w-full items-center justify-center text-slate-500 font-bold bg-white border border-slate-200 rounded shadow-sm animate-pulse">
-            <svg className="animate-spin mb-4 h-10 w-10 text-[#0176D3]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Loading Studio Module...
+          <div className="flex flex-col h-[650px] w-full items-center justify-center text-slate-500 font-semibold bg-white/50 backdrop-blur-md border border-white/20 rounded-2xl shadow-glass">
+            <div className="relative flex items-center justify-center mb-6">
+              <div className="absolute w-16 h-16 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+              <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center font-extrabold text-indigo-600 text-sm shadow-inner">
+                ∞
+              </div>
+            </div>
+            <span className="text-xs font-bold tracking-widest uppercase text-slate-400">Loading Studio Module...</span>
           </div>
         }>
           {activeModule === 'dashboard' && (
@@ -46,7 +48,7 @@ function App() {
           )}
           
           {activeModule === 'workflow-designer' && (
-            <div className="bg-white border border-slate-200 rounded shadow-sm h-[750px]">
+            <div className="bg-white/85 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass h-[750px] overflow-hidden">
                <WorkflowCanvas />
             </div>
           )}

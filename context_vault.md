@@ -27,3 +27,9 @@
 * **Milestone:** Connected local repository to GitHub remote (`origin main`). 
 * **Security:** Created `.env` file in the root directory and added it to `.gitignore`.
 * **Code Refactor:** Moved the hardcoded `SLACK_WEBHOOK_URL` out of `services/slack_service.py` and updated line 17 to pull dynamically using `os.getenv("SLACK_WEBHOOK_URL")`. History was cleanly amended, and the code was successfully pushed past GitHub's push protection.
+
+## 5. Developer & Collaboration Protocol (Iterative Planning Policy)
+* **Mandatory Planning Step**: For all implementation tasks, the developer (AI agent) must generate a detailed `implementation_plan.md` artifact detailing every target file, code change, verification process, and risk analysis.
+* **Explicit User Gatekeeping**: The agent must never make automatic changes. The agent must stop and wait for the user's explicit review and approval of the plan.
+* **Iterative Refinement**: If the user disagrees with any plan details, the developer must revise and refine the plan according to the user's feedback, and re-submit it for approval.
+* **No-Regression Guarantee**: All visual or codebase changes must pass local TypeScript checking (`tsc --noEmit`) and bundler builds (`npm run build`) before delivery.
