@@ -70,13 +70,24 @@ export const WorkflowCanvas: React.FC = () => {
   const onPaneClick = useCallback(() => setSelectedNode(null), []);
 
   // Handle drawing new connections between nodes
-  const onConnect = useCallback((params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#0176D3', strokeWidth: 2 } }, eds)), []);
+  const onConnect = useCallback((params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#6366F1', strokeWidth: 2 } }, eds)), []);
 
-  if (isLoading) return <div className="flex h-full w-full items-center justify-center text-slate-500 font-bold">Synchronizing with Core Engine...</div>;
-  if (error) return <div className="flex h-full w-full items-center justify-center text-red-500 font-bold">Failed to load Blueprint Manifests.</div>;
+  if (isLoading) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center text-slate-500 font-semibold bg-white/50 backdrop-blur-md border border-white/20 rounded-2xl shadow-glass">
+        <svg className="animate-spin mb-4 h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span className="text-[11px] font-bold tracking-wider uppercase text-slate-400">Syncing with Core Engine...</span>
+      </div>
+    );
+  }
+  
+  if (error) return <div className="flex h-full w-full items-center justify-center text-rose-500 font-bold bg-white/50 backdrop-blur-md rounded-2xl border border-white/20">Failed to load Blueprint Manifests.</div>;
 
   return (
-    <div className="h-full w-full rounded bg-slate-50 relative overflow-hidden">
+    <div className="h-full w-full bg-[#FAFBFD] relative overflow-hidden animate-fade-in">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -89,9 +100,9 @@ export const WorkflowCanvas: React.FC = () => {
         fitView
         attributionPosition="bottom-right"
       >
-        <Background color="#ccc" gap={16} />
-        <Controls />
-        <MiniMap nodeStrokeWidth={3} zoomable pannable className="border border-slate-200 shadow-sm rounded-md" />
+        <Background color="#6366f1" gap={16} style={{ opacity: 0.03 }} />
+        <Controls className="bg-white/80 backdrop-blur-md border border-slate-200/50 shadow-glass rounded-xl overflow-hidden" />
+        <MiniMap nodeStrokeWidth={3} zoomable pannable className="border border-slate-200/40 shadow-glass rounded-xl bg-white/80" />
       </ReactFlow>
       
       {/* Conditionally render the slide-out drawer overlay */}
