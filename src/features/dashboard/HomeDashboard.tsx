@@ -7,7 +7,7 @@ import { PackageDashboard } from './PackageDashboard';
 
 export const HomeDashboard: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isWizardOpen, setProductContext, activeProductContext, userRole } = usePlatformStore();
+  const { isWizardOpen, setWizardOpen, setProductContext, activeProductContext, userRole } = usePlatformStore();
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
   // --- DYNAMIC API BINDINGS ---
@@ -203,7 +203,19 @@ export const HomeDashboard: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {activePackages.length === 0 ? (
-              <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 italic">No products initialized. Click "+ Start Configuring New Product" to begin.</td></tr>
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                  <div className="flex flex-col items-center gap-3">
+                    <span className="italic font-medium">No products initialized yet.</span>
+                    <button 
+                      onClick={() => setWizardOpen(true)}
+                      className="px-4.5 py-2 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-xl hover:from-indigo-750 hover:to-indigo-800 transition-all shadow-md shadow-indigo-650/15 active:scale-[0.98]"
+                    >
+                      + Start Configuring New Product
+                    </button>
+                  </div>
+                </td>
+              </tr>
             ) : (
               activePackages.map((pkg: any) => {
                 const totalMods = pkg.configuration_plan?.length || 0;
