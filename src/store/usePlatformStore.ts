@@ -17,6 +17,12 @@ export interface PlatformState {
   viewMode: ViewMode;
   hasUnsavedChanges: boolean;
   isWizardOpen: boolean;
+
+  // --- Workflow Draft & Context-Switching State ---
+  workflowDraft: any | null;
+  activeWorkflowProductContext: string | null;
+  activeWorkflowSubproductContext: string | null;
+  workflowReturnStepId: string | null;
   
   // --- Actions ---
   setLanguage: (lang: LanguageCode) => void;
@@ -27,6 +33,9 @@ export interface PlatformState {
   setViewMode: (mode: ViewMode) => void;
   setHasUnsavedChanges: (hasChanges: boolean) => void;
   setWizardOpen: (isOpen: boolean) => void;
+  setWorkflowDraft: (draft: any | null) => void;
+  setWorkflowContexts: (product: string | null, subproduct: string | null) => void;
+  setWorkflowReturnStepId: (stepId: string | null) => void;
 }
 
 /**
@@ -46,11 +55,17 @@ export const usePlatformStore = create<PlatformState>((set) => ({
   hasUnsavedChanges: false,
   isWizardOpen: false,
 
+  // Workflow context states
+  workflowDraft: null,
+  activeWorkflowProductContext: null,
+  activeWorkflowSubproductContext: null,
+  workflowReturnStepId: null,
+
   // State Mutators
   setLanguage: (lang) => set({ currentLanguage: lang }),
   
   toggleAdminMode: () => set((state) => ({ 
-    globalAdminDesignerMode: !state.globalAdminDesignerMode 
+      globalAdminDesignerMode: !state.globalAdminDesignerMode 
   })),
   
   setProductContext: (productName) => set({ 
@@ -68,5 +83,8 @@ export const usePlatformStore = create<PlatformState>((set) => ({
   setUserRole: (role) => set({ userRole: role }),
   setViewMode: (mode) => set({ viewMode: mode }),
   setHasUnsavedChanges: (hasChanges) => set({ hasUnsavedChanges: hasChanges }),
-  setWizardOpen: (isOpen) => set({ isWizardOpen: isOpen })
+  setWizardOpen: (isOpen) => set({ isWizardOpen: isOpen }),
+  setWorkflowDraft: (draft) => set({ workflowDraft: draft }),
+  setWorkflowContexts: (product, subproduct) => set({ activeWorkflowProductContext: product, activeWorkflowSubproductContext: subproduct }),
+  setWorkflowReturnStepId: (stepId) => set({ workflowReturnStepId: stepId })
 }));

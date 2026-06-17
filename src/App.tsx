@@ -48,7 +48,7 @@ function App() {
           )}
           
           {activeModule === 'workflow-designer' && (
-            <div className="bg-white/85 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass h-[750px] overflow-hidden">
+            <div className="bg-white/85 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass min-h-[750px]">
                <WorkflowCanvas />
             </div>
           )}

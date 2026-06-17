@@ -100,21 +100,36 @@ class ProductApplicationPackageResponse(ProductApplicationPackageCreate):
 class ProductApplicationPackageListResponse(BaseModel):
     packages: List[ProductApplicationPackageResponse]
 
+class ProductMasterCreate(BaseModel):
+    package_id: str
+    product_name: str
+    description: Optional[str] = None
+
 class ProductMasterResponse(BaseModel):
     product_id: str
+    package_id: str
     product_name: str
     description: Optional[str]
+    created_at: str
+    updated_at: Optional[str] = None
     class Config:
         from_attributes = True
 
 class ProductMasterListResponse(BaseModel):
     products: List[ProductMasterResponse]
 
+class SubproductMasterCreate(BaseModel):
+    product_id: str
+    subproduct_name: str
+    description: Optional[str] = None
+
 class SubproductMasterResponse(BaseModel):
     subproduct_id: str
-    subproduct_name: str
     product_id: str
+    subproduct_name: str
     description: Optional[str]
+    created_at: str
+    updated_at: Optional[str] = None
     class Config:
         from_attributes = True
 

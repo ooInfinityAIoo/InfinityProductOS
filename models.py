@@ -25,6 +25,13 @@ Base = declarative_base()
 # --- CORE ARCHITECTURAL BLUEPRINT & LEDGER MODELS ---
 # =====================================================================
 
+class TenantThemeConfiguration(Base):
+    __tablename__ = "tenant_theme_configuration"
+    tenant_id = Column(String, primary_key=True, default="DEFAULT", index=True)
+    brand_name = Column(String, default="Infinity ProductOS™")
+    logo_url = Column(String, nullable=True)
+
+
 class WorkflowManifest(Base):
     __tablename__ = "workflow_manifests"
     workflow_id = Column(String, primary_key=True, index=True)

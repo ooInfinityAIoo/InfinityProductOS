@@ -146,11 +146,33 @@ def cancel_product_package(package_id: str, db: Session = Depends(get_db), curre
 
 # --- Product and Subproduct Masters for Screen Designer ---
 
-@router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List All Products")
-def list_products(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    """Retrieves a list of all products for context selection."""
-    products = db.query(models.ProductMaster).order_by(models.ProductMaster.product_name).all()
+@router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List Products")
+def list_products(package_id: Optional[str] = None, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """Retrieves a list of products, optionally filtered by package_id."""
+    query = db.query(models.ProductMaster)
+    if package_id:
+        query = query.filter(models.ProductMaster.package_id == package_id)
+    products = query.order_by(models.ProductMaster.product_name).all()
     return {"products": products}
+
+@router.post("/products", response_model=schemas.ProductMasterResponse, status_code=status.HTTP_201_CREATED, summary="Create a Core Product")
+def create_product(payload: schemas.ProductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """Creates a new core product (Level 2) under an existing application package."""
+    package = db.query(models.ProductApplicationPackage).filter(models.ProductApplicationPackage.package_id == payload.package_id).first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Parent package not found")
+        
+    db_product = models.ProductMaster(
+        product_id=f"PRD-{uuid.uuid4().hex[:8].upper()}",
+        package_id=payload.package_id,
+        product_name=payload.product_name,
+        description=payload.description,
+        created_at=datetime.datetime.utcnow().isoformat()
+    )
+    db.add(db_product)
+    db.commit()
+    db.refresh(db_product)
+    return db_product
 
 @router.get("/subproducts", response_model=schemas.SubproductMasterListResponse, summary="List Subproducts for a Product")
 def list_subproducts(product_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
@@ -159,3 +181,22 @@ def list_subproducts(product_id: str, db: Session = Depends(get_db), current_use
         models.SubproductMaster.product_id == product_id
     ).order_by(models.SubproductMaster.subproduct_name).all()
     return {"subproducts": subproducts}
+
+@router.post("/subproducts", response_model=schemas.SubproductMasterResponse, status_code=status.HTTP_201_CREATED, summary="Create a Subproduct Variation")
+def create_subproduct(payload: schemas.SubproductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """Creates a new subproduct variation (Level 3) under a core product."""
+    product = db.query(models.ProductMaster).filter(models.ProductMaster.product_id == payload.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Parent product not found")
+        
+    db_subproduct = models.SubproductMaster(
+        subproduct_id=f"SUB-{uuid.uuid4().hex[:8].upper()}",
+        product_id=payload.product_id,
+        subproduct_name=payload.subproduct_name,
+        description=payload.description,
+        created_at=datetime.datetime.utcnow().isoformat()
+    )
+    db.add(db_subproduct)
+    db.commit()
+    db.refresh(db_subproduct)
+    return db_subproduct
