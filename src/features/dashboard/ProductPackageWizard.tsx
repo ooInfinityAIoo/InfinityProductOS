@@ -4,7 +4,7 @@ import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 
 export const ProductPackageWizard: React.FC = () => {
-  const { setWizardOpen } = usePlatformStore();
+  const { setWizardOpen, setProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
   
   const [packageName, setPackageName] = useState('');
@@ -34,6 +34,7 @@ export const ProductPackageWizard: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['product-packages'] });
       setWizardOpen(false);
+      setProductContext(packageName);
     }
   });
 
