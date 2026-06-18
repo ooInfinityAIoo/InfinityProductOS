@@ -1,6 +1,10 @@
 import React from 'react';
 
-export const WorkflowSidebar: React.FC = () => {
+interface WorkflowSidebarProps {
+  selectedNode?: any | null;
+}
+
+export const WorkflowSidebar: React.FC<WorkflowSidebarProps> = ({ selectedNode }) => {
   const onDragStart = (event: React.DragEvent, nodeType: string, label: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
     event.dataTransfer.setData('application/reactflow-label', label);
@@ -29,10 +33,13 @@ export const WorkflowSidebar: React.FC = () => {
               <div className="w-8 h-8 bg-indigo-500 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[10px]">⬜</div>
               <span className="text-[10px] font-bold text-indigo-800 text-center">Step</span>
             </div>
-            
+
             <div 
-              className="flex flex-col items-center justify-center p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl cursor-grab hover:shadow-md hover:bg-indigo-100/50 transition-all active:cursor-grabbing"
-              onDragStart={(e) => onDragStart(e, 'SUB_WORKFLOW', 'Sub-Workflow')} draggable
+              className={`flex flex-col items-center justify-center p-3 border rounded-xl transition-all ${
+                selectedNode ? 'bg-indigo-50/50 border-indigo-100 cursor-grab hover:shadow-md hover:bg-indigo-100/50 active:cursor-grabbing' : 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed'
+              }`}
+              onDragStart={(e) => selectedNode && onDragStart(e, 'SUB_WORKFLOW', 'Sub-Workflow')} draggable={!!selectedNode}
+              title={!selectedNode ? "Select a Step on the canvas first to branch a Sub-Workflow" : "Drag to canvas"}
             >
               <div className="w-8 h-8 bg-indigo-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[12px]">📂</div>
               <span className="text-[10px] font-bold text-indigo-800 text-center leading-tight">Sub<br/>Workflow</span>
@@ -92,12 +99,75 @@ export const WorkflowSidebar: React.FC = () => {
               <span className="text-[10px] font-bold text-purple-800 text-center">Timer</span>
             </div>
 
+          </div>
+        </div>
+
+        {/* Backend Processing Studios */}
+        <div>
+          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Backend Processing</h4>
+          <div className="grid grid-cols-2 gap-2">
             <div 
-              className="flex flex-col items-center justify-center p-3 bg-slate-100/80 border border-slate-300/50 rounded-xl cursor-grab hover:shadow-md hover:bg-slate-200/80 transition-all active:cursor-grabbing"
-              onDragStart={(e) => onDragStart(e, 'SYSTEM_TASK', 'System Task')} draggable
+              className="flex flex-col items-center justify-center p-3 bg-blue-50/50 border border-blue-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-blue-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_CALCULATION_ENGINE', 'Calculation Engine')} draggable
             >
-              <div className="w-8 h-8 bg-slate-700 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[12px]">⚙️</div>
-              <span className="text-[10px] font-bold text-slate-800 text-center leading-tight">System<br/>Task</span>
+              <div className="w-8 h-8 bg-blue-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">🧮</div>
+              <span className="text-[10px] font-bold text-blue-800 text-center leading-tight">Calc<br/>Engine</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-amber-50/50 border border-amber-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-amber-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_BUSINESS_RULES', 'Rules Engine')} draggable
+            >
+              <div className="w-8 h-8 bg-amber-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">⚖️</div>
+              <span className="text-[10px] font-bold text-amber-800 text-center leading-tight">Rules<br/>Engine</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-emerald-50/50 border border-emerald-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-emerald-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_REPORT_DESIGNER', 'Report Generation')} draggable
+            >
+              <div className="w-8 h-8 bg-emerald-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">📊</div>
+              <span className="text-[10px] font-bold text-emerald-800 text-center leading-tight">Report<br/>Engine</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-cyan-50/50 border border-cyan-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-cyan-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_DATA_GATEWAY', 'Data Gateway')} draggable
+            >
+              <div className="w-8 h-8 bg-cyan-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">🔀</div>
+              <span className="text-[10px] font-bold text-cyan-800 text-center leading-tight">Data<br/>Mappers</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-purple-50/50 border border-purple-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-purple-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_API_DESIGNER', 'API Invocation')} draggable
+            >
+              <div className="w-8 h-8 bg-purple-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">🔌</div>
+              <span className="text-[10px] font-bold text-purple-800 text-center leading-tight">API<br/>Invoker</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-fuchsia-50/50 border border-fuchsia-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-fuchsia-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_AI_ASSISTANT', 'AI Agent Task')} draggable
+            >
+              <div className="w-8 h-8 bg-fuchsia-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">🧠</div>
+              <span className="text-[10px] font-bold text-fuchsia-800 text-center leading-tight">AI<br/>Agent</span>
+            </div>
+            
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-rose-50/50 border border-rose-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-rose-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_EVENT_REPOSITORY', 'Event Publisher')} draggable
+            >
+              <div className="w-8 h-8 bg-rose-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">📡</div>
+              <span className="text-[10px] font-bold text-rose-800 text-center leading-tight">Event<br/>PubSub</span>
+            </div>
+
+            <div 
+              className="flex flex-col items-center justify-center p-3 bg-slate-50/50 border border-slate-200/50 rounded-xl cursor-grab hover:shadow-md hover:bg-slate-100/50 transition-all active:cursor-grabbing"
+              onDragStart={(e) => onDragStart(e, 'STUDIO_DOCUMENT_MASTER', 'Document Processing')} draggable
+            >
+              <div className="w-8 h-8 bg-slate-600 rounded-lg shadow-inner mb-2 flex items-center justify-center text-white text-[14px]">📄</div>
+              <span className="text-[10px] font-bold text-slate-800 text-center leading-tight">Doc<br/>Processing</span>
             </div>
           </div>
         </div>
