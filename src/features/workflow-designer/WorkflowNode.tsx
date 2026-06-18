@@ -1,6 +1,5 @@
 import React from 'react';
-import { Handle, Position, NodeResizer, useReactFlow } from 'reactflow';
-import { NodeQuickAdd } from './NodeQuickAdd';
+import { Handle, Position, NodeResizer } from 'reactflow';
 
 interface WorkflowNodeData {
   id: string;
@@ -8,7 +7,6 @@ interface WorkflowNodeData {
   title: string;
   slaDays: number;
   onTitleChange?: (newTitle: string) => void;
-  onQuickAdd?: (position: string, sourceHandle: string, type: string, reactFlowType: string, label: string) => void;
 }
 
 interface WorkflowNodeProps {
@@ -64,18 +62,13 @@ export const WorkflowNode: React.FC<WorkflowNodeProps> = ({ data, selected }) =>
           <div className="text-[9px] text-amber-600 bg-amber-50/40 border border-amber-100/50 font-bold px-2 py-0.5 rounded-md mt-2 w-max">SLA: {data.slaDays} Days</div>
         </div>
 
+        {/* Incoming Connection Point */}
+        <Handle id="left" type="target" position={Position.Left} className="w-4 h-4 bg-indigo-50 border-2 border-indigo-400 -ml-2" />
+        <Handle id="top" type="target" position={Position.Top} className="w-4 h-4 bg-indigo-50 border-2 border-indigo-400 -mt-2" />
+
         {/* Outgoing Connection Point */}
         <Handle id="right" type="source" position={Position.Right} className="w-4 h-4 bg-indigo-500 border-2 border-white hover:scale-125 transition-transform -mr-2" />
         <Handle id="bottom" type="source" position={Position.Bottom} className="w-4 h-4 bg-indigo-500 border-2 border-white hover:scale-125 transition-transform -mb-2" />
-
-        {selected && (
-          <>
-            <NodeQuickAdd nodeId={data.id} position="top" sourceHandle="top" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="bottom" sourceHandle="bottom" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="left" sourceHandle="left" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="right" sourceHandle="right" onQuickAdd={data.onQuickAdd} />
-          </>
-        )}
       </div>
     </>
   );

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Handle, Position, NodeResizer, useReactFlow } from 'reactflow';
-import { NodeQuickAdd } from './NodeQuickAdd';
 
 interface DecisionNodeData {
   id: string;
@@ -8,7 +7,6 @@ interface DecisionNodeData {
   title: string;
   slaDays: number;
   onTitleChange?: (newTitle: string) => void;
-  onQuickAdd?: (position: string, sourceHandle: string, type: string, reactFlowType: string, label: string) => void;
 }
 
 interface DecisionNodeProps {
@@ -79,6 +77,10 @@ export const DecisionNode: React.FC<DecisionNodeProps> = ({ data, selected }) =>
           />
         </div>
 
+        {/* Incoming Connection Point */}
+        <Handle id="left" type="target" position={Position.Left} className="w-4 h-4 bg-amber-50 border-2 border-amber-400 -ml-2" />
+        <Handle id="top" type="target" position={Position.Top} className="w-4 h-4 bg-amber-50 border-2 border-amber-400 -mt-2" />
+
         {/* Outgoing Connection Point (Right - Yes) */}
         <div className="absolute right-[-8px] top-1/2 -translate-y-1/2 flex items-center z-10">
           <Handle id="right" type="source" position={Position.Right} className="w-4 h-4 bg-amber-500 border-2 border-white hover:scale-125 transition-transform !relative" />
@@ -93,14 +95,6 @@ export const DecisionNode: React.FC<DecisionNodeProps> = ({ data, selected }) =>
           className="w-5 h-5 bg-amber-500 border-2 border-white hover:scale-125 transition-transform z-10 -mb-2" 
         />
 
-        {selected && (
-          <>
-            <NodeQuickAdd nodeId={data.id} position="top" sourceHandle="top" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="bottom" sourceHandle="bottom" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="left" sourceHandle="left" onQuickAdd={data.onQuickAdd} />
-            <NodeQuickAdd nodeId={data.id} position="right" sourceHandle="right" onQuickAdd={data.onQuickAdd} />
-          </>
-        )}
       </div>
     </>
   );

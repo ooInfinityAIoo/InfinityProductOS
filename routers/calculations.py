@@ -55,8 +55,9 @@ def list_formulas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     """
     Retrieves a paginated list of all registered symbolic formula assets.
     """
+    total_count = db.query(models.SymbolicFormulaAsset).count()
     formulas = db.query(models.SymbolicFormulaAsset).offset(skip).limit(limit).all()
-    return {"formulas": formulas}
+    return {"formulas": formulas, "total_count": total_count}
 
 @router.get("/{asset_id}", response_model=schemas.SymbolicFormulaResponse, summary="Get a Specific Formula")
 def get_formula(asset_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):

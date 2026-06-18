@@ -161,35 +161,10 @@ const WorkflowCanvasInner: React.FC = () => {
         }
         setWorkflowReturnStepId(null);
       }
-    } else if (workflows && workflows.length > 0) {
-      const activeWorkflow = workflows[0];
-      
-      const mappedNodes: Node[] = (activeWorkflow.nodes || []).map((n: any) => ({
-        id: n.node_id,
-        type: 'customBankingNode',
-        position: { x: n.canvas_x_position || Math.random() * 300, y: n.canvas_y_position || Math.random() * 300 },
-        data: { id: n.node_code, seq: n.sequence_number, title: n.node_title, slaDays: n.sla_days || 1, orchestration_steps: n.orchestration_steps, screen_template: n.screen_template, required_documents: n.required_documents }
-      }));
-
-      const mappedEdges: Edge[] = (activeWorkflow.edges || []).map((e: any) => ({
-        id: e.edge_id,
-        source: e.source_node_id,
-        target: e.target_node_id,
-        type: 'step',
-        updatable: true,
-        focusable: true,
-        label: e.edge_condition?.condition || '',
-        labelStyle: { fill: '#4F46E5', fontWeight: 700, fontSize: 12 },
-        labelBgStyle: { fill: '#EEF2FF', fillOpacity: 0.9, rx: 4, ry: 4 },
-        labelBgPadding: [6, 4] as [number, number],
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366F1' },
-        style: { stroke: '#6366F1', strokeWidth: 2 }
-      }));
-
-      setNodes(mappedNodes);
-      setEdges(mappedEdges);
     }
-  }, [workflows, workflowDraft]);
+    // Removed auto-loading of workflows[0] so the canvas starts blank
+    // The user prefers to load workflows explicitly via search/GUI instead of auto-populating.
+  }, [workflowDraft]);
 
   const handleSaveBlueprint = async () => {
     try {
@@ -236,20 +211,16 @@ const WorkflowCanvasInner: React.FC = () => {
   };
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((nds) => {
-      const updated = applyNodeChanges(changes, nds);
-      saveDraft(updated, edges);
-      return updated;
-    });
-  }, [edges]);
+    const updated = applyNodeChanges(changes, nodes);
+    setNodes(updated);
+    saveDraft(updated, edges);
+  }, [nodes, edges, saveDraft]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((eds) => {
-      const updated = applyEdgeChanges(changes, eds);
-      saveDraft(nodes, updated);
-      return updated;
-    });
-  }, [nodes]);
+    const updated = applyEdgeChanges(changes, edges);
+    setEdges(updated);
+    saveDraft(nodes, updated);
+  }, [nodes, edges, saveDraft]);
 
   // --- QUICK ADD HANDLER ---
   const handleQuickAddNode = useCallback((parentNodeId: string, position: string, sourceHandle: string, type: string, reactFlowType: string, label: string) => {
@@ -258,15 +229,16 @@ const WorkflowCanvasInner: React.FC = () => {
 
     const id = `NODE-${Math.floor(Math.random() * 9000) + 1000}`;
     
-    // Calculate new position based on direction
+    // Calculate new position based on direction with a small random jitter to prevent perfect stacking
     const offset = 200;
+    const jitter = () => Math.random() * 40 - 20;
     let x = parentNode.position.x;
     let y = parentNode.position.y;
 
-    if (position === 'right') x += offset + 50;
-    if (position === 'left') x -= offset + 50;
-    if (position === 'bottom') y += offset;
-    if (position === 'top') y -= offset;
+    if (position === 'right') { x += offset + 50 + jitter(); y += jitter(); }
+    if (position === 'left') { x -= offset + 50 + jitter(); y += jitter(); }
+    if (position === 'bottom') { y += offset + jitter(); x += jitter(); }
+    if (position === 'top') { y -= offset + jitter(); x += jitter(); }
 
     const newNode: Node = {
       id,
@@ -281,26 +253,31 @@ const WorkflowCanvasInner: React.FC = () => {
       },
     };
 
+    const oppositeHandle = {
+      right: 'left',
+      left: 'right',
+      top: 'bottom',
+      bottom: 'top'
+    }[position] || 'left';
+
     const newEdge: Edge = {
       id: `e-${parentNodeId}-${id}`,
       source: parentNodeId,
       target: id,
       sourceHandle: sourceHandle,
+      targetHandle: oppositeHandle,
       type: 'smoothstep',
       animated: true,
       style: { stroke: '#94A3B8', strokeWidth: 2 }
     };
 
-    setNodes((nds) => {
-      const updated = nds.concat(newNode);
-      setEdges((eds) => {
-        const newEdges = eds.concat(newEdge);
-        saveDraft(updated, newEdges);
-        return newEdges;
-      });
-      return updated;
-    });
-  }, [nodes, sequenceMap, setNodes, setEdges]);
+    const updatedNodes = nodes.concat(newNode);
+    const updatedEdges = edges.concat(newEdge);
+    
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+    saveDraft(updatedNodes, updatedEdges);
+  }, [nodes, edges, sequenceMap, setNodes, setEdges, saveDraft]);
 
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {

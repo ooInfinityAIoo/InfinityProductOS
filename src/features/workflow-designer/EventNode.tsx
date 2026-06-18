@@ -52,16 +52,9 @@ export const EventNode: React.FC<EventNodeProps> = ({ data, selected }) => {
 
   return (
     <>
-      <NodeResizer 
-        color={isStart ? '#10B981' : isEnd ? '#F43F5E' : isTimer ? '#A855F7' : '#334155'} 
-        isVisible={selected} 
-        minWidth={80} 
-        minHeight={80} 
-        handleStyle={{ width: 8, height: 8, borderRadius: 99 }}
-      />
       <div 
         className={`w-full h-full relative flex items-center justify-center transition-all duration-300 ${
-          selected ? 'drop-shadow-2xl scale-105' : 'drop-shadow-md'
+          selected ? 'drop-shadow-2xl scale-105 ring-4 ring-indigo-500/50' : 'drop-shadow-md'
         } ${isRound ? 'rounded-full' : 'rounded-2xl'} ${bgColor} border-[3px] ${borderColor}`}
         style={{ minWidth: '80px', minHeight: '80px' }}
       >
@@ -76,11 +69,11 @@ export const EventNode: React.FC<EventNodeProps> = ({ data, selected }) => {
           />
         </div>
 
-        {/* 4-Way Handles */}
-        {!isStart && <Handle id="top-t" type="target" position={Position.Top} className="w-3 h-3 bg-white border-2 border-slate-400 z-10 -mt-1.5" />}
-        {!isEnd && <Handle id="bottom-s" type="source" position={Position.Bottom} className="w-3 h-3 bg-white border-2 border-slate-400 z-10 -mb-1.5" />}
-        {!isStart && <Handle id="left-t" type="target" position={Position.Left} className="w-3 h-3 bg-white border-2 border-slate-400 z-10 -ml-1.5" />}
-        {!isEnd && <Handle id="right-s" type="source" position={Position.Right} className="w-3 h-3 bg-white border-2 border-slate-400 z-10 -mr-1.5" />}
+        {/* 4-Way Handles - styled identically to WorkflowNode Lego connectors */}
+        {!isStart && <Handle id="top" type="target" position={Position.Top} className="w-4 h-4 bg-indigo-50 border-2 border-indigo-400 -mt-2" />}
+        {!isEnd && <Handle id="bottom" type="source" position={Position.Bottom} className="w-4 h-4 bg-indigo-500 border-2 border-white hover:scale-125 transition-transform -mb-2 z-10" />}
+        {!isStart && <Handle id="left" type="target" position={Position.Left} className="w-4 h-4 bg-indigo-50 border-2 border-indigo-400 -ml-2" />}
+        {!isEnd && <Handle id="right" type="source" position={Position.Right} className="w-4 h-4 bg-indigo-500 border-2 border-white hover:scale-125 transition-transform -mr-2 z-10" />}
       </div>
     </>
   );
