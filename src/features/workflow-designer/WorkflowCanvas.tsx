@@ -10,18 +10,107 @@ import ReactFlow, {
   EdgeChange,
   Connection,
   Node,
-  Edge
+  Edge,
+  MarkerType,
+  ControlButton,
+  updateEdge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useQuery } from '@tanstack/react-query';
 import { WorkflowNode } from './WorkflowNode';
 import { apiClient } from '../../api/client';
 import { NodePropertiesDrawer } from './NodePropertiesDrawer';
+import { EdgePropertiesDrawer } from './EdgePropertiesDrawer';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { DecisionNode } from './DecisionNode';
+import { EventNode } from './EventNode';
+import { GatewayNode } from './GatewayNode';
+import { WorkflowSidebar } from './WorkflowSidebar';
+import { ReactFlowProvider, useReactFlow } from 'reactflow';
 
-const nodeTypes = { customBankingNode: WorkflowNode };
+const nodeTypes = { 
+  customBankingNode: WorkflowNode, 
+  decisionNode: DecisionNode,
+  eventNode: EventNode,
+  gatewayNode: GatewayNode
+};
 
-export const WorkflowCanvas: React.FC = () => {
+// Dynamic, automatic flowchart sequencing helper
+const computeSequences = (nodes: Node[], edges: Edge[]) => {
+  const sequenceMap: Record<string, string> = {};
+  
+  const incomingCount: Record<string, number> = {};
+  nodes.forEach(n => { incomingCount[n.id] = 0; });
+  edges.forEach(e => {
+    if (incomingCount[e.target] !== undefined) {
+      incomingCount[e.target]++;
+    }
+  });
+
+  const sortedNodes = [...nodes].sort((a, b) => {
+    if (Math.abs(a.position.y - b.position.y) > 20) {
+      return a.position.y - b.position.y;
+    }
+    return (a.data.seq || 0) - (b.data.seq || 0);
+  });
+
+  let rootCounter = 1;
+  
+  const traverse = (nodeId: string, currentSeq: string) => {
+    sequenceMap[nodeId] = currentSeq;
+    
+    const outgoing = edges.filter(e => e.source === nodeId).map(e => e.target);
+    const outgoingNodes = sortedNodes.filter(n => outgoing.includes(n.id));
+    
+    const nodeData = sortedNodes.find(n => n.id === nodeId)?.data;
+    const isSubWorkflow = nodeData?.title.toLowerCase().includes('sub-workflow') || 
+                          nodeData?.type === 'SUB_WORKFLOW' || 
+                          outgoingNodes.length > 1;
+    
+    outgoingNodes.forEach((targetNode, index) => {
+      if (sequenceMap[targetNode.id]) return;
+      
+      let nextSeq = '';
+      if (isSubWorkflow) {
+        const letter = String.fromCharCode(97 + index);
+        nextSeq = `${currentSeq}${letter}`;
+      } else if (currentSeq.match(/[a-z]/i)) {
+        const match = currentSeq.match(/^(.*[a-z])(?:-(\d+))?$/i);
+        if (match && outgoingNodes.length === 1) {
+          const prefix = match[1];
+          const num = match[2] ? parseInt(match[2], 10) : 0;
+          nextSeq = `${prefix}-${num + 1}`;
+        } else {
+          nextSeq = `${currentSeq}-${index + 1}`;
+        }
+      } else {
+        if (outgoingNodes.length === 1) {
+          nextSeq = String(rootCounter++);
+        } else {
+          nextSeq = `${currentSeq}.${index + 1}`;
+        }
+      }
+      traverse(targetNode.id, nextSeq);
+    });
+  };
+
+  const roots = sortedNodes.filter(n => incomingCount[n.id] === 0);
+  roots.forEach(root => {
+    if (!sequenceMap[root.id]) {
+      traverse(root.id, String(rootCounter++));
+    }
+  });
+
+  sortedNodes.forEach(node => {
+    if (!sequenceMap[node.id]) {
+      sequenceMap[node.id] = String(rootCounter++);
+    }
+  });
+
+  return sequenceMap;
+};
+
+const WorkflowCanvasInner: React.FC = () => {
   const { 
     activeWorkflowProductContext,
     activeWorkflowSubproductContext,
@@ -36,13 +125,16 @@ export const WorkflowCanvas: React.FC = () => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const reactFlowInstance = useReactFlow();
 
-  // Inbound & Outbound states
+  const sequenceMap = computeSequences(nodes, edges);
+
   const [inboundTemplate, setInboundTemplate] = useState<string>('Fedwire_Pacs008_Import');
   const [associatedAgent, setAssociatedAgent] = useState<string>('Pacs008_Validator_Agent');
   const [outboundReport, setOutboundReport] = useState<string>('Daily_Ledger_Balance');
 
-  // Load products (L2) and subproducts (L3) context lists
   const { data: productsData } = useQuery({
     queryKey: ['masters-products'],
     queryFn: async () => (await apiClient.get('/masters/products')).data
@@ -53,24 +145,11 @@ export const WorkflowCanvas: React.FC = () => {
     queryFn: async () => (await apiClient.get('/masters/subproducts')).data
   });
 
-  const { data: workflows, isLoading, error } = useQuery({
+  const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: async () => (await apiClient.get('/workflows/')).data
   });
 
-  // Fetch ingestion templates for Inbound Config
-  const { data: ingestionTemplates } = useQuery({
-    queryKey: ['ingestion-templates'],
-    queryFn: async () => (await apiClient.get('/templates/')).data
-  });
-
-  // Fetch report templates for Outbound Config
-  const { data: reportTemplates } = useQuery({
-    queryKey: ['report-templates'],
-    queryFn: async () => (await apiClient.get('/reporting/templates')).data
-  });
-
-  // Restore draft state or load backend state on mount
   useEffect(() => {
     if (workflowDraft) {
       setNodes(workflowDraft.nodes || []);
@@ -96,8 +175,15 @@ export const WorkflowCanvas: React.FC = () => {
         id: e.edge_id,
         source: e.source_node_id,
         target: e.target_node_id,
-        animated: true,
-        style: { stroke: '#94A3B8', strokeWidth: 2 }
+        type: 'step',
+        updatable: true,
+        focusable: true,
+        label: e.edge_condition?.condition || '',
+        labelStyle: { fill: '#4F46E5', fontWeight: 700, fontSize: 12 },
+        labelBgStyle: { fill: '#EEF2FF', fillOpacity: 0.9, rx: 4, ry: 4 },
+        labelBgPadding: [6, 4] as [number, number],
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366F1' },
+        style: { stroke: '#6366F1', strokeWidth: 2 }
       }));
 
       setNodes(mappedNodes);
@@ -105,7 +191,46 @@ export const WorkflowCanvas: React.FC = () => {
     }
   }, [workflows, workflowDraft]);
 
-  // Save changes locally in Zustand draft store on modifications
+  const handleSaveBlueprint = async () => {
+    try {
+      if (!activeWorkflowProductContext) {
+        alert("Please select a Product Context first.");
+        return;
+      }
+      
+      const payload = {
+        workflow_name: `Workflow Design - ${activeWorkflowProductContext}`,
+        domain_scope: "CORE_BANKING",
+        product_context: activeWorkflowProductContext,
+        sub_product: activeWorkflowSubproductContext,
+        description: "Visually designed workflow blueprint",
+        nodes: nodes.map(n => ({
+          sequence_number: sequenceMap[n.id] ? parseInt(String(sequenceMap[n.id]).replace(/[^0-9]/g, '')) || 1 : 1,
+          node_title: n.data.title || "Workflow Step",
+          node_code: n.data.type || "STEP",
+          canvas_x_position: Math.round(n.position.x),
+          canvas_y_position: Math.round(n.position.y),
+          sla_days: n.data.slaDays || 1
+        })),
+        edges: edges.map(e => ({
+          source_node_id: e.source,
+          target_node_id: e.target,
+          edge_condition: {
+            condition: e.data?.label || e.label || '',
+            preStatus: e.data?.preStatus || '',
+            postStatus: e.data?.postStatus || ''
+          }
+        }))
+      };
+
+      await apiClient.post('/workflows/', payload);
+      alert('Workflow Blueprint Published Successfully!');
+    } catch (e) {
+      console.error("Save Error", e);
+      alert('Failed to publish workflow blueprint.');
+    }
+  };
+
   const saveDraft = (newNodes: Node[], newEdges: Edge[]) => {
     setWorkflowDraft({ nodes: newNodes, edges: newEdges });
   };
@@ -126,18 +251,161 @@ export const WorkflowCanvas: React.FC = () => {
     });
   }, [nodes]);
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => setSelectedNode(node), []);
-  const onPaneClick = useCallback(() => setSelectedNode(null), []);
+  // --- QUICK ADD HANDLER ---
+  const handleQuickAddNode = useCallback((parentNodeId: string, position: string, sourceHandle: string, type: string, reactFlowType: string, label: string) => {
+    const parentNode = nodes.find(n => n.id === parentNodeId);
+    if (!parentNode) return;
+
+    const id = `NODE-${Math.floor(Math.random() * 9000) + 1000}`;
+    
+    // Calculate new position based on direction
+    const offset = 200;
+    let x = parentNode.position.x;
+    let y = parentNode.position.y;
+
+    if (position === 'right') x += offset + 50;
+    if (position === 'left') x -= offset + 50;
+    if (position === 'bottom') y += offset;
+    if (position === 'top') y -= offset;
+
+    const newNode: Node = {
+      id,
+      type: reactFlowType,
+      position: { x, y },
+      data: {
+        id,
+        seq: Object.keys(sequenceMap).length + 1,
+        title: label,
+        slaDays: 1,
+        type: type,
+      },
+    };
+
+    const newEdge: Edge = {
+      id: `e-${parentNodeId}-${id}`,
+      source: parentNodeId,
+      target: id,
+      sourceHandle: sourceHandle,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#94A3B8', strokeWidth: 2 }
+    };
+
+    setNodes((nds) => {
+      const updated = nds.concat(newNode);
+      setEdges((eds) => {
+        const newEdges = eds.concat(newEdge);
+        saveDraft(updated, newEdges);
+        return newEdges;
+      });
+      return updated;
+    });
+  }, [nodes, sequenceMap, setNodes, setEdges]);
+
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    setSelectedNode(node);
+    setSelectedEdge(null);
+  }, []);
+
+  const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
+    setSelectedEdge(edge);
+    setSelectedNode(null);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  }, []);
 
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) => {
-      const updated = addEdge({ ...params, animated: true, style: { stroke: '#6366F1', strokeWidth: 2 } }, eds);
+      const updated = addEdge({ 
+        ...params, 
+        type: 'step', 
+        updatable: true,
+        focusable: true,
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366F1' }, 
+        style: { stroke: '#6366F1', strokeWidth: 2 } 
+      }, eds);
       saveDraft(nodes, updated);
       return updated;
     });
   }, [nodes]);
 
-  // --- NODE MUTATIONS (ADD, DELETE, EDIT) ---
+  const onEdgeUpdate = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      setEdges((els) => {
+        const updated = updateEdge(oldEdge, newConnection, els);
+        saveDraft(nodes, updated);
+        return updated;
+      });
+    },
+    [nodes]
+  );
+
+  const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
+    event.preventDefault();
+    if (window.confirm("Delete this connection?")) {
+      setEdges((eds) => {
+        const updated = eds.filter(e => e.id !== edge.id);
+        saveDraft(nodes, updated);
+        return updated;
+      });
+      if (selectedEdge?.id === edge.id) setSelectedEdge(null);
+    }
+  }, [nodes, edges, selectedEdge]);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      const label = event.dataTransfer.getData('application/reactflow-label');
+
+      if (typeof type === 'undefined' || !type) {
+        return;
+      }
+
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const id = `NODE-${Math.floor(Math.random() * 9000) + 1000}`;
+      
+      let reactFlowType = 'customBankingNode';
+      if (type === 'DECISION') reactFlowType = 'decisionNode';
+      else if (type === 'START_EVENT' || type === 'END_EVENT' || type === 'TIMER_EVENT' || type === 'SYSTEM_TASK') reactFlowType = 'eventNode';
+      else if (type === 'PARALLEL_GATEWAY') reactFlowType = 'gatewayNode';
+
+      const newNode: Node = {
+        id,
+        type: reactFlowType,
+        position,
+        data: {
+          id,
+          seq: Object.keys(sequenceMap).length + 1,
+          title: label || 'New Node',
+          slaDays: 1,
+          type: type,
+        },
+      };
+
+      setNodes((nds) => {
+        const updated = nds.concat(newNode);
+        saveDraft(updated, edges);
+        return updated;
+      });
+    },
+    [reactFlowInstance, sequenceMap, edges]
+  );
+
   const handleAddNewNode = (type: 'STEP' | 'SUB_WORKFLOW' | 'DECISION') => {
     const id = `NODE-${Math.floor(Math.random() * 9000) + 1000}`;
     const seq = (nodes.length + 1) * 10;
@@ -148,7 +416,7 @@ export const WorkflowCanvas: React.FC = () => {
 
     const newNode: Node = {
       id,
-      type: 'customBankingNode',
+      type: type === 'DECISION' ? 'decisionNode' : 'customBankingNode',
       position: { x: 100 + (nodes.length * 40), y: 150 + (nodes.length * 20) },
       data: { 
         id, 
@@ -197,13 +465,10 @@ export const WorkflowCanvas: React.FC = () => {
     );
   }
 
-  // Sort nodes by sequence number for the textual grid view
   const sortedSteps = [...nodes].sort((a, b) => (a.data.seq || 0) - (b.data.seq || 0));
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
-      
-      {/* 📂 PRODUCT/SUBPRODUCT CONTEXT SELECTORS */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -230,13 +495,11 @@ export const WorkflowCanvas: React.FC = () => {
             </select>
           </div>
         </div>
-
         <div className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
           Process Flow Studio Context
         </div>
       </div>
 
-      {/* 📥 INBOUND & OUTBOUND CONFIG GATES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="p-4 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass flex flex-col gap-2.5">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1.5">
@@ -274,142 +537,165 @@ export const WorkflowCanvas: React.FC = () => {
         </div>
       </div>
 
-      {/* VISUAL CANVAS VIEWPORT */}
-      <div className="h-[450px] w-full bg-white/85 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass overflow-hidden relative">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          fitView
-          attributionPosition="bottom-right"
-        >
-          <Background color="#6366f1" gap={16} style={{ opacity: 0.03 }} />
-          <Controls className="bg-white/80 backdrop-blur-md border border-slate-200/50 shadow-glass rounded-xl overflow-hidden" />
-          <MiniMap nodeStrokeWidth={3} zoomable pannable className="border border-slate-200/40 shadow-glass rounded-xl bg-white/80" />
-        </ReactFlow>
-
-        {/* 🛠️ FLOATING VISUAL TOOLBAR */}
-        <div className="absolute top-4 left-4 z-40 bg-white/95 backdrop-blur-md border border-slate-200/60 p-2 rounded-2xl shadow-xl flex flex-col gap-1.5">
-          <button 
-            onClick={() => handleAddNewNode('STEP')}
-            className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-slate-700 hover:text-indigo-650 hover:bg-slate-50 rounded-xl transition-all"
-          >
-            <span>➕</span> Add Workflow Step
-          </button>
-          <button 
-            onClick={() => handleAddNewNode('SUB_WORKFLOW')}
-            className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-slate-700 hover:text-indigo-650 hover:bg-slate-50 rounded-xl transition-all border-t border-slate-100/60"
-          >
-            <span>🔄</span> Add Subworkflow Node
-          </button>
-          <button 
-            onClick={() => handleAddNewNode('DECISION')}
-            className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold text-slate-700 hover:text-indigo-650 hover:bg-slate-50 rounded-xl transition-all border-t border-slate-100/60"
-          >
-            <span>🔀</span> Add Decision Split
-          </button>
-        </div>
-
-        {/* Selected Step Properties Drawer */}
-        <NodePropertiesDrawer 
-          node={selectedNode} 
-          onClose={() => setSelectedNode(null)} 
-          onUpdateData={(updated) => selectedNode && handleUpdateNodeData(selectedNode.id, updated)} 
-        />
-      </div>
-
-      {/* 📊 TEXTUAL SEQUENCE BLUEPRINT GRID */}
-      <div className="p-6 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="text-[14px] font-extrabold text-slate-800 tracking-tight font-display">Textual Sequence Blueprint</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">Auditing and managing workflow steps sequentially. Click "Modify" on a step to select it and view its details below.</p>
+      <div className={`flex flex-col lg:flex-row gap-6 items-stretch w-full ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-50 p-6 overflow-y-auto' : 'min-h-[500px]'}`}>
+        <div className="flex-1 flex flex-col gap-6 min-w-0 h-full">
+          <div className={`w-full flex bg-white/85 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass overflow-hidden ${isFullscreen ? 'h-[80vh]' : 'h-[450px] relative'}`}>
+            <WorkflowSidebar />
+            <div className="flex-1 relative" onDrop={onDrop} onDragOver={onDragOver}>
+              <ReactFlow
+              nodes={nodes.map(n => ({
+                ...n,
+                selected: selectedNode?.id === n.id,
+                data: {
+                  ...n.data,
+                  seq: sequenceMap[n.id] || n.data.seq,
+                  onTitleChange: (newTitle: string) => handleUpdateNodeData(n.id, { title: newTitle }),
+                  onQuickAdd: handleQuickAddNode
+                }
+              }))}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onNodeClick={onNodeClick}
+              onEdgeClick={onEdgeClick}
+              onEdgeUpdate={onEdgeUpdate}
+              onEdgeContextMenu={onEdgeContextMenu}
+              onPaneClick={onPaneClick}
+              onConnect={onConnect}
+              nodeTypes={nodeTypes}
+              fitView
+              attributionPosition="bottom-right"
+            >
+              <Background color="#6366f1" gap={16} style={{ opacity: 0.03 }} />
+              <Controls className="bg-white/80 backdrop-blur-md border border-slate-200/50 shadow-glass rounded-xl overflow-hidden">
+                <ControlButton onClick={() => setIsFullscreen(!isFullscreen)} title="Toggle Full Screen">
+                  <span className="text-lg leading-none font-bold text-slate-700">{isFullscreen ? '↙' : '↗'}</span>
+                </ControlButton>
+              </Controls>
+              <MiniMap nodeStrokeWidth={3} zoomable pannable className="border border-slate-200/40 shadow-glass rounded-xl bg-white/80" />
+            </ReactFlow>
+            </div>
+            <div className="absolute top-4 left-4 z-40 bg-white/90 backdrop-blur-md border border-indigo-100 p-2 rounded-xl shadow-lg flex items-center gap-2 text-[10px] font-bold text-indigo-700 animate-fade-in pointer-events-none">
+              <span>💡</span> Drag shapes to canvas
+            </div>
+            <div className="absolute top-4 right-4 z-40">
+              <button 
+                onClick={handleSaveBlueprint}
+                className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-[12px] px-4 py-2 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+              >
+                <span>🚀</span> Publish Blueprint
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={() => handleAddNewNode('STEP')}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/10 active:scale-[0.98] transition-all"
-          >
-            + Add New Step
-          </button>
+
+          <div className="p-6 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-[14px] font-extrabold text-slate-800 tracking-tight font-display">Textual Sequence Blueprint</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Auditing and managing workflow steps sequentially. Click "Modify" on a step to select it and view its details below.</p>
+              </div>
+              <button 
+                onClick={() => handleAddNewNode('STEP')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/10 active:scale-[0.98] transition-all"
+              >
+                + Add New Step
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px] text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                    <th className="py-2.5 px-3">Seq</th>
+                    <th className="py-2.5 px-3">Step Name</th>
+                    <th className="py-2.5 px-3">SLA / STP Mode</th>
+                    <th className="py-2.5 px-3">Assigned User Interface</th>
+                    <th className="py-2.5 px-3">Assigned Rules</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedSteps.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">No workflow steps designed yet.</td>
+                    </tr>
+                  ) : (
+                    sortedSteps.map((step) => {
+                      const isNodeSelected = selectedNode?.id === step.id;
+                      return (
+                        <tr 
+                          key={step.id} 
+                          className={`border-b border-slate-55 hover:bg-slate-50/50 transition-colors cursor-pointer ${
+                            isNodeSelected ? 'bg-indigo-50/20 border-l-4 border-l-indigo-500' : ''
+                          }`}
+                          onClick={() => setSelectedNode(step)}
+                        >
+                          <td className="py-3 px-3 font-mono font-bold text-slate-400">{sequenceMap[step.id] || step.data.seq}</td>
+                          <td className="py-3 px-3 font-bold text-slate-800">{step.data.title}</td>
+                          <td className="py-3 px-3">
+                            {step.data.stpEnabled ? (
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-100/50 px-2 py-0.5 rounded-md font-bold text-[9px] uppercase tracking-wider">STP (Realtime)</span>
+                            ) : (
+                              <span className="bg-amber-50 text-amber-700 border border-amber-100/50 px-2 py-0.5 rounded-md font-bold text-[10px]">{step.data.slaDuration || `${step.data.slaDays} Days`}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-indigo-650 text-[11px]">
+                            {step.data.screen_template || <span className="text-slate-400 italic text-[11px]">None (Background Task)</span>}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex flex-wrap gap-1">
+                              {step.data.orchestration_steps?.map((o: any, idx: number) => (
+                                <span key={idx} className="bg-slate-100 text-slate-650 px-1.5 py-0.5 rounded font-mono text-[9px]">
+                                  {o.step_type === 'BUSINESS_RULE' ? `Rule:${o.target_token}` : o.step_type}
+                                </span>
+                              )) || <span className="text-slate-450 italic text-[11px]">None</span>}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                              <button 
+                                onClick={() => setSelectedNode(step)}
+                                className="text-indigo-650 hover:text-indigo-900 font-bold text-[11px] px-2.5 py-1 hover:bg-indigo-50/50 rounded-lg transition-all"
+                              >
+                                Modify
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteNode(step.id)}
+                                className="text-rose-600 hover:text-rose-950 font-bold text-[11px] px-2.5 py-1 hover:bg-rose-50/50 rounded-lg transition-all"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-[12px] text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
-                <th className="py-2.5 px-3">Seq</th>
-                <th className="py-2.5 px-3">Step Name</th>
-                <th className="py-2.5 px-3">SLA / STP Mode</th>
-                <th className="py-2.5 px-3">Assigned User Interface</th>
-                <th className="py-2.5 px-3">Assigned Rules</th>
-                <th className="py-2.5 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedSteps.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400 italic">No workflow steps designed yet.</td>
-                </tr>
-              ) : (
-                sortedSteps.map((step) => {
-                  const isNodeSelected = selectedNode?.id === step.id;
-                  return (
-                    <tr 
-                      key={step.id} 
-                      className={`border-b border-slate-55 hover:bg-slate-50/50 transition-colors cursor-pointer ${
-                        isNodeSelected ? 'bg-indigo-50/20 border-l-4 border-l-indigo-500' : ''
-                      }`}
-                      onClick={() => setSelectedNode(step)}
-                    >
-                      <td className="py-3 px-3 font-mono font-bold text-slate-400">{step.data.seq}</td>
-                      <td className="py-3 px-3 font-bold text-slate-800">{step.data.title}</td>
-                      <td className="py-3 px-3">
-                        {step.data.stpEnabled ? (
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-100/50 px-2 py-0.5 rounded-md font-bold text-[9px] uppercase tracking-wider">STP (Realtime)</span>
-                        ) : (
-                          <span className="bg-amber-50 text-amber-700 border border-amber-100/50 px-2 py-0.5 rounded-md font-bold text-[10px]">{step.data.slaDuration || `${step.data.slaDays} Days`}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 font-mono text-indigo-650 text-[11px]">
-                        {step.data.screen_template || <span className="text-slate-400 italic text-[11px]">None (Background Task)</span>}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="flex flex-wrap gap-1">
-                          {step.data.orchestration_steps?.map((o: any, idx: number) => (
-                            <span key={idx} className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono text-[9px]">
-                              {o.step_type === 'BUSINESS_RULE' ? `Rule:${o.target_token}` : o.step_type}
-                            </span>
-                          )) || <span className="text-slate-450 italic text-[11px]">None</span>}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                          <button 
-                            onClick={() => setSelectedNode(step)}
-                            className="text-indigo-650 hover:text-indigo-900 font-bold text-[11px] px-2.5 py-1 hover:bg-indigo-50/50 rounded-lg transition-all"
-                          >
-                            Modify
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteNode(step.id)}
-                            className="text-rose-600 hover:text-rose-950 font-bold text-[11px] px-2.5 py-1 hover:bg-rose-50/50 rounded-lg transition-all"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* RIGHT COLUMN: JIRA PROPERTIES CONFIGURATION PANEL */}
+        {(selectedNode || selectedEdge) && (
+          <div className="w-full lg:w-[425px] flex-shrink-0 animate-slide-in-right">
+            {selectedNode && (
+              <NodePropertiesDrawer 
+                node={selectedNode} 
+                onClose={() => setSelectedNode(null)} 
+                onUpdateData={(updated) => selectedNode && handleUpdateNodeData(selectedNode.id, updated)} 
+              />
+            )}
+            {selectedEdge && (
+              <EdgePropertiesDrawer 
+                selectedEdge={selectedEdge} 
+                setEdges={setEdges} 
+                saveDraft={() => saveDraft(nodes, edges)} 
+                onClose={() => setSelectedEdge(null)} 
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* 🛠️ STEP DETAIL WORKSPACE: SPLITTED TABLES FOR COGNITIVE BUILDING BLOCKS */}
@@ -421,16 +707,19 @@ export const WorkflowCanvas: React.FC = () => {
               <h3 className="text-[15px] font-extrabold text-slate-800 tracking-tight font-display">
                 ⚙️ {selectedNode.data.title} <span className="font-mono text-slate-400 text-xs">(Seq: {selectedNode.data.seq})</span>
               </h3>
+              <p className="text-[11px] text-slate-500 mt-1 max-w-[600px] leading-relaxed">
+                Review the cognitive building blocks allocated to this step. Missing elements will be highlighted to ensure execution engine compliance before you publish.
+              </p>
             </div>
             <button 
-              onClick={() => setSelectedNode(null)} 
-              className="text-slate-400 hover:text-slate-600 text-[11px] font-bold border border-slate-200 px-3 py-1 rounded-xl hover:bg-slate-50 transition-colors"
+              onClick={() => setSelectedNode(null)}
+              className="text-slate-400 hover:text-slate-600 font-bold text-[11px] px-3 py-1.5 hover:bg-slate-50 rounded-lg transition-all"
             >
-              Close Details
+              Close Workspace
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* 🛡️ DECISION LOGIC & RULES TABLE */}
             <div className="bg-slate-50/40 border border-slate-200/60 p-4 rounded-2xl shadow-sm flex flex-col gap-3 hover:shadow-md hover:bg-slate-50/70 transition-all duration-300">
@@ -859,5 +1148,13 @@ export const WorkflowCanvas: React.FC = () => {
       )}
 
     </div>
+  );
+};
+
+export const WorkflowCanvas: React.FC = () => {
+  return (
+    <ReactFlowProvider>
+      <WorkflowCanvasInner />
+    </ReactFlowProvider>
   );
 };

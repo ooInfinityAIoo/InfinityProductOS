@@ -173,7 +173,7 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
   };
 
   return (
-    <div className="absolute top-0 right-0 w-[425px] h-full bg-white/95 backdrop-blur-lg shadow-2xl border-l border-slate-200/50 z-50 flex flex-col animate-slide-in-right">
+    <div className="w-full h-full bg-white/90 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-glass flex flex-col">
       <div className="flex justify-between items-center px-6 py-4.5 border-b border-slate-100 bg-slate-50/50">
         <div>
           <h2 className="text-[14px] font-extrabold text-slate-800 tracking-tight font-display">Workflow Step Properties</h2>
