@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 export const ReconciliationEngineStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
@@ -89,7 +93,9 @@ export const ReconciliationEngineStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px] animate-fade-in">
+    <div className="flex flex-col w-full h-[800px] animate-fade-in">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left List */}
       <div className="w-[400px] bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -168,7 +174,14 @@ export const ReconciliationEngineStudio: React.FC = () => {
                   {matchingRules.map((rule, idx) => (
                     <div key={idx} className="bg-slate-50 border border-slate-200 p-4 rounded shadow-sm relative">
                       <div className="grid grid-cols-12 gap-4 items-center">
-                        <div className="col-span-3"><label className="block text-[10px] font-bold text-slate-500 mb-1">Source Key (Left)</label><input type="text" value={rule.source_field} onChange={(e) => handleRuleChange(idx, 'source_field', e.target.value)} placeholder="e.g., amount_usd" className="w-full text-[12px] font-mono border border-slate-300 rounded p-2 outline-none focus:border-[#0176D3]" /></div>
+                        <div className="col-span-3">
+                          <label className="block text-[10px] font-bold text-slate-500 mb-1">Source Key (Left)</label>
+                          <IsoFieldSelector 
+                            value={rule.source_field}
+                            onChange={(val) => handleRuleChange(idx, 'source_field', val)}
+                            placeholder="e.g., amount_usd"
+                          />
+                        </div>
                         <div className="col-span-2 text-center text-slate-400 mt-4">
                           <select value={rule.match_type} onChange={(e) => handleRuleChange(idx, 'match_type', e.target.value)} className="text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded p-1 outline-none text-center w-full">
                             <option value="EXACT">EXACT (=)</option>
@@ -176,7 +189,14 @@ export const ReconciliationEngineStudio: React.FC = () => {
                             <option value="FUZZY">FUZZY (~)</option>
                           </select>
                         </div>
-                        <div className="col-span-3"><label className="block text-[10px] font-bold text-slate-500 mb-1">Target Key (Right)</label><input type="text" value={rule.target_field} onChange={(e) => handleRuleChange(idx, 'target_field', e.target.value)} placeholder="e.g., settlement_amt" className="w-full text-[12px] font-mono border border-slate-300 rounded p-2 outline-none focus:border-[#0176D3]" /></div>
+                        <div className="col-span-3">
+                          <label className="block text-[10px] font-bold text-slate-500 mb-1">Target Key (Right)</label>
+                          <IsoFieldSelector 
+                            value={rule.target_field}
+                            onChange={(val) => handleRuleChange(idx, 'target_field', val)}
+                            placeholder="e.g., settlement_amt"
+                          />
+                        </div>
                         
                         <div className="col-span-4">
                           {rule.match_type === 'TOLERANCE' && (
@@ -213,6 +233,7 @@ export const ReconciliationEngineStudio: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

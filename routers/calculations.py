@@ -51,12 +51,26 @@ def register_formula(payload: schemas.SymbolicFormulaCreate, db: Session = Depen
     return new_formula
 
 @router.get("/", response_model=schemas.SymbolicFormulaListResponse, summary="List All Formulas")
-def list_formulas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+def list_formulas(
+    package_id: Optional[str] = None,
+    product_id: Optional[str] = None,
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db), 
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Retrieves a paginated list of all registered symbolic formula assets.
+    Optionally filters by package_id and product_id to support Two-Key Lockdown.
     """
-    total_count = db.query(models.SymbolicFormulaAsset).count()
-    formulas = db.query(models.SymbolicFormulaAsset).offset(skip).limit(limit).all()
+    query = db.query(models.SymbolicFormulaAsset)
+    if package_id:
+        query = query.filter(models.SymbolicFormulaAsset.application_package_id == package_id)
+    if product_id:
+        query = query.filter(models.SymbolicFormulaAsset.product_id == product_id)
+
+    total_count = query.count()
+    formulas = query.offset(skip).limit(limit).all()
     return {"formulas": formulas, "total_count": total_count}
 
 @router.get("/{asset_id}", response_model=schemas.SymbolicFormulaResponse, summary="Get a Specific Formula")

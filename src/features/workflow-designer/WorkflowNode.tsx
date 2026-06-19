@@ -31,15 +31,15 @@ export const WorkflowNode: React.FC<WorkflowNodeProps> = ({ data, selected }) =>
         handleStyle={{ width: 8, height: 8, borderRadius: 99 }}
       />
       <div 
-        className={`glass-card w-full h-full rounded-2xl transition-all duration-300 relative flex flex-col justify-between ${
+        className={`w-full h-full rounded-2xl transition-all duration-300 relative flex flex-col justify-between backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] ${
           selected 
-            ? 'ring-2 ring-indigo-500/80 shadow-glow-indigo' 
-            : 'border-slate-200/60 shadow-glass'
+            ? 'bg-white/60 border border-indigo-400 ring-2 ring-indigo-500/80 shadow-glow-indigo' 
+            : 'bg-white/30 border border-white/50 shadow-glass'
         }`} 
         style={{ minWidth: '200px', minHeight: '120px' }}
       >
         {/* Premium Gradient Top Cap */}
-        <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-650" />
+        <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-650 opacity-90" />
         
         {/* Incoming Connection Point */}
         <Handle id="left" type="target" position={Position.Left} className="w-4 h-4 bg-indigo-500 border-2 border-white hover:scale-125 transition-transform -ml-2" />

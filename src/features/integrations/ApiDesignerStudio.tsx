@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 
 export const ApiDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedApi, setSelectedApi] = useState<any>(null);
 
@@ -57,7 +60,9 @@ export const ApiDesignerStudio: React.FC = () => {
   });
 
   return (
-    <div className="flex gap-6 h-[750px]">
+    <div className="flex flex-col w-full h-[800px]">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       
       {/* Left Column: List of APIs */}
       <div className="w-[400px] bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">
@@ -169,6 +174,7 @@ export const ApiDesignerStudio: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

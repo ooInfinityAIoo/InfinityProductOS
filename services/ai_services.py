@@ -509,7 +509,7 @@ class AIService:
         # 2. Entity Resolution: Find the field in the registry.
         field_search_term = f"%{field_name_str.replace(' ', '%')}%"
         target_field = db.query(models.ISOFieldDefinition).filter(
-            models.ISOFieldDefinition.preferred_business_name.ilike(field_search_term)
+            models.ISOFieldDefinition.client_business_name.ilike(field_search_term)
         ).first()
         if not target_field:
             raise ValueError(f"Could not find a field matching '{field_name_str}' in the ISO Field Registry.")
@@ -852,7 +852,7 @@ class AIService:
 
         # 1. Fetch available ISO fields to provide exact mapping context to the LLM
         fields = db.query(models.ISOFieldDefinition).limit(200).all()
-        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.client_business_name}')" for f in fields])
 
         try:
             client = OpenAI(api_key=openai_api_key)
@@ -936,7 +936,7 @@ class AIService:
 
         # Provide the LLM with the context of all available fields from the bloodsteam
         fields = db.query(models.ISOFieldDefinition).limit(200).all()
-        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.client_business_name}')" for f in fields])
         
         try:
             client = OpenAI(api_key=openai_api_key)
@@ -1033,7 +1033,7 @@ class AIService:
                 raise ValueError(f"Failed to parse structured file: {str(e)}")
 
         fields = db.query(models.ISOFieldDefinition).limit(200).all()
-        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.client_business_name}')" for f in fields])
 
         try:
             client = OpenAI(api_key=openai_api_key)
@@ -1127,7 +1127,7 @@ class AIService:
             raise ValueError(f"Failed to parse file for auto-mapping: {str(e)}")
 
         fields = db.query(models.ISOFieldDefinition).limit(500).all()
-        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.preferred_business_name}')" for f in fields])
+        field_context = ", ".join([f"'{f.technical_sys_name}' (business name: '{f.client_business_name}')" for f in fields])
 
         try:
             client = OpenAI(api_key=openai_api_key)

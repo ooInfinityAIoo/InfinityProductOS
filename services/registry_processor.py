@@ -24,7 +24,7 @@ async def process_field_mint(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Dynamically map the payload attributes, aligning with UI keys and fallback defaults
         technical_sys_name = payload.get("technical_sys_name") or payload.get("id", f"FIELD-{str(uuid.uuid4())[:8]}")
-        preferred_business_name = payload.get("preferred_business_name") or payload.get("label", "Unknown Field Label")
+        client_business_name = payload.get("client_business_name") or payload.get("label", "Unknown Field Label")
         iso_business_name = payload.get("iso_business_name") or payload.get("mapping", "Custom.Mapping")
         data_type = payload.get("data_type") or payload.get("type", "Text")
                 
@@ -40,7 +40,7 @@ async def process_field_mint(payload: Dict[str, Any]) -> Dict[str, Any]:
         new_asset = ISOFieldDefinition(
             field_id=field_id,
             technical_sys_name=technical_sys_name,
-            preferred_business_name=preferred_business_name,
+            client_business_name=client_business_name,
             iso_business_name=iso_business_name,
             data_type=data_type,
             domain_category=domain_category,
@@ -59,7 +59,7 @@ async def process_field_mint(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "field_id": new_asset.field_id,
             "technical_sys_name": new_asset.technical_sys_name,
-            "preferred_business_name": new_asset.preferred_business_name,
+            "client_business_name": new_asset.client_business_name,
             "status": "ASSET_SECURELY_MINTED"
         }
     except Exception as e:

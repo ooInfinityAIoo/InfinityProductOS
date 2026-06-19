@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 export const ReportDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
 
@@ -20,11 +24,6 @@ export const ReportDesignerStudio: React.FC = () => {
   const { data: reportsData, isLoading: isLoadingReports } = useQuery({
     queryKey: ['reports'],
     queryFn: async () => (await apiClient.get('/reporting/')).data
-  });
-
-  const { data: fieldsData } = useQuery({
-    queryKey: ['fields-all'],
-    queryFn: async () => (await apiClient.get('/fields/registry?limit=1000')).data
   });
 
   const { data: calcData } = useQuery({
@@ -124,7 +123,9 @@ export const ReportDesignerStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px] animate-fade-in">
+    <div className="flex flex-col w-full h-[800px] animate-fade-in">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Reports */}
       <div className="w-[400px] bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -226,11 +227,19 @@ export const ReportDesignerStudio: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200">
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 mb-1">X-Axis (Group By)</label>
-                            <select value={widget.x_axis_field} onChange={(e) => updateWidget(idx, 'x_axis_field', e.target.value)} className="w-full text-[11px] border border-slate-300 rounded p-1.5 outline-none bg-white"><option value="">Select Field...</option><option value="created_at">Timestamp (created_at)</option><option value="execution_status">Status (execution_status)</option>{fieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name}</option>))}</select>
+                            <IsoFieldSelector 
+                              value={widget.x_axis_field}
+                              onChange={(val) => updateWidget(idx, 'x_axis_field', val)}
+                              placeholder="Select X-Axis Field..."
+                            />
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 mb-1">Y-Axis (Measure)</label>
-                            <select value={widget.y_axis_field} onChange={(e) => updateWidget(idx, 'y_axis_field', e.target.value)} className="w-full text-[11px] border border-slate-300 rounded p-1.5 outline-none bg-white"><option value="">Count (*)</option>{fieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name}</option>))}</select>
+                            <IsoFieldSelector 
+                              value={widget.y_axis_field}
+                              onChange={(val) => updateWidget(idx, 'y_axis_field', val)}
+                              placeholder="Select Y-Axis Field..."
+                            />
                           </div>
                         </div>
 
@@ -254,6 +263,7 @@ export const ReportDesignerStudio: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

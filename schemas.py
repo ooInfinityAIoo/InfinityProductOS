@@ -245,7 +245,7 @@ class TemplateFieldAddressModelCreate(BaseModel):
     default_value_fallback: Optional[str] = None
     is_amount_decimal: bool = False
     decimal_places_precision: int = 2
-    currency_code: str = "USD"
+    currency_code: Optional[str] = None
 
 class TemplateFieldAddressModelResponse(TemplateFieldAddressModelCreate):
     address_id: str
@@ -272,7 +272,7 @@ class PayloadMapperBlueprintCreate(BaseModel):
     source_template_id: Optional[str] = Field(None, description="Links to the physical Layout Template")
     target_format: str = Field("ISO_20022_DICTIONARY", description="Target standard format")
     mapping_direction: str = Field("INBOUND", description="INBOUND (Ingest to ISO) or OUTBOUND (Extract from ISO to File)")
-    file_control_totals: Optional[List[Dict[str, Any]]] = Field(None, description="Array of mathematical file-level validation checks.")
+    file_control_totals: Optional[Any] = Field(None, description="File-level validation checks (array or object).")
     mappings: List[PayloadFieldMappingCreate] = Field(default_factory=list)
     application_package_id: Optional[str] = Field(None, description="The specific product package this mapper belongs to. Null for Global.")
     product_id: Optional[str] = Field(None, description="The specific product this mapper belongs to. Null for Global.")
@@ -284,7 +284,7 @@ class PayloadMapperBlueprintResponse(BaseModel):
     source_template_id: Optional[str] = None
     mapping_direction: str
     target_format: str
-    file_control_totals: Optional[List[Dict[str, Any]]] = None
+    file_control_totals: Optional[Any] = None
     status: str
     created_at: str
     created_by: str
@@ -304,7 +304,7 @@ class TemplateDesignerModelCreate(BaseModel):
     is_multi_sheet: bool = False
     file_has_header_footer: str = "NONE"
     text_file_type: Optional[str] = None
-    delimiter_record_separator: str = ","
+    delimiter_record_separator: Optional[str] = None
     fields: List[TemplateFieldAddressModelCreate] = Field(default_factory=list)
 
 class TemplateDesignerModelResponse(TemplateDesignerModelCreate):
@@ -354,7 +354,8 @@ class FieldRegistryFilterParams(BaseModel):
 # --- ISO FIELD REGISTRY SCHEMAS ---
 class ISOFieldDefinitionCreate(BaseModel):
     technical_sys_name: str = Field(..., description="Internal system field identifier")
-    preferred_business_name: str = Field(..., description="User-facing field label")
+    client_business_name: str = Field(..., description="User-facing field label")
+    display_preference: str = Field("ISO", description="Preference for UI rendering: ISO or CLIENT")
     iso_business_name: str = Field(..., description="ISO 20022 standard field mapping")
     localized_names: Optional[Dict[str, str]] = Field(None, description="A JSON object for multilingual field names, keyed by locale (e.g., {'es': 'Monto Principal'}).")
     data_type: str = Field(..., description="Decimal, Alphanumeric, Amount, Date, Text")
@@ -380,6 +381,12 @@ class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
 class ISOFieldDefinitionListResponse(BaseModel):
     fields: List[ISOFieldDefinitionResponse]
     total_count: int
+
+class ISOFieldPreferencesUpdate(BaseModel):
+    """Partial update: only client_business_name and display_preference are mutable by a bank tenant.
+    iso_business_name and technical_sys_name are immutable golden-source values."""
+    client_business_name: Optional[str] = Field(None, description="Bank's own name for the field")
+    display_preference: Optional[str] = Field(None, description="ISO or CLIENT — controls what label is shown in all studio UIs")
 
 class PIIFieldListResponse(BaseModel):
     pii_fields: List[ISOFieldDefinitionResponse]
@@ -419,7 +426,7 @@ class WorkflowNodeCreate(BaseModel):
     node_code: str = Field(..., description="Internal node identifier")
     canvas_x_position: int = Field(default=0, description="Canvas X coordinate")
     canvas_y_position: int = Field(default=0, description="Canvas Y coordinate")
-    orchestration_steps: Optional[List['OrchestrationStep']] = Field(None, description="An ordered list of mixed-engine orchestration steps to execute.")
+    orchestration_steps: Optional[Any] = Field(None, description="An ordered list of mixed-engine orchestration steps to execute.")
     events_broadcast: Optional[List[str]] = Field(None, description="Events to broadcast")
     required_documents: Optional[List[Union[str, DocumentChecklistItem]]] = Field(None, description="Categorized list of required document types needed to proceed.")
     sla_days: int = Field(default=1, description="SLA target in days")
@@ -445,7 +452,7 @@ class WorkflowNodeListResponse(BaseModel):
 class WorkflowEdgeCreate(BaseModel):
     source_node_id: str = Field(..., description="Source node ID")
     target_node_id: str = Field(..., description="Target node ID")
-    edge_condition: Optional[Dict[str, Any]] = Field(None, description="Structured JSON object defining the branching condition.")
+    edge_condition: Optional[Any] = Field(None, description="Structured JSON object or string defining the branching condition.")
 
 
 class WorkflowEdgeResponse(WorkflowEdgeCreate):
@@ -483,9 +490,9 @@ class WorkflowConfigurationResponse(BaseModel):
     version: str
     is_active: bool
     description: Optional[str] = None
-    input_schema: Optional[List[str]] = None
-    output_schema: Optional[List[str]] = None
-    formulas_defined: Optional[List[dict]] = None
+    input_schema: Optional[Any] = None
+    output_schema: Optional[Any] = None
+    formulas_defined: Optional[Any] = None
     created_at: str
     created_by: str
     updated_at: Optional[str] = None
@@ -572,7 +579,7 @@ class BusinessRuleSet(BaseModel):
     description: Optional[str] = Field(None, description="A detailed description of the rule set's purpose.")
     status: str = Field("DRAFT", description="Lifecycle status of the rule set.")
     triggering_event_type: Optional[str] = Field(None, description="If set, this rule set will be automatically executed when the specified event occurs.")
-    rules: List[BusinessRule] = Field(..., description="The ordered list of business rules.")
+    rules: Optional[Any] = Field(None, description="The ordered list of business rules (flexible format).")
     application_package_id: Optional[str] = Field(None, description="The specific product package this rule set belongs to. Null for Global.")
     product_id: Optional[str] = Field(None, description="The specific product this rule set belongs to. Null for Global.")
     subproduct_id: Optional[str] = Field(None, description="The specific subproduct this rule set belongs to. Null for Global.")
@@ -682,6 +689,7 @@ class MatchType(str, Enum):
     EXACT = "EXACT"
     FUZZY = "FUZZY"
     TOLERANCE = "TOLERANCE"
+    AMOUNT_TOLERANCE = "AMOUNT_TOLERANCE"
 
 class ReconciliationCategory(str, Enum):
     NOSTRO_VOSTRO = "NOSTRO_VOSTRO"
@@ -804,7 +812,7 @@ class SymbolicFormulaCreate(BaseModel):
     token_code: str = Field(..., description="Calculation Token Identifier Code (e.g., CALC-REG-099)")
     target_output_field: str = Field(..., description="Target Binding Dictionary Output Field")
     mathematical_expression: str = Field(..., description="Symbolic Formula Mathematical String Expression")
-    parameters: Optional[Dict[str, Any]] = Field(None, description="A JSON object for static coefficients or parameters used in the formula.")
+    parameters: Optional[Any] = Field(None, description="A JSON object or list of parameter definitions used in the formula.")
     description: Optional[str] = Field(None, description="A detailed description of the formula's business purpose and context.")
     application_package_id: Optional[str] = Field(None, description="The specific product package this formula belongs to. Null for Global.")
     product_id: Optional[str] = Field(None, description="The specific product this formula belongs to. Null for Global.")
@@ -1047,7 +1055,7 @@ class ScreenTemplateCreate(BaseModel):
     status: Optional[str] = Field(None, description="Optional status update (e.g., DELETED, INACTIVE).")
     linked_api_id: Optional[str] = Field(None, description="The ID of a linked API configuration.")
     pending_api_config: Optional[Dict[str, Any]] = Field(None, description="An inline API Configuration to be created atomically with this screen.")
-    definition: List[ScreenComponent] = Field(default_factory=list, description="The list of UI components that make up the screen.")
+    definition: Optional[Any] = Field(None, description="The list of UI components that make up the screen, or a structured definition object.")
     action_buttons: List[ScreenActionButton] = Field(default_factory=list, description="The list of global action buttons for the screen.")
     value_list_groups: List[ValueListGroup] = Field(default_factory=list, description="Definitions for grouped dropdowns.")
 

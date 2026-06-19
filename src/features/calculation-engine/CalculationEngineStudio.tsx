@@ -19,11 +19,53 @@ import 'reactflow/dist/style.css';
 import { apiClient } from '../../api/client';
 import { VariableNode, ConstantNode, OperatorNode } from './CalculationNodes';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 const nodeTypes = {
   variableNode: VariableNode,
   constantNode: ConstantNode,
   operatorNode: OperatorNode
+};
+
+// Server-driven searchable ISO variable list for the sidebar
+const ISOVariableList: React.FC<{ search: string; domain: string; onDragStart: (e: React.DragEvent, type: string, data: any) => void }> = ({ search, domain, onDragStart }) => {
+  const [debounced, setDebounced] = React.useState(search);
+  React.useEffect(() => { const t = setTimeout(() => setDebounced(search), 300); return () => clearTimeout(t); }, [search]);
+  const params = new URLSearchParams({ limit: '20' });
+  if (debounced) params.set('q', debounced);
+  if (domain) params.set('domain_category', domain);
+  const { data, isLoading } = useQuery({
+    queryKey: ['calc-iso-vars', debounced, domain],
+    queryFn: async () => (await apiClient.get(`/fields/registry/search?${params.toString()}`)).data,
+    staleTime: 30000,
+  });
+  const fields = data?.fields || [];
+  if (isLoading) return <div className="text-[10px] text-slate-400 text-center py-3">Loading...</div>;
+  if (fields.length === 0) return <div className="text-[10px] text-slate-400 text-center py-3 italic">No fields found</div>;
+  return (
+    <div className="space-y-1.5 max-h-[240px] overflow-y-auto custom-scrollbar">
+      {fields.map((f: any) => (
+        <div
+          key={f.field_id}
+          draggable
+          onDragStart={(e) => onDragStart(e, 'variableNode', {
+            label: f.display_preference === 'CLIENT' && f.client_business_name ? f.client_business_name : f.iso_business_name,
+            technical_name: f.technical_sys_name
+          })}
+          className="bg-indigo-50 border border-indigo-100 hover:border-indigo-300 p-2 rounded-lg cursor-grab shadow-sm active:cursor-grabbing"
+        >
+          <div className="text-[10px] font-bold text-indigo-900 leading-tight truncate">
+            {f.display_preference === 'CLIENT' && f.client_business_name ? f.client_business_name : f.iso_business_name}
+          </div>
+          <div className="text-[8px] font-mono text-indigo-400 mt-0.5 truncate">{f.technical_sys_name}</div>
+        </div>
+      ))}
+      {(data?.total_count ?? 0) > 20 && (
+        <div className="text-[9px] text-slate-400 text-center pt-1">+{(data?.total_count ?? 0) - 20} more — refine search</div>
+      )}
+    </div>
+  );
 };
 
 const CalculationEngineInner: React.FC = () => {
@@ -41,22 +83,11 @@ const CalculationEngineInner: React.FC = () => {
   const financialDomain = activeProductContext || 'Global (Cross-Domain)';
   const [targetOutputField, setTargetOutputField] = useState('');
   const [description, setDescription] = useState('');
+  const [fieldSearch, setFieldSearch] = useState('');
 
   // Graph State
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-
-  // API Bindings
-  const { data: formulasData, isLoading: isLoadingFormulas } = useQuery({
-    queryKey: ['calculations', financialDomain, activeCoreProductId],
-    queryFn: async () => (await apiClient.get(`/calculations/?domain=${financialDomain}&product_id=${activeCoreProductId}`)).data,
-    enabled: !!financialDomain && !!activeCoreProductId
-  });
-
-  const { data: fieldsData } = useQuery({
-    queryKey: ['fields-all', financialDomain],
-    queryFn: async () => (await apiClient.get(`/fields/registry?limit=1000&domain=${financialDomain}`)).data
-  });
 
   // Fetch Packages -> Products for the Cockpit Selector
   const { data: packagesData } = useQuery({
@@ -65,6 +96,18 @@ const CalculationEngineInner: React.FC = () => {
   });
   const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === financialDomain);
   const packageId = currentPackage?.package_id;
+
+  // API Bindings
+  const { data: formulasData, isLoading: isLoadingFormulas } = useQuery({
+    queryKey: ['calculations', packageId, activeCoreProductId],
+    queryFn: async () => {
+      if (!packageId || !activeCoreProductId) return { formulas: [] };
+      return (await apiClient.get(`/calculations/?package_id=${packageId}&product_id=${activeCoreProductId}`)).data;
+    },
+    enabled: !!packageId && !!activeCoreProductId
+  });
+
+
 
   const { data: productsData } = useQuery({
     queryKey: ['products', packageId],
@@ -195,37 +238,9 @@ const CalculationEngineInner: React.FC = () => {
   }, [project]);
 
   return (
-    <div className="flex flex-col gap-6 h-[800px]">
-      {/* COCKPIT LOCK UI: Level 2 Core Product Selector */}
-      <div className="glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border border-rose-200/50 bg-rose-50/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-rose-100/50 flex items-center justify-center text-rose-500 font-extrabold text-lg shadow-inner">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-          </div>
-          <div>
-            <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight font-display">Two-Key Cockpit Lockdown</h2>
-            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Configuration is disabled until a Core Product (Level 2) is explicitly selected.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Level 1: Domain</span>
-          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg mr-4">{financialDomain}</span>
-          
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Level 2: Product Context</span>
-          <select 
-            value={activeCoreProductId || ''} 
-            onChange={(e) => setCoreProductId(e.target.value || null)}
-            className="text-[12px] font-bold text-slate-800 border-2 border-rose-200 bg-white rounded-xl p-2.5 outline-none focus:border-rose-400 shadow-sm min-w-[200px]"
-          >
-            <option value="">-- SELECT CORE PRODUCT --</option>
-            {productsData?.map((p: any) => (
-              <option key={p.product_id} value={p.product_id}>{p.product_name}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className={`flex gap-6 flex-1 overflow-hidden transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
+    <div className="flex flex-col w-full h-[800px]">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Formulas */}
       <div className="w-[350px] glass-card rounded-2xl flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
@@ -322,12 +337,11 @@ const CalculationEngineInner: React.FC = () => {
               </div>
               <div className="col-span-1">
                 <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Target Output</label>
-                <select value={targetOutputField} onChange={(e) => setTargetOutputField(e.target.value)} className="w-full text-xs border rounded-lg p-2 outline-none focus:border-indigo-500">
-                  <option value="" disabled>Select Target...</option>
-                  {fieldsData?.fields?.slice(0,50).map((f: any) => (
-                    <option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name}</option>
-                  ))}
-                </select>
+                <IsoFieldSelector 
+                  value={targetOutputField}
+                  onChange={(val) => setTargetOutputField(val)}
+                  placeholder="Select Target Output..."
+                />
               </div>
               <div className="col-span-1">
                 <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
@@ -372,20 +386,18 @@ const CalculationEngineInner: React.FC = () => {
                 </div>
 
                 <div>
-                  <h3 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-3">Variables (ISO Registry)</h3>
-                  <div className="space-y-2">
-                    {fieldsData?.fields?.slice(0,10).map((f: any) => (
-                      <div 
-                        key={f.technical_sys_name}
-                        draggable
-                        onDragStart={(e) => onDragStart(e, 'variableNode', { label: f.preferred_business_name, technical_name: f.technical_sys_name })}
-                        className="bg-indigo-50 border border-indigo-100 hover:border-indigo-300 p-2.5 rounded-lg cursor-grab shadow-sm"
-                      >
-                        <div className="text-[10px] font-bold text-indigo-900 leading-tight">{f.preferred_business_name}</div>
-                        <div className="text-[8px] font-mono text-indigo-500 mt-1 truncate">{f.technical_sys_name}</div>
-                      </div>
-                    ))}
+                  <h3 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Variables (ISO Registry)</h3>
+                  <div className="relative mb-2">
+                    <input
+                      type="text"
+                      value={fieldSearch}
+                      onChange={(e) => setFieldSearch(e.target.value)}
+                      placeholder="Search fields..."
+                      className="w-full text-[11px] border border-slate-200 rounded-lg px-2.5 py-1.5 pl-7 outline-none focus:border-indigo-400 bg-white"
+                    />
+                    <svg className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   </div>
+                  <ISOVariableList search={fieldSearch} domain={financialDomain} onDragStart={onDragStart} />
                 </div>
               </div>
 

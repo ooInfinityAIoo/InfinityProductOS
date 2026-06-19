@@ -1,4 +1,5 @@
 import React from 'react';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 export const ScreenCanvas = ({
   viewMode,
@@ -13,7 +14,7 @@ export const ScreenCanvas = ({
   components,
   setComponents,
   pendingApi,
-  fieldsData,
+  fieldsData: _fieldsData,
   rulesData,
   handleInputChange,
   handleAddComponentRow,
@@ -56,18 +57,18 @@ export const ScreenCanvas = ({
               </div>
             )}
           </div>
-          
+
           <div className="p-6 flex-1 overflow-y-auto space-y-6">
             {pendingApi && (
               <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 mb-2 animate-fade-in shadow-inner">
-                 <div className="flex justify-between items-center mb-3">
-                   <h3 className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider">Linked API Endpoint</h3>
-                   {!isReadOnly && <button onClick={() => setShowApiModal(true)} className="text-indigo-600 text-[11px] font-bold hover:underline">Edit Endpoint ➔</button>}
-                 </div>
-                 <table className="w-full text-left text-xs bg-white/60 border border-slate-200/50 rounded-xl overflow-hidden shadow-sm">
-                    <thead className="bg-slate-50 text-slate-400 text-[9px] uppercase tracking-wider border-b border-slate-100"><tr><th className="p-3">API Name</th><th className="p-3">Method</th><th className="p-3">URL Template</th><th className="p-3">Commit State</th></tr></thead>
-                    <tbody><tr className="text-slate-650"><td className="p-3 font-bold">{pendingApi.api_name}</td><td className="p-3 text-indigo-600 font-bold">{pendingApi.http_method}</td><td className="p-3 font-mono text-xs">{pendingApi.url_template}</td><td className="p-3"><span className="bg-amber-50 text-amber-700 border border-amber-100/50 px-2 py-0.5 rounded-lg font-bold text-[9px]">PENDING COMMIT</span></td></tr></tbody>
-                 </table>
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider">Linked API Endpoint</h3>
+                  {!isReadOnly && <button onClick={() => setShowApiModal(true)} className="text-indigo-600 text-[11px] font-bold hover:underline">Edit Endpoint ➔</button>}
+                </div>
+                <table className="w-full text-left text-xs bg-white/60 border border-slate-200/50 rounded-xl overflow-hidden shadow-sm">
+                  <thead className="bg-slate-50 text-slate-400 text-[9px] uppercase tracking-wider border-b border-slate-100"><tr><th className="p-3">API Name</th><th className="p-3">Method</th><th className="p-3">URL Template</th><th className="p-3">Commit State</th></tr></thead>
+                  <tbody><tr className="text-slate-650"><td className="p-3 font-bold">{pendingApi.api_name}</td><td className="p-3 text-indigo-600 font-bold">{pendingApi.http_method}</td><td className="p-3 font-mono text-xs">{pendingApi.url_template}</td><td className="p-3"><span className="bg-amber-50 text-amber-700 border border-amber-100/50 px-2 py-0.5 rounded-lg font-bold text-[9px]">PENDING COMMIT</span></td></tr></tbody>
+                </table>
               </div>
             )}
 
@@ -85,15 +86,15 @@ export const ScreenCanvas = ({
                   {!isReadOnly && <button onClick={handleAddComponentRow} className="text-indigo-650 text-[11px] font-bold hover:underline">+ Add Component</button>}
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 {components.map((comp: any, idx: number) => (
                   <div key={idx} className={`p-4 border rounded-2xl grid grid-cols-12 gap-3.5 items-center transition-all duration-300 ${isReadOnly ? 'bg-transparent border-slate-100' : 'bg-slate-50/40 border-slate-200/60 shadow-sm'}`}>
                     <div className="col-span-3"><label className="block text-[9px] font-bold text-slate-400 mb-1 tracking-wide uppercase">Component Type</label><select disabled={isReadOnly} value={comp.component_type} onChange={(e) => { const newC = [...components]; newC[idx].component_type = e.target.value; handleInputChange(setComponents, newC); }} className="w-full text-[12px] border border-slate-200 rounded-lg p-2 outline-none disabled:bg-slate-50/55 bg-white"><option value="text_input">Text Input</option><option value="number_input">Number Input</option><option value="dropdown">Dropdown Select</option><option value="date_picker">Date Picker</option><option value="label">Read-Only Label</option></select></div>
                     <div className="col-span-3"><label className="block text-[9px] font-bold text-slate-400 mb-1 tracking-wide uppercase">Label / Title (i18n)</label><input disabled={isReadOnly} type="text" placeholder="e.g., LBL_ACCOUNT_NAME" value={comp.label_token} onChange={(e) => { const newC = [...components]; newC[idx].label_token = e.target.value; handleInputChange(setComponents, newC); }} className="w-full text-[12px] border border-slate-200 rounded-lg p-2 outline-none disabled:bg-slate-55" /></div>
-                    <div className="col-span-4"><label className="block text-[9px] font-bold text-slate-400 mb-1 tracking-wide uppercase">Data Binding (ISO Registry)</label><select disabled={isReadOnly} value={comp.field_binding} onChange={(e) => { const newC = [...components]; newC[idx].field_binding = e.target.value; handleInputChange(setComponents, newC); }} className="w-full text-[12px] border border-slate-200 rounded-lg p-2 outline-none disabled:bg-slate-50/55 bg-white text-indigo-600 font-mono"><option value="" disabled>Select Backend Bind...</option>{fieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.technical_sys_name}</option>))}</select></div>
+                    <div className="col-span-4"><label className="block text-[9px] font-bold text-slate-400 mb-1 tracking-wide uppercase">Data Binding (ISO Registry)</label><IsoFieldSelector value={comp.field_binding} onChange={(val: string) => { const newC = [...components]; newC[idx].field_binding = val; handleInputChange(setComponents, newC); }} placeholder="Select Backend Bind..." disabled={isReadOnly} /></div>
                     <div className="col-span-2"><label className="block text-[9px] font-bold text-slate-400 mb-1 tracking-wide uppercase">Validation</label><select disabled={isReadOnly} value={comp.requirement_status} onChange={(e) => { const newC = [...components]; newC[idx].requirement_status = e.target.value; handleInputChange(setComponents, newC); }} className="w-full text-[12px] border border-slate-200 rounded-lg p-2 outline-none disabled:bg-slate-50/55 bg-white"><option value="MANDATORY">Required</option><option value="NON_MANDATORY">Optional</option><option value="CONDITIONAL">Conditional</option></select></div>
-                    
+
                     {comp.requirement_status === 'CONDITIONAL' && (
                       <div className="col-span-12 mt-1.5 p-3.5 bg-amber-50/55 border border-amber-100/50 rounded-xl flex items-center gap-3">
                         <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider shrink-0">Condition Rule:</span>
@@ -108,13 +109,13 @@ export const ScreenCanvas = ({
                 ))}
               </div>
             </div>
-            
+
             <div className="bg-indigo-50/50 border border-indigo-100/60 rounded-2xl p-4.5 flex items-start gap-3.5 shadow-sm">
               <svg className="w-5 h-5 text-indigo-650 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               <div className="text-[12px] text-indigo-750 font-medium leading-relaxed"><strong>Data Synchronization Notice:</strong> Fields marked as "Required" will automatically block progression in the Workflow Engine until a valid ISO mapping is supplied by the user.</div>
             </div>
           </div>
-          
+
           <div className="p-4.5 border-t border-slate-150 bg-slate-50/50 flex justify-end gap-3 shadow-[0_-4px_12px_-2px_rgba(0,0,0,0.03)]">
             {viewMode === 'VIEW' && !isReadOnly && (<button onClick={() => setViewMode('EDIT')} className="px-5 py-2.5 text-[13px] font-bold text-white bg-slate-850 hover:bg-slate-950 rounded-xl transition-all shadow-md shadow-slate-850/10 active:scale-[0.98]">Edit Blueprint</button>)}
             {!isReadOnly && viewMode !== 'VIEW' && (

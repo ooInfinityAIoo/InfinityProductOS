@@ -61,7 +61,7 @@ test.describe('Infinity ProductOS - Core User Journeys', () => {
   test('Journey 3: Design and draft a new Business Rule Set', async ({ page }) => {
     // Mock the field registry so the dropdown has options
     await page.route('**/api/v1/fields/registry?limit=1000', route => route.fulfill({
-      json: { fields: [{ technical_sys_name: 'tx_amount', preferred_business_name: 'Transaction Amount' }] }
+      json: { fields: [{ technical_sys_name: 'tx_amount', client_business_name: 'Transaction Amount' }] }
     }));
 
     // Navigate to Rules Engine and start creating

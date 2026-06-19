@@ -1,9 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 export const DataGatewayStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedMapper, setSelectedMapper] = useState<any>(null);
 
@@ -20,12 +24,6 @@ export const DataGatewayStudio: React.FC = () => {
   const { data: mappersData, isLoading: isLoadingMappers } = useQuery({
     queryKey: ['mappers'],
     queryFn: async () => (await apiClient.get('/mappers/')).data
-  });
-
-  // 2. Fetch ISO Field Registry (For the dropdowns!)
-  const { data: fieldsData } = useQuery({
-    queryKey: ['fields-all'],
-    queryFn: async () => (await apiClient.get('/fields/registry?limit=1000')).data
   });
 
   // 3. Fetch File Layout Templates (Step A/B Integration)
@@ -95,7 +93,9 @@ export const DataGatewayStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px]">
+    <div className="flex flex-col w-full h-[800px]">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       
       {/* Left Column: List of Blueprints */}
       <div className="w-[400px] glass-card rounded-2xl flex flex-col overflow-hidden">
@@ -323,16 +323,13 @@ export const DataGatewayStudio: React.FC = () => {
                       
                       <div className="col-span-3 flex items-center gap-2">
                         <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
-                        <select 
-                          value={mapping.target_iso_field} 
-                          onChange={(e) => { const newM = [...mappings]; newM[idx].target_iso_field = e.target.value; setMappings(newM); }} 
-                          className="flex-1 text-[11px] font-bold text-indigo-700 border border-indigo-200 rounded-xl p-2 outline-none bg-indigo-50/50"
-                        >
-                          <option value="" disabled>Select Target ISO Field...</option>
-                          {fieldsData?.fields?.map((f: any) => (
-                            <option key={f.technical_sys_name} value={f.technical_sys_name}>{f.preferred_business_name} ({f.technical_sys_name})</option>
-                          ))}
-                        </select>
+                        <div className="flex-1">
+                          <IsoFieldSelector 
+                            value={mapping.target_iso_field}
+                            onChange={(val) => { const newM = [...mappings]; newM[idx].target_iso_field = val; setMappings(newM); }}
+                            placeholder="Select Target ISO Field..."
+                          />
+                        </div>
                         <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 select-none cursor-pointer">
                           <input 
                             type="checkbox" 
@@ -393,6 +390,7 @@ export const DataGatewayStudio: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

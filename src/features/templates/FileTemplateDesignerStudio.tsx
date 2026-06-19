@@ -82,8 +82,8 @@ export const FileTemplateDesignerStudio: React.FC = () => {
 
   // --- 1-CLICK ISO REGISTRY ONBOARDING ---
   const createQuickFieldMutation = useMutation({
-    mutationFn: async (fieldData: { technical_sys_name: string, preferred_business_name: string, data_type: string }) => {
-      const payload = { ...fieldData, iso_business_name: fieldData.preferred_business_name, domain_category: 'Auto-Ingested', is_pii: false };
+    mutationFn: async (fieldData: { technical_sys_name: string, client_business_name: string, data_type: string }) => {
+      const payload = { ...fieldData, iso_business_name: fieldData.client_business_name, domain_category: 'Auto-Ingested', is_pii: false };
       return (await apiClient.post('/fields/registry/', payload)).data;
     },
     onSuccess: (data, variables: any) => {
@@ -220,7 +220,7 @@ export const FileTemplateDesignerStudio: React.FC = () => {
                           {isoFieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.technical_sys_name}</option>))}
                         </select>
                         {(field as any).is_new_field_required || (!field.extracted_field_name && field.cell_address_or_prompt) ? (
-                          <button onClick={() => createQuickFieldMutation.mutate({ idx, technical_sys_name: `auto_${field.cell_address_or_prompt.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Math.floor(Math.random()*1000)}`, preferred_business_name: field.cell_address_or_prompt, data_type: (field as any).inferred_data_type || 'Text' } as any)} className="px-2 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded text-[9px] font-bold hover:bg-emerald-100 transition-colors whitespace-nowrap">+ Quick Add ISO</button>
+                          <button onClick={() => createQuickFieldMutation.mutate({ idx, technical_sys_name: `auto_${field.cell_address_or_prompt.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Math.floor(Math.random()*1000)}`, client_business_name: field.cell_address_or_prompt, data_type: (field as any).inferred_data_type || 'Text' } as any)} className="px-2 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded text-[9px] font-bold hover:bg-emerald-100 transition-colors whitespace-nowrap">+ Quick Add ISO</button>
                         ) : null}
                       </div>
                     </div>

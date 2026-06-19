@@ -148,7 +148,8 @@ class ISOFieldDefinition(Base):
     
     field_id = Column(String, primary_key=True, index=True)
     technical_sys_name = Column(String, unique=True, nullable=False, index=True)
-    preferred_business_name = Column(String, nullable=False)
+    client_business_name = Column(String, nullable=False)
+    display_preference = Column(String, nullable=False, default="ISO")
     iso_business_name = Column(String, nullable=False, index=True)
     data_type = Column(String, nullable=False)  # Decimal, Alphanumeric, Amount, Date, Text
     domain_category = Column(String, nullable=False, index=True)  # e.g., HELOC, PAYMENTS, TREASURY
@@ -665,6 +666,7 @@ class ScreenTemplate(Base):
     subproduct_id = Column(String, nullable=True, index=True)
     workflow_id = Column(String, nullable=True)
     workflow_step_id = Column(String, nullable=True, index=True) # Aligned with payload
+    linked_api_id = Column(String, nullable=True)
     definition = Column(JSONB, nullable=False) # The JSON definition of the screen layout and components
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)

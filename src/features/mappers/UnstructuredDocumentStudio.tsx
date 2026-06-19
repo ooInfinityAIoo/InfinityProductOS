@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 
 export const UnstructuredDocumentStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedMapper, setSelectedMapper] = useState<any>(null);
 
@@ -23,12 +27,6 @@ export const UnstructuredDocumentStudio: React.FC = () => {
       res.data.mappers = res.data.mappers.filter((m: any) => m.source_format === 'PDF' || m.source_format === 'UNSTRUCTURED');
       return res.data;
     }
-  });
-
-  // Fetch ISO Field Registry (For the dropdowns!)
-  const { data: fieldsData } = useQuery({
-    queryKey: ['fields-all'],
-    queryFn: async () => (await apiClient.get('/fields/registry?limit=1000')).data
   });
 
   // Fetch Application Packages for Scoping
@@ -63,7 +61,9 @@ export const UnstructuredDocumentStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px] animate-fade-in">
+    <div className="flex flex-col w-full h-[800px] animate-fade-in">
+      <CockpitLockBanner />
+      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Blueprints */}
       <div className="w-[400px] glass-card rounded-2xl flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
@@ -207,14 +207,13 @@ export const UnstructuredDocumentStudio: React.FC = () => {
                       
                       <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
                       
-                      <select 
-                        value={mapping.target_iso_field} 
-                        onChange={(e) => { const newM = [...mappings]; newM[idx].target_iso_field = e.target.value; setMappings(newM); }} 
-                        className="w-64 text-[12px] font-mono text-indigo-700 border border-slate-200 bg-white rounded-xl p-2 outline-none focus:border-indigo-500 shadow-sm"
-                      >
-                        <option value="" disabled>Map to ISO Registry Field...</option>
-                        {fieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.technical_sys_name}</option>))}
-                      </select>
+                      <div className="w-64">
+                        <IsoFieldSelector 
+                          value={mapping.target_iso_field}
+                          onChange={(val) => { const newM = [...mappings]; newM[idx].target_iso_field = val; setMappings(newM); }}
+                          placeholder="Map to ISO Registry Field..."
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -238,6 +237,7 @@ export const UnstructuredDocumentStudio: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

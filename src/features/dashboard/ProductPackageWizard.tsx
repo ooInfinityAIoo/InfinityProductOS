@@ -12,12 +12,25 @@ export const ProductPackageWizard: React.FC = () => {
   const [country, setCountry] = useState('US');
   const [currency, setCurrency] = useState('USD');
   
-  // Pre-seed the configuration checklist
   const [modules, setModules] = useState([
     { module_name: 'ISO Field Registry Sync', owner: 'Data Governance Team', sla_days: 2 },
+    { module_name: 'Document Master', owner: 'Document Processing Team', sla_days: 3 },
+    { module_name: 'Unstructured Document', owner: 'AI Extraction Team', sla_days: 5 },
+    { module_name: 'Behavioral Profile', owner: 'Risk Analysts', sla_days: 4 },
+    { module_name: 'Event Repository', owner: 'Audit Team', sla_days: 2 },
     { module_name: 'DataGateway Mappers', owner: 'Integration Team', sla_days: 5 },
     { module_name: 'Business Rule Sets', owner: 'Risk Analysts', sla_days: 4 },
-    { module_name: 'Workflow Orchestration', owner: 'Product Ops', sla_days: 7 }
+    { module_name: 'Calculation Engine', owner: 'Quantitative Team', sla_days: 6 },
+    { module_name: 'API Designer', owner: 'Integration Team', sla_days: 3 },
+    { module_name: 'Screen Designer', owner: 'UX Team', sla_days: 5 },
+    { module_name: 'File Template Designer', owner: 'UX Team', sla_days: 4 },
+    { module_name: 'Report Designer', owner: 'Reporting Team', sla_days: 4 },
+    { module_name: 'Reconciliation Engine', owner: 'Finance Ops', sla_days: 7 },
+    { module_name: 'Execution Audit', owner: 'Compliance Team', sla_days: 2 },
+    { module_name: 'Insights Factory', owner: 'Data Science Team', sla_days: 6 },
+    { module_name: 'Workflow Orchestration', owner: 'Product Ops', sla_days: 7 },
+    { module_name: 'Ingestion Pipeline', owner: 'Data Eng Team', sla_days: 5 },
+    { module_name: 'Ai Assistant Studio', owner: 'AI Team', sla_days: 4 }
   ]);
 
   const createPackageMutation = useMutation({

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, cast, String
-from typing import List
+from typing import List, Optional
 import uuid
 import datetime
 
@@ -98,31 +98,60 @@ def list_subdomain_categories(db: Session = Depends(get_db), current_user: Curre
     
     return {"subdomain_categories": subdomains}
 
+SORTABLE_COLUMNS = {
+    "iso_business_name": models.ISOFieldDefinition.iso_business_name,
+    "client_business_name": models.ISOFieldDefinition.client_business_name,
+    "data_type": models.ISOFieldDefinition.data_type,
+    "domain_category": models.ISOFieldDefinition.domain_category,
+    "created_at": models.ISOFieldDefinition.created_at,
+}
+
 @router.get("/search", response_model=schemas.ISOFieldDefinitionListResponse, summary="Search the ISO Field Registry")
 def search_iso_fields(
-    q: str = Query(..., min_length=2, description="Search term for technical name, business name, description, or localized names."),
+    q: str = Query("", description="Search term for technical name, business name, description."),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=500),
+    data_type: Optional[str] = Query(None, description="Filter by data type e.g. Amount, Date, Text"),
+    is_pii: Optional[bool] = Query(None, description="Filter to only PII fields"),
+    domain_category: Optional[str] = Query(None, description="Filter by domain"),
+    display_preference: Optional[str] = Query(None, description="Filter by display preference: ISO or CLIENT"),
+    sort_by: Optional[str] = Query("iso_business_name", description="Column to sort by"),
+    sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Performs a paginated, case-insensitive search across the ISO Field Registry.
-    The search will look for matches in technical name, business names, description, and localized names.
+    Supports filtering by data_type, is_pii, domain_category, display_preference, and sorting.
     """
-    search_term = f"%{q}%"
-    base_query = db.query(models.ISOFieldDefinition).filter(
-        or_(
-            models.ISOFieldDefinition.technical_sys_name.ilike(search_term),
-            models.ISOFieldDefinition.preferred_business_name.ilike(search_term),
-            models.ISOFieldDefinition.iso_business_name.ilike(search_term),
-            models.ISOFieldDefinition.description.ilike(search_term),
-            cast(models.ISOFieldDefinition.localized_names, String).ilike(search_term)
+    base_query = db.query(models.ISOFieldDefinition)
+
+    if q and len(q) >= 1:
+        search_term = f"%{q}%"
+        base_query = base_query.filter(
+            or_(
+                models.ISOFieldDefinition.technical_sys_name.ilike(search_term),
+                models.ISOFieldDefinition.client_business_name.ilike(search_term),
+                models.ISOFieldDefinition.iso_business_name.ilike(search_term),
+                models.ISOFieldDefinition.description.ilike(search_term)
+            )
         )
-    )
+
+    if data_type:
+        base_query = base_query.filter(models.ISOFieldDefinition.data_type == data_type)
+    if is_pii is not None:
+        base_query = base_query.filter(models.ISOFieldDefinition.is_pii == is_pii)
+    if domain_category:
+        base_query = base_query.filter(models.ISOFieldDefinition.domain_category == domain_category)
+    if display_preference in ("ISO", "CLIENT"):
+        base_query = base_query.filter(models.ISOFieldDefinition.display_preference == display_preference)
+
+    sort_col = SORTABLE_COLUMNS.get(sort_by, models.ISOFieldDefinition.iso_business_name)
+    order_expr = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
+
     total_count = base_query.count()
-    fields = base_query.order_by(models.ISOFieldDefinition.preferred_business_name).offset(skip).limit(limit).all()
-    
+    fields = base_query.order_by(order_expr).offset(skip).limit(limit).all()
+
     return {"fields": fields, "total_count": total_count}
 
 @router.get("/{field_id}", response_model=schemas.ISOFieldDefinitionResponse, summary="Get a Specific ISO Field")
@@ -165,6 +194,32 @@ def update_iso_field(field_id: str, payload: schemas.ISOFieldDefinitionCreate, d
 
     for key, value in payload.dict().items():
         setattr(db_field, key, value)
+
+    db.commit()
+    db.refresh(db_field)
+    return db_field
+
+@router.patch("/{field_id}/preferences", response_model=schemas.ISOFieldDefinitionResponse, summary="Update Bank Display Preferences for a Field")
+def update_field_preferences(
+    field_id: str,
+    payload: schemas.ISOFieldPreferencesUpdate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges)
+):
+    """
+    Allows a bank to update the client_business_name and display_preference for a field.
+    The iso_business_name and technical_sys_name remain immutable.
+    """
+    db_field = db.query(models.ISOFieldDefinition).filter(models.ISOFieldDefinition.field_id == field_id).first()
+    if not db_field:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Field '{field_id}' not found.")
+
+    if payload.client_business_name is not None:
+        db_field.client_business_name = payload.client_business_name
+    if payload.display_preference is not None:
+        if payload.display_preference not in ("ISO", "CLIENT"):
+            raise HTTPException(status_code=400, detail="display_preference must be 'ISO' or 'CLIENT'")
+        db_field.display_preference = payload.display_preference
 
     db.commit()
     db.refresh(db_field)

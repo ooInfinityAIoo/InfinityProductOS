@@ -22,7 +22,7 @@ try:
         initial_fields = [
             {
                 "technical_sys_name": "of_fintax_bal_01",
-                "preferred_business_name": "Principal Amount",
+                "client_business_name": "Principal Amount",
                 "iso_business_name": "Balances.Principal",
                 "data_type": "Decimal",
                 "domain_category": "HELOC",
@@ -34,7 +34,7 @@ try:
             },
             {
                 "technical_sys_name": "of_fintax_rate_05",
-                "preferred_business_name": "Interest Rate Margin",
+                "client_business_name": "Interest Rate Margin",
                 "iso_business_name": "Rates.Margin",
                 "data_type": "Alphanumeric",
                 "domain_category": "HELOC",
@@ -46,7 +46,7 @@ try:
             },
             {
                 "technical_sys_name": "of_fintax_date_09",
-                "preferred_business_name": "Value Date",
+                "client_business_name": "Value Date",
                 "iso_business_name": "Timeline.ValueDate",
                 "data_type": "Date",
                 "domain_category": "HELOC",
@@ -58,7 +58,7 @@ try:
             },
             {
                 "technical_sys_name": "of_fintax_date_12",
-                "preferred_business_name": "Ingestion Date",
+                "client_business_name": "Ingestion Date",
                 "iso_business_name": "Timeline.IngestDate",
                 "data_type": "Date",
                 "domain_category": "HELOC",
@@ -71,7 +71,7 @@ try:
             # Additional ISO 20022 fields for payments domain
             {
                 "technical_sys_name": "iso_msg_id",
-                "preferred_business_name": "Message ID",
+                "client_business_name": "Message ID",
                 "iso_business_name": "Message.ID",
                 "data_type": "Alphanumeric",
                 "domain_category": "PAYMENTS",
@@ -83,7 +83,7 @@ try:
             },
             {
                 "technical_sys_name": "iso_cb_field_name",
-                "preferred_business_name": "Transaction Amount",
+                "client_business_name": "Transaction Amount",
                 "iso_business_name": "Amounts.TransactionAmount",
                 "data_type": "Amount",
                 "domain_category": "PAYMENTS",
@@ -96,7 +96,7 @@ try:
             # Treasury domain fields
             {
                 "technical_sys_name": "tsy_ccy_code",
-                "preferred_business_name": "Currency Code",
+                "client_business_name": "Currency Code",
                 "iso_business_name": "Settlement.CurrencyCode",
                 "data_type": "Alphanumeric",
                 "domain_category": "TREASURY",
@@ -108,7 +108,7 @@ try:
             },
             {
                 "technical_sys_name": "tsy_settlement_date",
-                "preferred_business_name": "Settlement Date",
+                "client_business_name": "Settlement Date",
                 "iso_business_name": "Settlement.Date",
                 "data_type": "Date",
                 "domain_category": "TREASURY",
@@ -121,7 +121,7 @@ try:
             # New PII fields for demonstration
             {
                 "technical_sys_name": "customer_name",
-                "preferred_business_name": "Customer Name",
+                "client_business_name": "Customer Name",
                 "iso_business_name": "Customer.Name",
                 "data_type": "Text",
                 "domain_category": "PAYMENTS",
@@ -134,7 +134,7 @@ try:
             },
             {
                 "technical_sys_name": "account_number",
-                "preferred_business_name": "Account Number",
+                "client_business_name": "Account Number",
                 "iso_business_name": "Account.Number",
                 "data_type": "Alphanumeric",
                 "domain_category": "PAYMENTS",
@@ -147,7 +147,7 @@ try:
             },
             {
                 "technical_sys_name": "customer_email",
-                "preferred_business_name": "Customer Email",
+                "client_business_name": "Customer Email",
                 "iso_business_name": "Customer.Contact.Email",
                 "data_type": "Email",
                 "domain_category": "PAYMENTS",
@@ -160,7 +160,7 @@ try:
             },
             {
                 "technical_sys_name": "customer_phone",
-                "preferred_business_name": "Customer Phone",
+                "client_business_name": "Customer Phone",
                 "iso_business_name": "Customer.Contact.Phone",
                 "data_type": "Alphanumeric",
                 "domain_category": "PAYMENTS",
@@ -174,7 +174,7 @@ try:
             # Polymorphic field for Layer 3 demonstration
             {
                 "technical_sys_name": "tax_identifier",
-                "preferred_business_name": "Taxpayer Identification Number",
+                "client_business_name": "Taxpayer Identification Number",
                 "iso_business_name": "Party.TaxIdentification.Number",
                 "data_type": "Alphanumeric",
                 "domain_category": "CUSTOMER_DATA",
@@ -185,7 +185,7 @@ try:
                 "is_pii": True,
                 "masking_strategy": "SHOW_LAST_4",
                 "localized_overrides": {
-                    "US": {"preferred_business_name": "Social Security Number (SSN)"}
+                    "US": {"client_business_name": "Social Security Number (SSN)"}
                 }
             }
         ]
@@ -198,7 +198,7 @@ try:
             field = ISOFieldDefinition(
                 field_id=field_id,
                 technical_sys_name=field_spec["technical_sys_name"],
-                preferred_business_name=field_spec["preferred_business_name"],
+                client_business_name=field_spec["client_business_name"],
                 iso_business_name=field_spec["iso_business_name"],
                 data_type=field_spec["data_type"],
                 domain_category=field_spec["domain_category"],

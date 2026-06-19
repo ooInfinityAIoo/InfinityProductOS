@@ -38,11 +38,23 @@ def create_rule_set(payload: schemas.BusinessRuleSet, db: Session = Depends(get_
     return new_rule_set.definition
 
 @router.get("/", response_model=List[schemas.BusinessRuleSet], summary="List All Business Rule Sets")
-def list_rule_sets(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+def list_rule_sets(
+    package_id: str | None = None,
+    product_id: str | None = None,
+    db: Session = Depends(get_db), 
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
     Retrieves a list of all business rule set blueprints.
+    Optionally filters by package_id and product_id to support Two-Key Lockdown.
     """
-    rule_sets = db.query(models.BusinessRuleSet).all()
+    query = db.query(models.BusinessRuleSet)
+    if package_id:
+        query = query.filter(models.BusinessRuleSet.application_package_id == package_id)
+    if product_id:
+        query = query.filter(models.BusinessRuleSet.product_id == product_id)
+
+    rule_sets = query.all()
     # Unpack the definition from each record
     return [rs.definition for rs in rule_sets]
 

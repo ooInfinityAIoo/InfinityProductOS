@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 
 export const EventRepositoryStudio: React.FC = () => {
+  const { activeCoreProductId } = usePlatformStore();
   const [selectedEventType, setSelectedEventType] = useState<string | null>(null);
 
   // --- DYNAMIC API BINDINGS (Real-time Polling) ---
@@ -32,7 +35,9 @@ export const EventRepositoryStudio: React.FC = () => {
   const totalSubscriptions = Object.values((statusData as any)?.listeners || {}).reduce((acc: number, listeners: any) => acc + (listeners?.length || 0), 0) as number;
 
   return (
-    <div className="flex flex-col gap-6 h-[750px] animate-fade-in">
+    <div className="flex flex-col w-full h-[800px] animate-fade-in">
+      <CockpitLockBanner />
+      <div className={`flex flex-col gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       
       {/* Top KPI Metrics Row */}
       <div className="grid grid-cols-3 gap-6 shrink-0">
@@ -164,6 +169,7 @@ export const EventRepositoryStudio: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
