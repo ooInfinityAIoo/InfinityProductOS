@@ -1,9 +1,28 @@
+// WHY THIS FILE EXISTS:
+// File Template Designer — lets business ops define how physical files (CSV, Excel,
+// PDF, SWIFT MT text) are read and mapped to ISO field keys.
+// Without this, every new file format requires a developer to hardcode a parser.
+// With this, a bank ops user uploads a sample file, the AI auto-maps the columns
+// to ISO fields, and the template is saved for reuse in the Ingestion Pipeline.
+//
+// WHAT BREAKS IF REMOVED: The Ingestion Pipeline Studio has no way to know which
+// column in a CSV maps to which ISO field. Bulk file ingestion stops working entirely.
+//
+// PRODUCT GATE: Templates are product-scoped. A SWIFT MT103 template belongs
+// to Payment Hub / CHIPS — it should not appear in a Lending product context.
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { useToast, ToastContainer } from '../../components/Toast';
 
 export const FileTemplateDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
+  const { activeCoreProductId } = usePlatformStore();
+  const { toasts, showToast, dismissToast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
@@ -22,11 +41,6 @@ export const FileTemplateDesignerStudio: React.FC = () => {
   const { data: templatesData, isLoading } = useQuery({
     queryKey: ['templates'],
     queryFn: async () => (await apiClient.get('/templates/')).data
-  });
-
-  const { data: isoFieldsData } = useQuery({
-    queryKey: ['fields-all'],
-    queryFn: async () => (await apiClient.get('/fields/registry?limit=1000')).data
   });
 
   const createTemplateMutation = useMutation({
@@ -50,7 +64,7 @@ export const FileTemplateDesignerStudio: React.FC = () => {
       setFilePreview(null);
       setTemplateName('');
     },
-    onError: (err: any) => alert(err.response?.data?.detail || "Save failed.")
+    onError: (err: any) => showToast(err.response?.data?.detail || 'Save failed.', 'error')
   });
 
   // --- AI AGENTIC AUTO-MAPPING (Step A) ---
@@ -77,7 +91,7 @@ export const FileTemplateDesignerStudio: React.FC = () => {
       setFileType(data.file_type);
       setExtractionMode('STRUCTURED');
     },
-    onError: (err: any) => alert(err.response?.data?.detail || "Auto-mapping failed.")
+    onError: (err: any) => showToast(err.response?.data?.detail || 'AI auto-mapping failed.', 'error')
   });
 
   // --- 1-CLICK ISO REGISTRY ONBOARDING ---
@@ -102,7 +116,10 @@ export const FileTemplateDesignerStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px] animate-fade-in">
+    <div className="flex flex-col w-full">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <CockpitLockBanner />
+    <div className={`flex gap-6 h-[750px] animate-fade-in transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Templates */}
       <div className="w-[400px] bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
@@ -215,10 +232,12 @@ export const FileTemplateDesignerStudio: React.FC = () => {
                       <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
                       
                       <div className="flex items-center gap-2">
-                        <select value={field.extracted_field_name} onChange={(e) => { const nF = [...fields]; nF[idx].extracted_field_name = e.target.value; setFields(nF); }} className={`w-64 text-[11px] border rounded p-2 outline-none bg-white font-mono ${field.extracted_field_name ? 'text-emerald-700 border-emerald-300' : 'text-slate-500 border-slate-300'}`}>
-                          <option value="" disabled>Output to ISO Field Key...</option>
-                          {isoFieldsData?.fields?.map((f: any) => (<option key={f.technical_sys_name} value={f.technical_sys_name}>{f.technical_sys_name}</option>))}
-                        </select>
+                        <IsoFieldSelector
+                          value={field.extracted_field_name}
+                          onChange={(val: string) => { const nF = [...fields]; nF[idx].extracted_field_name = val; setFields(nF); }}
+                          placeholder="Output to ISO Field Key..."
+                          className="w-64"
+                        />
                         {(field as any).is_new_field_required || (!field.extracted_field_name && field.cell_address_or_prompt) ? (
                           <button onClick={() => createQuickFieldMutation.mutate({ idx, technical_sys_name: `auto_${field.cell_address_or_prompt.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Math.floor(Math.random()*1000)}`, client_business_name: field.cell_address_or_prompt, data_type: (field as any).inferred_data_type || 'Text' } as any)} className="px-2 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded text-[9px] font-bold hover:bg-emerald-100 transition-colors whitespace-nowrap">+ Quick Add ISO</button>
                         ) : null}
@@ -236,6 +255,7 @@ export const FileTemplateDesignerStudio: React.FC = () => {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };

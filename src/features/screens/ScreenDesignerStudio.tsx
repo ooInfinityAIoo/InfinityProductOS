@@ -1,7 +1,23 @@
-import React, { useState, useEffect } from 'react';
+// WHY THIS FILE EXISTS:
+// Screen Designer Studio — lets business ops users build three types of screens
+// without writing code:
+//   TYPE 1 MAINTENANCE: Master data entry screens (define once, lifetime of product)
+//   TYPE 2 CONFIGURATION: Screens whose field values drive workflow routing conditions
+//   TYPE 3 TRANSACTION: Human-in-the-loop screens attached to a live workflow step
+//
+// WHAT BREAKS IF REMOVED: Banks cannot configure data entry UIs for their products.
+// All workflow human-approval steps lose their screen. Static master data (counterparty
+// tables, currency lists) have no maintenance UI.
+//
+// PRODUCT GATE: A product must be selected before any screen can be configured.
+// Screens are product-specific — a CHIPS screen is not valid for FEDWIRE.
+
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { useToast, ToastContainer } from '../../components/Toast';
 
 import { ScreenList } from './ScreenList';
 import { ScreenCanvas } from './ScreenCanvas';
@@ -10,7 +26,8 @@ import { ApiGeneratorModal } from '../integrations/ApiGeneratorModal';
 
 export const ScreenDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
-  const { viewMode, setViewMode, hasUnsavedChanges, setHasUnsavedChanges, userRole } = usePlatformStore();
+  const { viewMode, setViewMode, hasUnsavedChanges, setHasUnsavedChanges, userRole, activeCoreProductId } = usePlatformStore();
+  const { toasts, showToast, dismissToast } = useToast();
   
   const [selectedScreen, setSelectedScreen] = useState<any>(null);
   const [showDraftModal, setShowDraftModal] = useState(false);
@@ -89,7 +106,7 @@ export const ScreenDesignerStudio: React.FC = () => {
       }
     },
     onError: (err: any) => {
-      alert(err.response?.data?.detail || "Failed to process image.");
+      showToast(err.response?.data?.detail || 'Failed to process wireframe image.', 'error');
     }
   });
 
@@ -162,7 +179,10 @@ export const ScreenDesignerStudio: React.FC = () => {
   };
 
   return (
-    <div className="flex gap-6 h-[750px]">
+    <div className="flex flex-col w-full">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <CockpitLockBanner />
+      <div className={`flex gap-6 h-[750px] transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       <ScreenList
         viewMode={viewMode}
         isReadOnly={isReadOnly}
@@ -215,6 +235,7 @@ export const ScreenDesignerStudio: React.FC = () => {
           setHasUnsavedChanges={setHasUnsavedChanges}
         />
       )}
+      </div>
     </div>
   );
 };

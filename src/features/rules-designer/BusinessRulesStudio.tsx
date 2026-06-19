@@ -1,30 +1,76 @@
+// WHY THIS FILE EXISTS:
+// Business Rules Studio — lets business ops define IF-THEN logic that governs
+// payment routing, AML checks, approval thresholds, FX validation, and more.
+// Rules are stored as JSON and evaluated at runtime by the Rules Engine
+// (services/business_rule_engine.py) — no redeployment needed when a threshold changes.
+//
+// WHAT BREAKS IF REMOVED: All conditional logic stops working. AML thresholds,
+// approval gates, and routing conditions all require rules. The Workflow Engine
+// and Insights Factory both reference rule tokens.
+//
+// KEY UPGRADE: Multi-condition AND/OR groups + multiple actions per rule.
+// A real banking rule is never "IF amount > X THEN flag".
+// It's "IF amount > X AND counterparty is FLAGGED AND currency is NOT USD THEN block + notify".
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
-
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { useToast, ToastContainer } from '../../components/Toast';
+import { Plus, Trash2, GitBranch } from 'lucide-react';
+
+// A Condition is one IF clause: [field] [operator] [value]
+interface Condition {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+}
+
+// An Action is one THEN clause: what happens when ALL conditions pass
+interface Action {
+  id: string;
+  actionType: string;
+  targetField: string;
+  value: string;
+  calculationToken: string;
+}
+
+const OPERATORS = [
+  { v: 'EQUAL_TO', label: 'Equals (==)' },
+  { v: 'NOT_EQUAL_TO', label: 'Not Equals (!=)' },
+  { v: 'GREATER_THAN', label: 'Greater Than (>)' },
+  { v: 'LESS_THAN', label: 'Less Than (<)' },
+  { v: 'GREATER_THAN_OR_EQUAL', label: '>= (at least)' },
+  { v: 'LESS_THAN_OR_EQUAL', label: '<= (at most)' },
+  { v: 'CONTAINS', label: 'Contains (text)' },
+  { v: 'IS_NULL', label: 'Is Empty' },
+  { v: 'IS_NOT_NULL', label: 'Is Not Empty' },
+];
+
+const makeCondition = (): Condition => ({ id: `c-${Date.now()}`, field: '', operator: 'GREATER_THAN', value: '' });
+const makeAction = (): Action => ({ id: `a-${Date.now()}`, actionType: 'FLAG', targetField: '', value: '', calculationToken: '' });
 
 export const BusinessRulesStudio: React.FC = () => {
   const queryClient = useQueryClient();
-  const { activeProductContext, activeCoreProductId, setCoreProductId } = usePlatformStore();
+  const { activeProductContext, activeCoreProductId } = usePlatformStore();
+  const { toasts, showToast, dismissToast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [selectedRuleSet, setSelectedRuleSet] = useState<any>(null);
 
-  // Form State
+  // Header fields
   const [businessName, setBusinessName] = useState('');
   const [tokenCode, setTokenCode] = useState('');
   const [description, setDescription] = useState('');
-  
-  // Simplified state for a single rule with one condition and one action for the MVP UI
-  const [conditionField, setConditionField] = useState('');
-  const [conditionOperator, setConditionOperator] = useState('EQUAL_TO');
-  const [conditionValue, setConditionValue] = useState('');
-  const [actionType, setActionType] = useState('SET_VALUE');
-  const [actionTargetField, setActionTargetField] = useState('');
-  const [actionValue, setActionValue] = useState('');
-  const [calculationToken, setCalculationToken] = useState('');
+
+  // Multi-condition AND/OR group
+  const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>('AND');
+  const [conditions, setConditions] = useState<Condition[]>([makeCondition()]);
+
+  // Multi-action list
+  const [actions, setActions] = useState<Action[]>([makeAction()]);
 
   // --- DYNAMIC API BINDINGS ---
   
@@ -63,6 +109,21 @@ export const BusinessRulesStudio: React.FC = () => {
     enabled: !!packageId && !!activeCoreProductId
   });
 
+  const resetForm = () => {
+    setBusinessName(''); setTokenCode(''); setDescription('');
+    setConditionLogic('AND');
+    setConditions([makeCondition()]);
+    setActions([makeAction()]);
+  };
+
+  const updateCondition = (id: string, updates: Partial<Condition>) => {
+    setConditions(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+
+  const updateAction = (id: string, updates: Partial<Action>) => {
+    setActions(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+  };
+
   const createRuleMutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -71,49 +132,41 @@ export const BusinessRulesStudio: React.FC = () => {
         description: description,
         financial_domain: activeProductContext,
         core_product_id: activeCoreProductId,
+        condition_logic: conditionLogic,
         rules: [
           {
             priority: 100,
-            conditions: [
-              {
-                left_hand_side: { source_fields: [conditionField] },
-                operator: conditionOperator,
-                right_hand_side: { static_value: conditionValue }
-              }
-            ],
-            actions: [
-              {
-                action_type: actionType,
-                target_field: actionType === 'SET_VALUE' ? actionTargetField : undefined,
-                value: actionType === 'SET_VALUE' ? actionValue : undefined,
-                calculation_token: actionType === 'EXECUTE_CALCULATION' ? calculationToken : undefined
-              }
-            ]
+            conditions: conditions.filter(c => c.field).map(c => ({
+              left_hand_side: { source_fields: [c.field] },
+              operator: c.operator,
+              right_hand_side: { static_value: c.value },
+            })),
+            actions: actions.map(a => ({
+              action_type: a.actionType,
+              target_field: a.actionType === 'SET_VALUE' ? a.targetField : undefined,
+              value: ['SET_VALUE', 'FLAG', 'BLOCK', 'ALERT', 'ROUTE'].includes(a.actionType) ? a.value : undefined,
+              calculation_token: a.actionType === 'EXECUTE_CALCULATION' ? a.calculationToken : undefined,
+            })),
           }
-        ]
+        ],
       };
       const res = await apiClient.post('/rules/', payload);
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      showToast(`Rule "${businessName}" saved successfully.`, 'success');
       setIsCreating(false);
-      
-      // Reset form
-      setBusinessName('');
-      setTokenCode('');
-      setDescription('');
-      setConditionField('');
-      setConditionValue('');
-      setActionType('SET_VALUE');
-      setActionTargetField('');
-      setActionValue('');
-      setCalculationToken('');
-    }
+      resetForm();
+    },
+    onError: (err: any) => {
+      showToast(err.response?.data?.detail || 'Failed to save rule.', 'error');
+    },
   });
 
   return (
     <div className="flex flex-col w-full h-[800px] animate-fade-in">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <CockpitLockBanner />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Rule Sets */}
@@ -220,124 +273,204 @@ export const BusinessRulesStudio: React.FC = () => {
         {isCreating && (
           <div className="flex flex-col h-full animate-slide-in-right">
             <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-              <h2 className="text-[16px] font-extrabold text-slate-800 font-display">Design New Business Rule Set</h2>
-              <p className="text-[11px] text-slate-400 mt-1">Visually construct conditional logic to govern state transitions.</p>
+              <h2 className="text-[16px] font-extrabold text-slate-800 font-display">Design Business Rule Set</h2>
+              <p className="text-[11px] text-slate-400 mt-1">Build multi-condition IF-THEN logic. All conditions evaluated together using AND / OR.</p>
             </div>
-            
+
             <div className="p-6 flex-1 overflow-y-auto space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+              {/* Header: name + auto token */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Business Name</label>
-                  <input 
-                    type="text" 
-                    value={businessName} 
-                    onChange={(e) => setBusinessName(e.target.value)} 
-                    placeholder="e.g., VIP Account Threshold" 
-                    className="w-full text-[13px] font-semibold text-slate-850 border border-slate-200 bg-white rounded-xl p-2.5 focus:border-indigo-500 outline-none transition-all shadow-sm" 
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Rule Business Name *</label>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={e => {
+                      setBusinessName(e.target.value);
+                      setTokenCode(`BRE-${e.target.value.replace(/\s+/g,'-').toUpperCase().slice(0,14)}`);
+                    }}
+                    placeholder="e.g., AML High Value Threshold"
+                    className="w-full text-[13px] font-semibold border border-slate-200 bg-white rounded-xl p-2.5 focus:border-indigo-400 outline-none shadow-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Token Code</label>
-                  <input 
-                    type="text" 
-                    value={tokenCode} 
-                    onChange={(e) => setTokenCode(e.target.value.toUpperCase())} 
-                    placeholder="e.g., BRE-VIP-001" 
-                    className="w-full text-[13px] font-mono text-indigo-600 border border-slate-200 bg-white rounded-xl p-2.5 focus:border-indigo-500 outline-none uppercase transition-all shadow-sm" 
-                  />
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Token Code (auto-generated)</label>
+                  <div className="text-[12px] font-mono text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-xl p-2.5">{tokenCode || 'Enter name above...'}</div>
                 </div>
               </div>
 
-              <div className="bg-slate-50/40 border border-slate-150/80 rounded-2xl p-5 space-y-4 shadow-sm">
-                <h3 className="text-[12px] font-extrabold text-slate-800 uppercase tracking-wider">IF Condition</h3>
-                <div className="flex gap-4 items-center">
-                  <div className="flex-1">
-                    <IsoFieldSelector 
-                      value={conditionField}
-                      onChange={(val) => setConditionField(val)}
-                      placeholder="Select Target ISO Field..."
-                    />
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Business Purpose</label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="What does this rule enforce and why is it required?"
+                  className="w-full text-[13px] border border-slate-200 bg-white rounded-xl p-2.5 focus:border-indigo-400 outline-none shadow-sm"
+                />
+              </div>
+
+              {/* IF Conditions */}
+              <div className="bg-slate-50/60 border border-slate-200 rounded-2xl p-5 space-y-3 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                    <GitBranch size={13} className="text-slate-400" /> IF Conditions
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {/* AND/OR toggle — how conditions combine */}
+                    <span className="text-[10px] text-slate-400 font-bold">Combine with:</span>
+                    <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                      {(['AND', 'OR'] as const).map(logic => (
+                        <button
+                          key={logic}
+                          onClick={() => setConditionLogic(logic)}
+                          className={`px-3 py-1 text-[11px] font-bold transition-all ${
+                            conditionLogic === logic
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{logic}</button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setConditions(prev => [...prev, makeCondition()])}
+                      className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-all"
+                    >
+                      <Plus size={11} /> Add Condition
+                    </button>
                   </div>
-                  <select 
-                    value={conditionOperator} 
-                    onChange={(e) => setConditionOperator(e.target.value)} 
-                    className="w-48 text-[12px] font-bold text-indigo-600 border border-slate-200 bg-white rounded-xl p-2.5 outline-none focus:border-indigo-500 shadow-sm"
-                  >
-                    <option value="EQUAL_TO">Equals (==)</option>
-                    <option value="NOT_EQUAL_TO">Not Equals (!=)</option>
-                    <option value="GREATER_THAN">Greater Than (&gt;)</option>
-                    <option value="LESS_THAN">Less Than (&lt;)</option>
-                  </select>
-                  <input 
-                    type="text" 
-                    placeholder="Static Value" 
-                    value={conditionValue} 
-                    onChange={(e) => setConditionValue(e.target.value)} 
-                    className="flex-1 text-[12px] border border-slate-200 bg-white rounded-xl p-2.5 outline-none focus:border-indigo-500 shadow-inner" 
-                  />
                 </div>
+
+                {conditions.map((cond, idx) => (
+                  <div key={cond.id} className="flex gap-3 items-center">
+                    {/* AND/OR badge between conditions */}
+                    {idx > 0 && (
+                      <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-lg flex-shrink-0">
+                        {conditionLogic}
+                      </span>
+                    )}
+                    {idx === 0 && <span className="text-[10px] font-bold text-slate-400 w-8 flex-shrink-0">IF</span>}
+                    <div className="flex-1">
+                      <IsoFieldSelector
+                        value={cond.field}
+                        onChange={val => updateCondition(cond.id, { field: val })}
+                        placeholder="Select ISO field..."
+                      />
+                    </div>
+                    <select
+                      value={cond.operator}
+                      onChange={e => updateCondition(cond.id, { operator: e.target.value })}
+                      className="text-[11px] font-bold text-indigo-700 border border-slate-200 bg-white rounded-xl p-2 outline-none w-44"
+                    >
+                      {OPERATORS.map(op => <option key={op.v} value={op.v}>{op.label}</option>)}
+                    </select>
+                    {!['IS_NULL', 'IS_NOT_NULL'].includes(cond.operator) && (
+                      <input
+                        type="text"
+                        value={cond.value}
+                        onChange={e => updateCondition(cond.id, { value: e.target.value })}
+                        placeholder="Value"
+                        className="flex-1 text-[12px] border border-slate-200 bg-white rounded-xl p-2 outline-none focus:border-indigo-400 font-mono"
+                      />
+                    )}
+                    {conditions.length > 1 && (
+                      <button onClick={() => setConditions(prev => prev.filter(c => c.id !== cond.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
 
-              <div className="bg-indigo-50/20 border border-indigo-100/50 rounded-2xl p-5 space-y-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-[12px] font-extrabold text-indigo-750 uppercase tracking-wider">THEN Action</h3>
-                  <select 
-                    value={actionType} 
-                    onChange={(e) => setActionType(e.target.value)} 
-                    className="text-[11px] font-bold text-indigo-600 border border-indigo-150 rounded-lg p-1.5 outline-none bg-white shadow-sm"
+              {/* THEN Actions */}
+              <div className="bg-indigo-50/30 border border-indigo-100 rounded-2xl p-5 space-y-3 shadow-sm">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-[11px] font-extrabold text-indigo-700 uppercase tracking-wider">THEN Actions</h3>
+                  <button
+                    onClick={() => setActions(prev => [...prev, makeAction()])}
+                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-all"
                   >
-                    <option value="SET_VALUE">Set Static Value</option>
-                    <option value="EXECUTE_CALCULATION">Execute Math Formula</option>
-                  </select>
+                    <Plus size={11} /> Add Action
+                  </button>
                 </div>
-                <div className="flex gap-4 items-center">
-                  {actionType === 'SET_VALUE' ? (
-                    <>
-                      <div className="flex-1">
-                        <IsoFieldSelector 
-                          value={actionTargetField}
-                          onChange={(val) => setActionTargetField(val)}
-                          placeholder="Select Output ISO Field..."
+
+                {actions.map((action, idx) => (
+                  <div key={action.id} className="flex gap-3 items-center">
+                    <span className="text-[10px] font-bold text-indigo-400 w-8 flex-shrink-0">{idx === 0 ? 'DO' : 'AND'}</span>
+                    <select
+                      value={action.actionType}
+                      onChange={e => updateAction(action.id, { actionType: e.target.value })}
+                      className="text-[11px] font-bold text-indigo-700 border border-indigo-100 bg-white rounded-xl p-2 outline-none w-44"
+                    >
+                      <option value="FLAG">FLAG for Review</option>
+                      <option value="BLOCK">BLOCK — reject</option>
+                      <option value="SET_VALUE">SET field value</option>
+                      <option value="EXECUTE_CALCULATION">Run Calculation</option>
+                      <option value="ALERT">FIRE Alert Event</option>
+                      <option value="ROUTE">ROUTE to workflow path</option>
+                    </select>
+
+                    {action.actionType === 'SET_VALUE' && (
+                      <>
+                        <div className="flex-1">
+                          <IsoFieldSelector
+                            value={action.targetField}
+                            onChange={val => updateAction(action.id, { targetField: val })}
+                            placeholder="Output field..."
+                          />
+                        </div>
+                        <span className="text-slate-400 font-bold text-[12px]">=</span>
+                        <input
+                          type="text"
+                          value={action.value}
+                          onChange={e => updateAction(action.id, { value: e.target.value })}
+                          placeholder="New value"
+                          className="flex-1 text-[12px] border border-indigo-100 bg-white rounded-xl p-2 outline-none font-mono"
                         />
-                      </div>
-                      <span className="text-slate-400 font-bold text-[12px]">=</span>
-                      <input 
-                        type="text" 
-                        placeholder="New Static Value" 
-                        value={actionValue} 
-                        onChange={(e) => setActionValue(e.target.value)} 
-                        className="flex-1 text-[12px] border border-indigo-150 bg-white rounded-xl p-2.5 outline-none focus:border-indigo-500 shadow-inner" 
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <select 
-                        value={calculationToken} 
-                        onChange={(e) => setCalculationToken(e.target.value)} 
-                        className="flex-1 text-[12px] font-mono text-indigo-650 border border-indigo-150 bg-white rounded-xl p-2.5 outline-none focus:border-indigo-500 shadow-sm"
+                      </>
+                    )}
+
+                    {action.actionType === 'EXECUTE_CALCULATION' && (
+                      <select
+                        value={action.calculationToken}
+                        onChange={e => updateAction(action.id, { calculationToken: e.target.value })}
+                        className="flex-1 text-[11px] font-mono text-indigo-700 border border-indigo-100 bg-white rounded-xl p-2 outline-none"
                       >
-                        <option value="" disabled>Select Target Symbolic Formula...</option>
-                        {calcData?.formulas?.map((f: any) => (
-                          <option key={f.token_code} value={f.token_code}>{f.business_name} ({f.token_code})</option>
+                        <option value="" disabled>Select formula token...</option>
+                        {calcData?.map?.((f: any) => (
+                          <option key={f.token_code} value={f.token_code}>{f.business_name} — {f.token_code}</option>
                         ))}
                       </select>
-                    </>
-                  )}
-                </div>
+                    )}
+
+                    {['FLAG', 'BLOCK', 'ALERT', 'ROUTE'].includes(action.actionType) && (
+                      <input
+                        type="text"
+                        value={action.value}
+                        onChange={e => updateAction(action.id, { value: e.target.value })}
+                        placeholder={action.actionType === 'ROUTE' ? 'Workflow path token...' : 'Optional reason / event code'}
+                        className="flex-1 text-[12px] border border-indigo-100 bg-white rounded-xl p-2 outline-none font-mono text-amber-700"
+                      />
+                    )}
+
+                    {actions.length > 1 && (
+                      <button onClick={() => setActions(prev => prev.filter(a => a.id !== action.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
-              <button 
-                onClick={() => setIsCreating(false)} 
-                className="px-5 py-2.5 text-[13px] font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-sm active:scale-[0.98]"
-              >
+              <button onClick={() => { setIsCreating(false); resetForm(); }} className="px-5 py-2.5 text-[13px] font-bold text-slate-500 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all active:scale-[0.98]">
                 Cancel
               </button>
-              <button 
-                disabled={createRuleMutation.isPending || !businessName || !tokenCode || !conditionField} 
-                onClick={() => createRuleMutation.mutate()} 
-                className="px-5 py-2.5 text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-750 rounded-xl transition-all shadow-md shadow-indigo-650/15 disabled:opacity-50 active:scale-[0.98]"
+              <button
+                disabled={createRuleMutation.isPending || !businessName || conditions.filter(c => c.field).length === 0}
+                onClick={() => createRuleMutation.mutate()}
+                className="px-5 py-2.5 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/15 disabled:opacity-50 active:scale-[0.98]"
               >
                 {createRuleMutation.isPending ? 'Saving...' : 'Save Rule Set'}
               </button>
