@@ -3,11 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { ProductPackageWizard } from './ProductPackageWizard';
-import { PackageDashboard } from './PackageDashboard';
 
 export const HomeDashboard: React.FC = () => {
   const queryClient = useQueryClient();
-  const { isWizardOpen, setWizardOpen, setProductContext, activeProductContext, userRole } = usePlatformStore();
+  const { isWizardOpen, setWizardOpen, setProductContext, activeProductContext, userRole, setActiveModule } = usePlatformStore();
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
   // --- DYNAMIC API BINDINGS ---
@@ -80,11 +79,6 @@ export const HomeDashboard: React.FC = () => {
   const activePackages = packagesData?.packages || [];
   const activeFieldsCount = fieldsData?.total_count?.toLocaleString() || '...';
   const compiledRulesCount = rulesData?.length?.toLocaleString() || '...';
-
-  // --- DYNAMIC ROUTING: Divert to Package Dashboard if contextualized ---
-  if (activeProductContext) {
-    return <PackageDashboard packageName={activeProductContext} />;
-  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -235,7 +229,12 @@ export const HomeDashboard: React.FC = () => {
                         <React.Fragment key={pkg.package_id}>
                           <tr className="hover:bg-slate-50/30 transition-colors bg-white/40">
                             <td className="px-6 py-4">
-                              <div className="font-bold text-slate-800 text-[14px]">{pkg.package_name}</div>
+                              <button 
+                                onClick={() => { setProductContext(pkg.package_name); setActiveModule('domain-dashboard'); }} 
+                                className="font-bold text-slate-800 text-[14px] hover:text-indigo-600 hover:underline transition-colors text-left"
+                              >
+                                {pkg.package_name}
+                              </button>
                               <div className="text-[9px] text-slate-400 mt-1.5 uppercase font-medium tracking-wider">{pkg.business_domain} • {pkg.jurisdiction_country_code} • {pkg.base_currency_code}</div>
                             </td>
                             <td className="px-6 py-4 w-64">
@@ -246,7 +245,12 @@ export const HomeDashboard: React.FC = () => {
                               <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold tracking-wider border ${pkg.implementation_status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100/50' : pkg.implementation_status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-100/50' : pkg.implementation_status === 'CANCELLED' ? 'bg-slate-100 text-slate-500 border-slate-200/50' : 'bg-amber-50 text-amber-700 border-amber-100/50'}`}>{pkg.implementation_status.replace('_', ' ')}</span>
                             </td>
                             <td className="px-6 py-4 text-right flex justify-end gap-3.5">
-                              <button onClick={() => setProductContext(pkg.package_name)} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-850 hover:underline">View / Edit Studio</button>
+                              <button 
+                                onClick={() => { setProductContext(pkg.package_name); setActiveModule('domain-dashboard'); }} 
+                                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-850 hover:underline"
+                              >
+                                View / Edit Studio
+                              </button>
                               {pkg.implementation_status === 'IN_PROGRESS' && (
                                 <button onClick={() => cancelPackageMutation.mutate(pkg.package_id)} className="text-[11px] font-bold text-red-500 hover:text-red-700 hover:underline">Cancel Config</button>
                               )}

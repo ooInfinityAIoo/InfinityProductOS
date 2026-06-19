@@ -8,12 +8,13 @@ export type ViewMode = 'LIST' | 'CREATE' | 'EDIT' | 'VIEW';
 export interface PlatformState {
   // --- Global Application Context ---
   activeProductContext: string | null;
+  activeCoreProductId: string | null;
   currentLanguage: LanguageCode;
   globalAdminDesignerMode: boolean;
   userRole: UserRole;
   
   // --- Navigation & Routing State ---
-  activeModule: 'dashboard' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'document-master' | 'unstructured-document-studio' | 'file-template-designer' | null;
+  activeModule: 'dashboard' | 'domain-dashboard' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'document-master' | 'unstructured-document-studio' | 'file-template-designer' | null;
   viewMode: ViewMode;
   hasUnsavedChanges: boolean;
   isWizardOpen: boolean;
@@ -28,6 +29,7 @@ export interface PlatformState {
   setLanguage: (lang: LanguageCode) => void;
   toggleAdminMode: () => void;
   setProductContext: (productName: string | null) => void;
+  setCoreProductId: (productId: string | null) => void;
   setActiveModule: (moduleName: PlatformState['activeModule']) => void;
   setUserRole: (role: UserRole) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -47,6 +49,7 @@ export interface PlatformState {
 export const usePlatformStore = create<PlatformState>((set) => ({
   // Initial State
   activeProductContext: null, // Null means we are on the Home Landing Page
+  activeCoreProductId: null,
   currentLanguage: 'EN',
   globalAdminDesignerMode: false,
   activeModule: 'dashboard',
@@ -70,11 +73,14 @@ export const usePlatformStore = create<PlatformState>((set) => ({
   
   setProductContext: (productName) => set({ 
     activeProductContext: productName,
-    // When setting a product context, automatically navigate to the dashboard
-    activeModule: productName ? 'dashboard' : null,
+    activeCoreProductId: null, // Reset core product when domain changes
+    // When setting a product context, automatically navigate to the domain dashboard
+    activeModule: productName ? 'domain-dashboard' : 'dashboard',
     viewMode: 'LIST',
     hasUnsavedChanges: false
   }),
+  
+  setCoreProductId: (productId) => set({ activeCoreProductId: productId }),
   
   setActiveModule: (moduleName) => set({ 
     activeModule: moduleName,

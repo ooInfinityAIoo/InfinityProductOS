@@ -166,7 +166,9 @@ const PreviewWorkflowModal = ({ isOpen, onClose, nodes, edges, nodeTypes }: any)
 
 const WorkflowCanvasInner: React.FC = () => {
   const { 
-    activeWorkflowProductContext,
+    activeProductContext,
+    activeCoreProductId,
+    setCoreProductId,
     activeWorkflowSubproductContext,
     setWorkflowContexts,
     workflowDraft,
@@ -193,9 +195,21 @@ const WorkflowCanvasInner: React.FC = () => {
   const [associatedAgent, setAssociatedAgent] = useState<string>('Pacs008_Validator_Agent');
   const [outboundReport, setOutboundReport] = useState<string>('Daily_Ledger_Balance');
 
+  const { data: packagesData } = useQuery({
+    queryKey: ['product-packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data
+  });
+  const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
+  const packageId = currentPackage?.package_id;
+
   const { data: productsData } = useQuery({
-    queryKey: ['masters-products'],
-    queryFn: async () => (await apiClient.get('/masters/products')).data
+    queryKey: ['products', packageId],
+    queryFn: async () => {
+      if (!packageId) return [];
+      const res = await apiClient.get(`/masters/products?package_id=${packageId}`);
+      return res.data.products;
+    },
+    enabled: !!packageId
   });
 
   const { data: subproductsData } = useQuery({
@@ -227,8 +241,8 @@ const WorkflowCanvasInner: React.FC = () => {
   const handleSaveDraftToDB = async (currentNodes: Node[], currentEdges: Edge[]) => {
     try {
       const payload = {
-        workflow_name: `Draft - ${activeWorkflowProductContext || 'Untitled'}`,
-        domain_scope: "CORE_BANKING",
+        workflow_name: `Draft - ${activeCoreProductId || 'Untitled'}`,
+        domain_scope: activeProductContext || "CORE_BANKING",
         nodes: currentNodes.map(n => ({
           sequence_number: sequenceMap[n.id] ? parseInt(String(sequenceMap[n.id]).replace(/[^0-9]/g, '')) || 1 : 1,
           node_title: n.data.title || "Workflow Step",
@@ -248,15 +262,15 @@ const WorkflowCanvasInner: React.FC = () => {
 
   const handleSaveBlueprint = async () => {
     try {
-      if (!activeWorkflowProductContext) {
-        alert("Please select a Product Context first.");
+      if (!activeCoreProductId) {
+        alert("Please select a Core Product first.");
         return;
       }
       
       const payload = {
-        workflow_name: `Workflow Design - ${activeWorkflowProductContext}`,
-        domain_scope: "CORE_BANKING",
-        product_context: activeWorkflowProductContext,
+        workflow_name: `Workflow Design - ${activeCoreProductId}`,
+        domain_scope: activeProductContext || "CORE_BANKING",
+        product_context: activeCoreProductId,
         sub_product: activeWorkflowSubproductContext,
         description: "Visually designed workflow blueprint",
         nodes: nodes.map(n => ({
@@ -575,25 +589,43 @@ const WorkflowCanvasInner: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
+      {/* COCKPIT LOCK UI: Level 2 Core Product Selector */}
+      <div className="glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border border-rose-200/50 bg-rose-50/10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-rose-100/50 flex items-center justify-center text-rose-500 font-extrabold text-lg shadow-inner">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+          </div>
+          <div>
+            <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight font-display">Two-Key Cockpit Lockdown</h2>
+            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Configuration is disabled until a Core Product (Level 2) is explicitly selected.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Level 1: Domain</span>
+          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg mr-4">{activeProductContext || 'Global'}</span>
+          
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Level 2: Product Context</span>
+          <select 
+            value={activeCoreProductId || ''} 
+            onChange={(e) => setCoreProductId(e.target.value || null)}
+            className="text-[12px] font-bold text-slate-800 border-2 border-rose-200 bg-white rounded-xl p-2.5 outline-none focus:border-rose-400 shadow-sm min-w-[200px]"
+          >
+            <option value="">-- SELECT CORE PRODUCT --</option>
+            {productsData?.map((p: any) => (
+              <option key={p.product_id} value={p.product_id}>{p.product_name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className={`flex flex-col gap-6 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product:</span>
-            <select 
-              value={activeWorkflowProductContext || ''} 
-              onChange={(e) => setWorkflowContexts(e.target.value || null, activeWorkflowSubproductContext)}
-              className="text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500"
-            >
-              <option value="">-- Select Core Product --</option>
-              {productsData?.products?.map((p: any) => <option key={p.product_id} value={p.product_name}>{p.product_name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Subproduct:</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Subproduct Context:</span>
             <select 
               value={activeWorkflowSubproductContext || ''} 
-              onChange={(e) => setWorkflowContexts(activeWorkflowProductContext, e.target.value || null)}
+              onChange={(e) => setWorkflowContexts(null, e.target.value || null)}
               className="text-[12px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500"
             >
               <option value="">-- Select Variation --</option>
@@ -1308,6 +1340,7 @@ const WorkflowCanvasInner: React.FC = () => {
         nodeTypes={nodeTypes}
       />
 
+      </div>
     </div>
   );
 };

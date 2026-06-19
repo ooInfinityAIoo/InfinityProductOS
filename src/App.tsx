@@ -23,9 +23,11 @@ const ReportDesignerStudio = lazy(() => import('./features/reporting/ReportDesig
 const DocumentMasterStudio = lazy(() => import('./features/masters/DocumentMasterStudio').then(m => ({ default: m.DocumentMasterStudio })));
 const UnstructuredDocumentStudio = lazy(() => import('./features/mappers/UnstructuredDocumentStudio').then(m => ({ default: m.UnstructuredDocumentStudio })));
 const FileTemplateDesignerStudio = lazy(() => import('./features/templates/FileTemplateDesignerStudio').then(m => ({ default: m.FileTemplateDesignerStudio })));
+const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.PackageDashboard })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
+  const activeProductContext = usePlatformStore((state) => state.activeProductContext);
 
   return (
     <div className="min-h-screen text-slate-800 font-sans antialiased">
@@ -45,6 +47,10 @@ function App() {
         }>
           {activeModule === 'dashboard' && (
             <HomeDashboard />
+          )}
+
+          {activeModule === 'domain-dashboard' && activeProductContext && (
+            <PackageDashboard packageName={activeProductContext} />
           )}
           
           {activeModule === 'workflow-designer' && (

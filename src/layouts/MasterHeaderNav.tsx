@@ -44,7 +44,7 @@ export const MasterHeaderNav: React.FC = () => {
               {activeProductContext || themeData?.brand_name || 'Infinity ProductOS™'}
             </div>
             <div className="text-[10px] text-slate-400 font-medium mt-0.5 tracking-wider uppercase">
-              Active Product Environment Context
+              Active Package Environment Context
             </div>
           </div>
         </div>
@@ -65,7 +65,9 @@ export const MasterHeaderNav: React.FC = () => {
       </div>
 
       <nav className="flex items-center gap-2">
-        <button 
+        {activeProductContext && (
+          <>
+            <button 
           onClick={() => setActiveModule('ai-assistant')} 
           className="text-[12px] font-bold text-white bg-gradient-to-r from-indigo-600 via-indigo-750 to-indigo-800 hover:from-indigo-750 hover:to-indigo-900 px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/10 active:scale-[0.98] transition-all flex items-center gap-1.5 mr-2"
         >
@@ -172,14 +174,26 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">5. Execution Traces</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Trace transactional lifecycles in detail.</div>
             </button>
-
           </div>
         </div>
+        </>
+        )}
         
         {activeProductContext ? (
-          <button onClick={() => setProductContext(null)} className="ml-4 px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-slate-250 bg-white text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.98] shadow-sm">
-            Exit Product
-          </button>
+          <div className="flex items-center gap-2 ml-4">
+            <button 
+              onClick={() => setActiveModule('domain-dashboard')} 
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all active:scale-[0.98] shadow-sm ${activeModule === 'domain-dashboard' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-250 text-indigo-600 hover:bg-slate-50'}`}
+            >
+              Domain Dashboard
+            </button>
+            <button 
+              onClick={() => { setProductContext(null); setActiveModule('dashboard'); }} 
+              className="px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-slate-250 bg-white text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.98] shadow-sm"
+            >
+              Exit Package
+            </button>
+          </div>
         ) : (
           <button onClick={() => setWizardOpen(true)} className="ml-4 px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-transparent bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-md shadow-indigo-600/10">
             Configure Context

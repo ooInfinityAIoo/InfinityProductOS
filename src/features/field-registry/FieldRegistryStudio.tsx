@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { usePlatformStore } from '../../store/usePlatformStore';
 
 export const FieldRegistryStudio: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [localizedNames, setLocalizedNames] = useState<any>(null);
+  const { activeProductContext } = usePlatformStore();
+  const domainContext = activeProductContext || 'Global';
 
   // --- DYNAMIC API BINDINGS ---
   
@@ -37,12 +40,12 @@ export const FieldRegistryStudio: React.FC = () => {
   });
   
   const { data, isLoading, error } = useQuery({
-    queryKey: ['fields', searchTerm],
+    queryKey: ['fields', searchTerm, domainContext],
     queryFn: async () => {
       // If the user is searching, hit the search endpoint; otherwise, list all fields.
       const endpoint = searchTerm.length >= 2 
-        ? `/fields/registry/search?q=${searchTerm}` 
-        : `/fields/registry/`;
+        ? `/fields/registry/search?q=${searchTerm}&domain=${domainContext}` 
+        : `/fields/registry/?domain=${domainContext}`;
       const res = await apiClient.get(endpoint);
       return res.data;
     }
@@ -56,7 +59,7 @@ export const FieldRegistryStudio: React.FC = () => {
       technical_sys_name: formData.get('technical_sys_name'),
       preferred_business_name: formData.get('preferred_business_name'),
       iso_business_name: formData.get('iso_business_name'),
-      domain_category: formData.get('domain_category'),
+      domain_category: domainContext,
       data_type: formData.get('data_type'),
       is_pii: formData.get('is_pii') === 'on',
       localized_names: localizedNames,
@@ -198,8 +201,13 @@ export const FieldRegistryStudio: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Domain Category</label>
-                  <input name="domain_category" required placeholder="e.g., HELOC" className="w-full text-[13px] text-slate-900 border border-slate-300 rounded p-2.5 focus:border-[#0176D3] focus:ring-1 focus:ring-[#0176D3] outline-none" />
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                    <span>Domain Category</span>
+                    <span className="text-rose-500" title="Locked to active tenant/LOB">🔒</span>
+                  </label>
+                  <div className="w-full text-[13px] font-bold text-slate-600 bg-slate-50 border border-slate-300 rounded p-2.5 truncate">
+                    {domainContext}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data Type</label>
