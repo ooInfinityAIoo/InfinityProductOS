@@ -1,3 +1,28 @@
+# ============================================================
+# WHY THIS FILE EXISTS:
+# This is the ISO Field Registry router — the gateway to the "Semantic Bloodstream"
+# of the entire platform (Layer 3 in the 8-layer architecture).
+#
+# The ISO Field Registry stores 3,013 ISO 20022 standard financial data fields.
+# Every studio (Workflow, Rules, Calculations, Screens, Mappers, etc.) references
+# these fields when users build logic. This ensures the entire platform speaks one
+# universal financial language — so a field called "InstructedAmount" means exactly
+# the same thing whether it's in a workflow node, a business rule, or a screen form.
+#
+# WHAT BREAKS IF THIS ROUTER IS DOWN:
+# All 10 studio modules lose their field-picker dropdowns. Business users cannot
+# map data, build rules, or configure screens. The IsoFieldSelector component
+# (src/components/IsoFieldSelector.tsx) calls this router on every keystroke.
+#
+# KEY CONCEPTS:
+# - display_preference (ISO | CLIENT): Controls whether studios show the ISO standard
+#   name ("InstructedAmount") or the bank's custom name ("Wire Transfer Amount").
+#   Banks have their own terminology; this bridges the gap without changing the data.
+# - technical_sys_name: The immutable system identifier used in all JSON logic (never changes).
+# - is_pii: Marks fields containing Personally Identifiable Information. PII fields
+#   are automatically masked in API responses by services/data_masking.py (Layer 6).
+# ============================================================
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, cast, String
@@ -5,7 +30,7 @@ from typing import List, Optional
 import uuid
 import datetime
 
-from database import get_db 
+from database import get_db
 import models
 import schemas
 from auth import get_current_user, require_designer_privileges, require_admin_or_auditor, CurrentUser
@@ -98,6 +123,10 @@ def list_subdomain_categories(db: Session = Depends(get_db), current_user: Curre
     
     return {"subdomain_categories": subdomains}
 
+# Whitelist of sortable columns. Only these column names are accepted from the frontend
+# to prevent SQL injection via dynamic ORDER BY. The frontend passes a string like
+# "domain_category" and we map it to the actual SQLAlchemy column object here.
+# If an unknown column name arrives, it safely falls back to iso_business_name.
 SORTABLE_COLUMNS = {
     "iso_business_name": models.ISOFieldDefinition.iso_business_name,
     "client_business_name": models.ISOFieldDefinition.client_business_name,

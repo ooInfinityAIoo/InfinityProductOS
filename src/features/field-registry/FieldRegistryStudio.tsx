@@ -1,3 +1,34 @@
+// ============================================================
+// WHY THIS FILE EXISTS:
+// This is the ISO Field Registry Studio — the master control panel for managing
+// the 3,013 ISO 20022 financial data fields that serve as the universal vocabulary
+// across ALL 10 studios in the platform.
+//
+// Think of it as the "dictionary" that all other studios reference. When a business
+// user builds a rule in the Rules Studio or maps a field in the Data Gateway,
+// they pick from fields defined here.
+//
+// WHAT A BUSINESS OPERATIONS USER CAN DO HERE:
+// 1. Search across 3,013 ISO standard fields by name, description, or domain
+// 2. Give each field a "bank-friendly" name (e.g. ISO "InstructedAmount" → "Wire Amount")
+// 3. Toggle whether studios show the ISO name or the bank's custom name (display_preference)
+// 4. Filter by domain (PAYMENTS, TREASURY, etc.), data type, PII status
+// 5. Bulk-update display preferences across many fields at once
+// 6. Register brand-new custom fields not in the ISO standard
+//
+// WHAT BREAKS IF THIS STUDIO IS REMOVED:
+// Business users lose the ability to manage the semantic layer. Fields would only
+// show ISO technical names (e.g. "Cdtr.Acct.Id.IBAN") which are unreadable to
+// non-technical bank staff. All field-picker dropdowns across studios would
+// show ISO codes instead of human-friendly names.
+//
+// ARCHITECTURE NOTE:
+// This studio talks to routers/registry.py via the /fields/registry/search endpoint.
+// The IsoFieldSelector component (src/components/IsoFieldSelector.tsx) is the
+// lightweight field-picker used inside other studios — this studio is the full
+// management console for what that picker displays.
+// ============================================================
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';

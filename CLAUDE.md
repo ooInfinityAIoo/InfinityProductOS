@@ -41,6 +41,62 @@ Or if multiple commits need undoing, tell the user exactly what will happen befo
 
 ---
 
+## ⚠️ Code Comment Standard — "Quick X-Ray" (Mandatory for Every File Touched)
+
+This codebase is built by two AI developers (Claude + Gemini) for a Product Manager who is not a developer. Every file must be readable like an X-ray — any AI or human picking it up cold should instantly understand WHY something exists, not just what it does.
+
+**This overrides Claude's default minimal-comment behavior. Always write explanatory comments in this project.**
+
+### The 3 levels required on everything you write or edit:
+
+**Level 1 — File/Class header: Why does this file exist?**
+```python
+# WHY THIS FILE EXISTS:
+# This is the Business Rule Engine router. It exposes REST endpoints that let
+# business users create IF-THEN rules (e.g. "if amount > $10,000, flag for AML review")
+# without writing code. Rules are stored as JSON and evaluated at runtime by
+# services/business_rule_engine.py — no redeployment needed when rules change.
+```
+
+**Level 2 — Function/Component: What is the functional importance?**
+```python
+def search_iso_fields(...):
+    """
+    WHY THIS EXISTS: Powers the search box in the ISO Field Registry Studio.
+    Business users type a field name (e.g. "amount") and get back matching
+    ISO 20022 standard fields. Without this, users would have to scroll 3,013 fields manually.
+
+    WHAT BREAKS IF REMOVED: All studio field-picker dropdowns go blank.
+    The IsoFieldSelector component across all 10 studios depends on this endpoint.
+    """
+```
+
+**Level 3 — Non-obvious logic lines: Why this specific decision?**
+```python
+# Using simpleeval instead of Python's eval() — ADR #7 financial safety rule.
+# Raw eval() would let a malicious formula execute arbitrary Python code.
+# simpleeval sandboxes to math operations only.
+result = simple_eval(formula)
+
+# Casting to Decimal before math — ADR #7. Python floats have rounding errors
+# that compound in financial calculations (e.g. 0.1 + 0.2 = 0.30000000000000004).
+# Decimal gives exact arithmetic required by banking regulators.
+amount = Decimal(str(raw_amount))
+```
+
+**For React/TypeScript components**, the same rules apply:
+```tsx
+// WHY THIS COMPONENT EXISTS:
+// Stats bar at the top of ISO Field Registry. Shows 3 live KPI cards (Total Fields,
+// PII count, Client Display count). Gives business ops users an instant health check
+// of the registry without having to filter or count manually.
+// Fetches 3 separate API calls in parallel — intentional, each stat is independently cached.
+```
+
+**When in doubt:** write the comment you'd want to read at 9am on a Monday if you'd never seen this codebase before.
+
+---
+
 ## Running the App Locally
 
 **Backend** (FastAPI on port 8000):
