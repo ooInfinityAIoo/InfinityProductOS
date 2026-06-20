@@ -73,6 +73,37 @@ export const MasterHeaderNav: React.FC = () => {
         >
           <span className="animate-pulse">✨</span> Infinity AI
         </button>
+           {/* MASTER DATA DROPDOWN — permanent reference data that lives for the lifetime of a package */}
+        <div className="relative group h-full flex items-center py-5">
+          <button className="text-[13px] font-bold text-slate-600 hover:text-indigo-650 px-3 py-1.5 rounded-lg hover:bg-slate-50/50 flex items-center gap-1 cursor-default transition-all">
+            Master Data ▾
+          </button>
+          <div className="absolute top-[100%] left-0 w-72 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl hidden group-hover:flex flex-col z-50 overflow-hidden mt-1 animate-slide-up">
+            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Product Hierarchy
+            </div>
+            <button onClick={() => setActiveModule('products-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">Products Registry</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Core products, sub-products and variation catalogue.</div>
+            </button>
+            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Reference Tables
+            </div>
+            <button className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">Currency & FX Tables</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">ISO 4217 currencies, exchange rates, tolerance bands.</div>
+            </button>
+            <button className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">Counterparty Directory</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">BICs, correspondent banks, SSI standing instructions.</div>
+            </button>
+            <button className="px-4 py-2.5 text-left hover:bg-slate-50 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">Holiday & Calendar</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Settlement calendars, cut-off times per jurisdiction.</div>
+            </button>
+          </div>
+        </div>
+
            {/* DESIGNER STUDIO DROPDOWN (DESIGN-TIME BLUEPRINT) */}
         <div className="relative group h-full flex items-center py-5">
           <button className="text-[13px] font-extrabold text-indigo-650 hover:text-indigo-850 px-3.5 py-1.5 rounded-xl border border-indigo-150 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-1 cursor-default transition-all ml-1">

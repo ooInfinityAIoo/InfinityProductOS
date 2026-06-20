@@ -143,10 +143,12 @@ function highlight(text: string, term: string) {
 }
 
 // --- MAIN PACKAGE DASHBOARD COMPONENT ---
+// WHY: Domain Dashboard shows implementation progress + insights only.
+// Products Registry has moved to Master Data top nav as its own module.
 export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageName }) => {
   const queryClient = useQueryClient();
   const { userRole } = usePlatformStore();
-  const [activeView, setActiveView] = useState<'PRODUCTS' | 'INSIGHTS' | 'CHECKLIST'>('PRODUCTS');
+  const [activeView, setActiveView] = useState<'CHECKLIST' | 'INSIGHTS'>('CHECKLIST');
   const [activeInsightTab, setActiveInsightTab] = useState<'360_BUSINESS' | 'TECHNICAL'>('360_BUSINESS');
 
   // Products Registry state
@@ -260,56 +262,31 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
 
   return (
     <div className="space-y-6 animate-slide-in-right">
-      {/* Dynamic Package Header Context */}
-      <div className="glass-card rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] font-bold uppercase text-indigo-600 tracking-widest font-display">
-              Active Application Package Context
-            </span>
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight font-display">
-            {currentPackage.package_name}
-          </h1>
-          <div className="flex flex-wrap gap-2 mt-2">
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200/50 uppercase tracking-wider font-mono">
-              ID: {currentPackage.package_id}
-            </span>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-650 border border-indigo-100/50 uppercase tracking-wider">
-              {currentPackage.business_domain}
-            </span>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-650 border border-emerald-100/50 uppercase tracking-wider font-mono">
-              {currentPackage.jurisdiction_country_code} • {currentPackage.base_currency_code}
-            </span>
-          </div>
-        </div>
-
-        {/* Secondary Header Tab Navigation */}
-        <div className="flex bg-slate-100/60 p-1.5 rounded-xl border border-slate-150 backdrop-blur-md self-stretch md:self-auto">
-          <button 
-            onClick={() => setActiveView('PRODUCTS')} 
-            className={`flex-1 md:flex-none px-4 py-2 text-xs rounded-lg font-bold transition-all ${activeView === 'PRODUCTS' ? 'bg-white shadow-sm text-indigo-600 border border-slate-100/50' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            Products Registry
-          </button>
-          <button 
-            onClick={() => setActiveView('CHECKLIST')} 
-            className={`flex-1 md:flex-none px-4 py-2 text-xs rounded-lg font-bold transition-all ${activeView === 'CHECKLIST' ? 'bg-white shadow-sm text-indigo-600 border border-slate-100/50' : 'text-slate-500 hover:text-slate-800'}`}
+      {/* Tab nav — no package header here; top navbar already owns that context */}
+      <div className="flex justify-between items-center">
+        <div className="flex bg-slate-100/60 p-1.5 rounded-xl border border-slate-150 backdrop-blur-md">
+          <button
+            onClick={() => setActiveView('CHECKLIST')}
+            className={`px-4 py-2 text-xs rounded-lg font-bold transition-all ${activeView === 'CHECKLIST' ? 'bg-white shadow-sm text-indigo-600 border border-slate-100/50' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Configuration Checklist
           </button>
-          <button 
-            onClick={() => setActiveView('INSIGHTS')} 
-            className={`flex-1 md:flex-none px-4 py-2 text-xs rounded-lg font-bold transition-all ${activeView === 'INSIGHTS' ? 'bg-white shadow-sm text-indigo-600 border border-slate-100/50' : 'text-slate-500 hover:text-slate-800'}`}
+          <button
+            onClick={() => setActiveView('INSIGHTS')}
+            className={`px-4 py-2 text-xs rounded-lg font-bold transition-all ${activeView === 'INSIGHTS' ? 'bg-white shadow-sm text-indigo-600 border border-slate-100/50' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Role-Based Insights
           </button>
         </div>
+        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+          <span className="font-mono">{currentPackage.package_id}</span>
+          <span className="font-bold text-indigo-600">{currentPackage.business_domain}</span>
+          <span>{currentPackage.jurisdiction_country_code} · {currentPackage.base_currency_code}</span>
+        </div>
       </div>
 
-      {/* VIEW 1: PRODUCTS REGISTRY — tree-table scales to hundreds of products */}
-      {activeView === 'PRODUCTS' && (
+      {/* VIEW 1 kept for potential legacy code paths — now unreachable, safe to leave */}
+      {activeView === ('PRODUCTS' as any) && (
         <div className="glass-card rounded-2xl overflow-hidden">
           {/* Toolbar: search + stats + add button */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white/60">
@@ -413,26 +390,37 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
                 </span>
               </div>
               <div className="divide-y divide-slate-100 bg-white/40 border border-slate-150 rounded-2xl overflow-hidden">
-                {configurationPlan.map((mod: any, idx: number) => (
-                  <div key={idx} className="p-4 flex items-center justify-between hover:bg-slate-50/40 transition-colors">
+                {configurationPlan.map((mod: any, idx: number) => {
+                  // Derive status from is_configured boolean.
+                  // When backend adds in_progress field this can be extended.
+                  const status: 'COMPLETED' | 'IN_PROGRESS' | 'NOT_STARTED' =
+                    mod.is_configured ? 'COMPLETED' : mod.in_progress ? 'IN_PROGRESS' : 'NOT_STARTED';
+                  const statusStyles = {
+                    COMPLETED:  { pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'Completed' },
+                    IN_PROGRESS:{ pill: 'bg-amber-50 text-amber-700 border-amber-200',   dot: 'bg-amber-500 animate-pulse', label: 'In Progress' },
+                    NOT_STARTED:{ pill: 'bg-slate-100 text-slate-500 border-slate-200',  dot: 'bg-slate-300', label: 'Not Started' },
+                  }[status];
+                  return (
+                  <div key={idx} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50/40 transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs border ${mod.is_configured ? 'bg-emerald-50 text-emerald-500 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                        {mod.is_configured ? '✓' : idx + 1}
-                      </div>
-                      <span className={`text-sm ${mod.is_configured ? 'line-through text-slate-400 font-normal' : 'font-semibold text-slate-700 font-display'}`}>
-                        {mod.module_name}
-                      </span>
+                      <span className="text-[11px] font-mono font-bold text-slate-400 w-5 text-center">{idx + 1}</span>
+                      <span className="text-sm font-semibold text-slate-700 font-display">{mod.module_name}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-lg shadow-sm">
-                        Owner: {mod.owner}
+                      <span className="text-[10px] font-bold bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-lg shadow-sm hidden sm:inline">
+                        {mod.owner}
                       </span>
-                      <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg">
-                        SLA: {mod.sla_days}d
+                      <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg hidden sm:inline">
+                        {mod.sla_days}d SLA
+                      </span>
+                      <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusStyles.pill}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusStyles.dot}`}></span>
+                        {statusStyles.label}
                       </span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -605,6 +593,233 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
         </div>
       )}
 
+    </div>
+  );
+};
+
+// WHY THIS EXPORT EXISTS:
+// ProductsRegistry is the standalone version of the tree-table, mounted via
+// Master Data > Products Registry in the top nav (activeModule = 'products-registry').
+// It reuses all the same state/logic from PackageDashboard but renders only the
+// tree-table + modals, without the checklist/insights tabs.
+export const ProductsRegistry: React.FC<{ packageName: string }> = ({ packageName }) => {
+  const queryClient = useQueryClient();
+  const { userRole } = usePlatformStore();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) =>
+    setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const [isAddProductOpen, setAddProductOpen] = useState(false);
+  const [activeProductIdForSubproduct, setActiveProductIdForSubproduct] = useState<string | null>(null);
+  const [activeProductNameForSubproduct, setActiveProductNameForSubproduct] = useState('');
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductDesc, setNewProductDesc] = useState('');
+  const [newSubproductName, setNewSubproductName] = useState('');
+  const [newSubproductDesc, setNewSubproductDesc] = useState('');
+
+  const { data: packagesData, isLoading: isLoadingPackages } = useQuery({
+    queryKey: ['product-packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data
+  });
+  const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === packageName);
+  const packageId = currentPackage?.package_id;
+
+  const { data: productsData, isLoading: isLoadingProducts } = useQuery({
+    queryKey: ['products', packageId],
+    queryFn: async () => {
+      if (!packageId) return [];
+      return (await apiClient.get(`/masters/products?package_id=${packageId}`)).data.products;
+    },
+    enabled: !!packageId
+  });
+
+  const createProductMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post('/masters/products', { package_id: packageId, product_name: newProductName, description: newProductDesc });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', packageId] });
+      setAddProductOpen(false); setNewProductName(''); setNewProductDesc('');
+    }
+  });
+
+  const createSubproductMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeProductIdForSubproduct) return;
+      await apiClient.post('/masters/subproducts', { product_id: activeProductIdForSubproduct, subproduct_name: newSubproductName, description: newSubproductDesc });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subproducts', activeProductIdForSubproduct] });
+      setActiveProductIdForSubproduct(null); setNewSubproductName(''); setNewSubproductDesc('');
+    }
+  });
+
+  const filteredProducts = useMemo(() =>
+    (productsData ?? []).filter((p: any) =>
+      p.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    ), [productsData, searchTerm]);
+
+  if (isLoadingPackages) return <div className="flex h-64 items-center justify-center text-slate-400 animate-pulse">Loading...</div>;
+
+  return (
+    <div className="space-y-4 animate-slide-in-right">
+      {/* Page title — package name shown once here, not repeated from nav */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-extrabold text-slate-900 font-display">Products Registry</h2>
+          <p className="text-xs text-slate-400 mt-0.5">{packageName} · Core products and sub-product variation catalogue</p>
+        </div>
+      </div>
+
+      <div className="glass-card rounded-2xl overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white/60">
+          <div className="flex items-center gap-3 flex-1 max-w-sm">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+              <input
+                type="text"
+                placeholder="Search products..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/20 outline-none transition-all"
+              />
+            </div>
+            <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">
+              {filteredProducts.length} of {(productsData ?? []).length} products
+            </span>
+          </div>
+          {userRole === 'ADMIN' && (
+            <button onClick={() => setAddProductOpen(true)}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/10 active:scale-[0.98] whitespace-nowrap">
+              + Add Core Product
+            </button>
+          )}
+        </div>
+
+        {isLoadingProducts ? (
+          <div className="flex h-64 items-center justify-center text-slate-400 animate-pulse">Loading Products Registry...</div>
+        ) : filteredProducts.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[640px]">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-100">
+                  <th className="py-2.5 pl-4 pr-2 w-8"></th>
+                  <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Product Name</th>
+                  <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-36">Product ID</th>
+                  <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-28">Variations</th>
+                  <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-28">Created</th>
+                  <th className="py-2.5 pr-4 w-28"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProducts.map((product: any) => (
+                  <ProductRow
+                    key={product.product_id}
+                    product={product}
+                    isExpanded={expandedIds.has(product.product_id)}
+                    onToggle={() => toggleExpand(product.product_id)}
+                    onAddSubproduct={(pid, pname) => {
+                      setActiveProductIdForSubproduct(pid);
+                      setActiveProductNameForSubproduct(pname);
+                    }}
+                    searchTerm={searchTerm}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-48 text-slate-400 m-6">
+            {(productsData ?? []).length === 0 ? (
+              <>
+                <p className="text-sm font-semibold text-slate-550">No Core Products Defined Yet</p>
+                {userRole === 'ADMIN' && (
+                  <button onClick={() => setAddProductOpen(true)} className="mt-3 bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors shadow-sm">
+                    Create Your First Product
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">No products match "{searchTerm}"</p>
+                <button onClick={() => setSearchTerm('')} className="text-xs text-indigo-500 hover:underline mt-1">Clear search</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ADD PRODUCT MODAL */}
+      {isAddProductOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[100]">
+          <div className="bg-white/95 rounded-3xl border border-white/20 shadow-2xl w-[520px] overflow-hidden flex flex-col">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent font-display">Create Core Product</h3>
+              <button onClick={() => setAddProductOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <div className="p-8 space-y-5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Product Name</label>
+                <input type="text" value={newProductName} onChange={e => setNewProductName(e.target.value)}
+                  placeholder="e.g., FEDWIRE, SWIFT-CORE, CHIPS"
+                  className="w-full text-sm font-bold text-slate-800 bg-white/60 border border-slate-200/80 rounded-xl p-3 focus:border-indigo-500 outline-none transition-all shadow-sm" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Description</label>
+                <textarea rows={3} value={newProductDesc} onChange={e => setNewProductDesc(e.target.value)}
+                  placeholder="Describe the payment rail or business functionality."
+                  className="w-full text-sm text-slate-800 bg-white/60 border border-slate-200/80 rounded-xl p-3 focus:border-indigo-500 outline-none transition-all shadow-sm resize-none" />
+              </div>
+            </div>
+            <div className="px-8 py-5 bg-slate-50/80 border-t border-slate-150 flex justify-end gap-3">
+              <button onClick={() => setAddProductOpen(false)} className="px-5 py-2.5 text-xs font-bold text-slate-500 bg-white border border-slate-250 rounded-xl hover:bg-slate-50">Cancel</button>
+              <button disabled={createProductMutation.isPending || !newProductName} onClick={() => createProductMutation.mutate()}
+                className="px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md disabled:opacity-50">
+                {createProductMutation.isPending ? 'Saving...' : 'Add Core Product'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD SUBPRODUCT MODAL */}
+      {activeProductIdForSubproduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[100]">
+          <div className="bg-white/95 rounded-3xl border border-white/20 shadow-2xl w-[520px] overflow-hidden flex flex-col">
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent font-display">Add Sub-Product Variation</h3>
+                <p className="text-[11px] text-slate-400 mt-1">Under <strong>{activeProductNameForSubproduct}</strong></p>
+              </div>
+              <button onClick={() => setActiveProductIdForSubproduct(null)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <div className="p-8 space-y-5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Sub-Product Name</label>
+                <input type="text" value={newSubproductName} onChange={e => setNewSubproductName(e.target.value)}
+                  placeholder="e.g., FEDWIRE-B2B, FEDWIRE-RETAIL-ACH"
+                  className="w-full text-sm font-bold text-slate-800 bg-white/60 border border-slate-200/80 rounded-xl p-3 focus:border-indigo-500 outline-none transition-all shadow-sm" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Description</label>
+                <textarea rows={3} value={newSubproductDesc} onChange={e => setNewSubproductDesc(e.target.value)}
+                  placeholder="Describe the unique rules, SLA thresholds, or transformations."
+                  className="w-full text-sm text-slate-800 bg-white/60 border border-slate-200/80 rounded-xl p-3 focus:border-indigo-500 outline-none transition-all shadow-sm resize-none" />
+              </div>
+            </div>
+            <div className="px-8 py-5 bg-slate-50/80 border-t border-slate-150 flex justify-end gap-3">
+              <button onClick={() => setActiveProductIdForSubproduct(null)} className="px-5 py-2.5 text-xs font-bold text-slate-500 bg-white border border-slate-250 rounded-xl hover:bg-slate-50">Cancel</button>
+              <button disabled={createSubproductMutation.isPending || !newSubproductName} onClick={() => createSubproductMutation.mutate()}
+                className="px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md disabled:opacity-50">
+                {createSubproductMutation.isPending ? 'Saving...' : 'Add Variation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
