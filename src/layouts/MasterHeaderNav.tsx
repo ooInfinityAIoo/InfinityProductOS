@@ -216,7 +216,7 @@ export const MasterHeaderNav: React.FC = () => {
               onClick={() => setActiveModule('domain-dashboard')} 
               className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all active:scale-[0.98] shadow-sm ${activeModule === 'domain-dashboard' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-250 text-indigo-600 hover:bg-slate-50'}`}
             >
-              Domain Dashboard
+              360° Dashboard
             </button>
             <button 
               onClick={() => { setProductContext(null); setActiveModule('dashboard'); }} 
