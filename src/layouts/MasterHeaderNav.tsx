@@ -253,9 +253,7 @@ export const MasterHeaderNav: React.FC = () => {
             >
               Global Technical Dashboard
             </button>
-            <button onClick={() => setWizardOpen(true)} className="px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-transparent bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-md shadow-indigo-600/10">
-              Configure Context
-            </button>
+
           </div>
         )}
       </nav>
