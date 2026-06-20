@@ -141,9 +141,9 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 1: Define the Data
             </div>
-            <button onClick={() => setActiveModule('document-master')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+            <button onClick={() => setActiveModule('doc-checklists')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">1. Document Checklist</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite documents and customer files.</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite documents and customer files per workflow step.</div>
             </button>
             {/* Data Ingestion & Mapping accordion — clicking the header row expands 4 sub-items
                 inline. Side-flying submenus don't work reliably with a right-anchored dropdown
@@ -256,10 +256,6 @@ export const MasterHeaderNav: React.FC = () => {
             <button onClick={() => setActiveModule('comm-templates')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
               <div className="text-[12px] font-bold text-rose-600">📨 Document Template Designer</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
-            </button>
-            <button onClick={() => setActiveModule('doc-checklists')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
-              <div className="text-[12px] font-bold text-rose-600">📋 Document Checklist Canvas</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define required documents per workflow step. Mandatory items block progression.</div>
             </button>
             <button onClick={() => setActiveModule('notification-engine')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
               <div className="text-[12px] font-bold text-rose-600">🔔 Notification Engine</div>

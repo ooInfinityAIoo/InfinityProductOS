@@ -20,7 +20,6 @@ const BehavioralProfileViewer = lazy(() => import('./features/behavioral-ai/Beha
 const ReconciliationEngineStudio = lazy(() => import('./features/reconciliation/ReconciliationEngineStudio').then(m => ({ default: m.ReconciliationEngineStudio })));
 const ReconciliationTrackingDashboard = lazy(() => import('./features/reconciliation/ReconciliationTrackingDashboard').then(m => ({ default: m.ReconciliationTrackingDashboard })));
 const ReportDesignerStudio = lazy(() => import('./features/reporting/ReportDesignerStudio').then(m => ({ default: m.ReportDesignerStudio })));
-const DocumentMasterStudio = lazy(() => import('./features/masters/DocumentMasterStudio').then(m => ({ default: m.DocumentMasterStudio })));
 const UnstructuredDocStudio = lazy(() => import('./features/unstructured-docs/UnstructuredDocStudio').then(m => ({ default: m.UnstructuredDocStudio })));
 const FileTemplateDesignerStudio = lazy(() => import('./features/templates/FileTemplateDesignerStudio').then(m => ({ default: m.FileTemplateDesignerStudio })));
 const EntitlementConfigStudio = lazy(() => import('./features/entitlements/EntitlementConfigStudio').then(m => ({ default: m.EntitlementConfigStudio })));
@@ -103,9 +102,7 @@ function App() {
 
           {activeModule === 'report-designer' && <ReportDesignerStudio />}
 
-          {activeModule === 'document-master' && <DocumentMasterStudio />}
-
-          {activeModule === 'unstructured-document-studio' && <UnstructuredDocStudio />}
+{activeModule === 'unstructured-document-studio' && <UnstructuredDocStudio />}
 
           {activeModule === 'file-template-designer' && <FileTemplateDesignerStudio />}
           {activeModule === 'entitlements' && <EntitlementConfigStudio />}

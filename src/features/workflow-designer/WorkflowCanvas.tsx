@@ -1080,7 +1080,7 @@ const WorkflowCanvasInner: React.FC = () => {
                   <button
                     onClick={() => {
                       setWorkflowReturnStepId(selectedNode.id);
-                      setActiveModule('document-master');
+                      setActiveModule('doc-checklists');
                     }}
                     className="text-[10px] font-extrabold text-slate-650 hover:underline bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg"
                   >
