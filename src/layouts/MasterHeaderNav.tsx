@@ -160,7 +160,7 @@ export const MasterHeaderNav: React.FC = () => {
             </button>
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Phase 4: Monitor & Output
+              Phase 4: Monitor, Output & Intelligence
             </div>
             <button onClick={() => setActiveModule('reconciliation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">10. Reconciliation Matchers</div>
@@ -170,9 +170,13 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">11. Behavioral Profiling Models</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
             </button>
-            <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 transition-colors">
+            <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">12. Report Templates</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
+            </button>
+            <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">13. Insights Factory</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
             </button>
 
           </div>
@@ -193,16 +197,12 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">2. Reconciliation Tracker</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track matching runs and transaction parity.</div>
             </button>
-            <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">3. Activity Insights</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Monitor operational analytics and indicators.</div>
-            </button>
             <button onClick={() => setActiveModule('event-repository')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">4. Event Catalog</div>
+              <div className="text-[12px] font-bold text-slate-700">3. Event Catalog</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Inspect system event logs and audit streams.</div>
             </button>
             <button onClick={() => setActiveModule('execution-audit')} className="px-4 py-3 text-left hover:bg-slate-50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">5. Execution Traces</div>
+              <div className="text-[12px] font-bold text-slate-700">4. Execution Traces</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Trace transactional lifecycles in detail.</div>
             </button>
           </div>

@@ -167,6 +167,7 @@ const MODULE_ROUTE_MAP: Record<string, string> = {
 export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageName }) => {
   const { userRole, setActiveModule } = usePlatformStore();
   const [activeInsightTab, setActiveInsightTab] = useState<'360_BUSINESS' | 'TECHNICAL'>('360_BUSINESS');
+  const [checklistOpen, setChecklistOpen] = useState(false);
 
 
   // 1. Fetch available packages to resolve package_id dynamically
@@ -216,86 +217,129 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
   return (
     <div className="space-y-6 animate-slide-in-right">
 
-      {/* ── SECTION 1: CANVA STUDIO IMPLEMENTATION ROADMAP ──────────────────
-          Auto-hides once all modules are completed (package is live).
-          Each row has an "Open Studio" button so analysts can deep-link directly
-          without hunting through the Designer Studio dropdown.                   */}
+      {/* ── PACKAGE CONFIGURATION CHECKLIST — compact progress bar + sidebar ──
+          Pre-live: shows progress bar + "Setup Checklist" button.
+          Clicking opens a slide-in sidebar with full bird's-eye module list.
+          Auto-hides entirely once package goes live.                            */}
       {!isPackageLive && configurationPlan.length > 0 && (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          {/* Header with progress bar */}
-          <div className="px-6 py-4 border-b border-slate-100 bg-white/60">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                </svg>
-                <span className="text-[12px] font-bold text-slate-700 uppercase tracking-wider">Canva Studio Implementation Roadmap</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] text-slate-400">{completedCount} / {configurationPlan.length} modules complete</span>
-                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-lg">{progressPct}%</span>
-              </div>
+        <div className="glass-card rounded-2xl px-6 py-4 flex items-center gap-4">
+          {/* Left: label + progress bar */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Package Configuration Checklist</span>
+              <span className="text-[11px] font-bold text-indigo-600">{completedCount} / {configurationPlan.length} complete</span>
             </div>
-            {/* Progress bar */}
-            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-700"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
           </div>
-
-          {/* Module rows */}
-          <div className="divide-y divide-slate-100">
-            {configurationPlan.map((mod: any, idx: number) => {
-              const status: 'COMPLETED' | 'IN_PROGRESS' | 'NOT_STARTED' =
-                mod.is_configured ? 'COMPLETED' : mod.in_progress ? 'IN_PROGRESS' : 'NOT_STARTED';
-              const statusStyles = {
-                COMPLETED:   { pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'Completed' },
-                IN_PROGRESS: { pill: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400 animate-pulse', label: 'In Progress' },
-                NOT_STARTED: { pill: 'bg-slate-100 text-slate-500 border-slate-200', dot: 'bg-slate-300', label: 'Not Started' },
-              }[status];
-              const studioRoute = MODULE_ROUTE_MAP[mod.module_name];
-              return (
-                <div key={idx} className="px-6 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors group">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[10px] font-mono font-bold text-slate-400 w-5 shrink-0 text-center">{idx + 1}</span>
-                    <div className="min-w-0">
-                      <span className="text-sm font-semibold text-slate-700 font-display block truncate">{mod.module_name}</span>
-                      <span className="text-[10px] text-slate-400">{mod.owner} · {mod.sla_days}d SLA</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusStyles.pill}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${statusStyles.dot}`}></span>
-                      {statusStyles.label}
-                    </span>
-                    {/* Open Studio button — only shown when a route exists and module isn't done */}
-                    {studioRoute && status !== 'COMPLETED' && (
-                      <button
-                        onClick={() => setActiveModule(studioRoute as any)}
-                        className="text-[10px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        Open Studio →
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* Right: action button */}
+          <button
+            onClick={() => setChecklistOpen(true)}
+            className="shrink-0 flex items-center gap-2 text-[12px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-4 py-2 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+            </svg>
+            Setup Checklist
+          </button>
         </div>
       )}
 
-      {/* Package-live banner — shown instead of roadmap once all modules complete */}
+      {/* Package-live banner */}
       {isPackageLive && (
         <div className="glass-card rounded-2xl px-6 py-4 flex items-center gap-4 border-l-4 border-emerald-500">
           <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-lg shrink-0">✓</div>
           <div>
             <p className="text-sm font-bold text-slate-800">Package Live — All Studios Configured</p>
-            <p className="text-xs text-slate-500 mt-0.5">The implementation roadmap is complete. Designer Studio access is now restricted to change-management workflows.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Designer Studio access is now restricted to change-management workflows only.</p>
           </div>
         </div>
+      )}
+
+      {/* ── CHECKLIST SIDEBAR ─────────────────────────────────────────────── */}
+      {checklistOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90]"
+            onClick={() => setChecklistOpen(false)}
+          />
+          {/* Slide-in panel from right */}
+          <div className="fixed top-0 right-0 h-full w-[420px] bg-white shadow-2xl z-[100] flex flex-col animate-slide-in-right overflow-hidden">
+            {/* Sidebar header */}
+            <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-[14px] font-extrabold text-slate-900 font-display">Package Configuration Checklist</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">{completedCount} of {configurationPlan.length} modules complete · {progressPct}% go-live ready</p>
+              </div>
+              <button onClick={() => setChecklistOpen(false)} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded-lg hover:bg-slate-100">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Progress bar in sidebar */}
+            <div className="px-6 py-3 border-b border-slate-100 shrink-0">
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-700"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Module list — scrollable */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+              {configurationPlan.map((mod: any, idx: number) => {
+                const status: 'COMPLETED' | 'IN_PROGRESS' | 'NOT_STARTED' =
+                  mod.is_configured ? 'COMPLETED' : mod.in_progress ? 'IN_PROGRESS' : 'NOT_STARTED';
+                const statusStyles = {
+                  COMPLETED:   { pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'Completed' },
+                  IN_PROGRESS: { pill: 'bg-amber-50 text-amber-700 border-amber-200',   dot: 'bg-amber-400 animate-pulse', label: 'In Progress' },
+                  NOT_STARTED: { pill: 'bg-slate-100 text-slate-500 border-slate-200',  dot: 'bg-slate-300', label: 'Not Started' },
+                }[status];
+                const studioRoute = MODULE_ROUTE_MAP[mod.module_name];
+                return (
+                  <div key={idx} className="px-6 py-3.5 hover:bg-slate-50/60 transition-colors group">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <span className="text-[10px] font-mono font-bold text-slate-400 w-4 shrink-0 mt-0.5">{idx + 1}</span>
+                        <div className="min-w-0">
+                          <span className="text-[13px] font-semibold text-slate-800 font-display block leading-tight">{mod.module_name}</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5 block">{mod.owner} · {mod.sla_days}d SLA</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusStyles.pill}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusStyles.dot}`}></span>
+                          {statusStyles.label}
+                        </span>
+                        {studioRoute && status !== 'COMPLETED' && (
+                          <button
+                            onClick={() => { setActiveModule(studioRoute as any); setChecklistOpen(false); }}
+                            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors"
+                          >
+                            Open Studio →
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Sidebar footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 shrink-0">
+              <p className="text-[10px] text-slate-400 text-center">Hover any module and click "Open Studio →" to jump directly into configuration</p>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ── SECTION 2: ROLE-BASED INSIGHTS ───────────────────────────────── */}
