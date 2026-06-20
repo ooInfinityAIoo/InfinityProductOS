@@ -165,9 +165,30 @@ const MODULE_ROUTE_MAP: Record<string, string> = {
 // The Implementation Roadmap checklist lives here pre-live and auto-hides once all modules complete.
 // Products Registry lives in Master Data nav. Designer Studio stays in top nav (access-controlled).
 export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageName }) => {
+  const queryClient = useQueryClient();
   const { userRole, setActiveModule } = usePlatformStore();
   const [activeInsightTab, setActiveInsightTab] = useState<'360_BUSINESS' | 'TECHNICAL'>('360_BUSINESS');
   const [checklistOpen, setChecklistOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+
+  // 4-Eye Governance Review Queue — package-scoped tasks for Maker/Checker workflow
+  const { data: governanceData, isLoading: isLoadingGov } = useQuery({
+    queryKey: ['governance-tasks', packageName],
+    queryFn: async () => (await apiClient.get('/governance/tasks/pending')).data,
+  });
+
+  // 4-Eye authorize mutation — APPROVE or REJECT; immutably logged to Evidence Ledger
+  const authorizeMutation = useMutation({
+    mutationFn: async ({ taskId, action }: { taskId: string; action: 'APPROVE' | 'REJECT' }) => {
+      return (await apiClient.post(`/governance/tasks/${taskId}/authorize`, { action })).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['governance-tasks', packageName] });
+      setSelectedTask(null);
+    },
+  });
+
+  const pendingTasks = governanceData?.pending_tasks || [];
 
 
   // 1. Fetch available packages to resolve package_id dynamically
@@ -342,7 +363,106 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
         </>
       )}
 
-      {/* ── SECTION 2: ROLE-BASED INSIGHTS ───────────────────────────────── */}
+      {/* ── SECTION 2: GOVERNANCE & 4-EYE REVIEW QUEUE ───────────────────── */}
+      {/* Package-scoped: only tasks raised within this package's workflow are shown here */}
+      <div className="bg-white border border-slate-150 rounded-2xl shadow-glass overflow-hidden">
+        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <h2 className="text-[11px] font-extrabold text-rose-600 uppercase tracking-widest flex items-center gap-2">
+            {pendingTasks.length > 0 && <span className="inline-block w-2 h-2 bg-rose-500 rounded-full animate-ping" />}
+            Governance Exceptions & 4-Eye Review Queue
+          </h2>
+          {pendingTasks.length > 0 && (
+            <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded-lg border border-rose-100/50">
+              {pendingTasks.length} Action Required
+            </span>
+          )}
+        </div>
+
+        {isLoadingGov ? (
+          <div className="p-8 text-center text-slate-400 font-bold animate-pulse">Loading tasks...</div>
+        ) : pendingTasks.length === 0 ? (
+          <div className="p-8 text-center flex flex-col items-center py-10">
+            <div className="h-12 w-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500 mb-3 border border-emerald-100/50">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <h3 className="text-slate-800 font-extrabold text-[13px] font-display">Governance Inbox Clean</h3>
+            <p className="text-slate-400 text-xs mt-1 leading-relaxed max-w-sm">All transaction exceptions, rule variances, and overrides have been cryptographically signed and cleared.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-50/60 border-b border-slate-100 text-slate-400 text-[9px] uppercase tracking-wider">
+                <tr>
+                  <th className="px-5 py-3.5 font-bold">Task ID</th>
+                  <th className="px-5 py-3.5 font-bold">Exception Type</th>
+                  <th className="px-5 py-3.5 font-bold">Target Record</th>
+                  <th className="px-5 py-3.5 font-bold">Maker</th>
+                  <th className="px-5 py-3.5 text-right font-bold">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pendingTasks.map((task: any) => (
+                  <tr key={task.packet_id} className="hover:bg-slate-50/40 transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-xs font-bold text-indigo-600">{task.packet_id}</td>
+                    <td className="px-5 py-3.5">
+                      {task.blockchain_tx_hash === 'CONCURRENT_UPDATE_CONFLICT'
+                        ? <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-rose-100/50">CONCURRENCY CONFLICT</span>
+                        : <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-lg text-[9px] font-bold border border-amber-100/50">RULE VARIANCE</span>
+                      }
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{task.raw_payload_reference || 'N/A'}</td>
+                    <td className="px-5 py-3.5 text-slate-600 font-semibold text-xs">{task.operator_maker}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <button onClick={() => setSelectedTask(task)} className="text-[11px] font-bold text-indigo-600 border border-indigo-200/80 px-3 py-1.5 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-[0.97]">Review</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── 4-EYE REVIEW MODAL ────────────────────────────────────────────── */}
+      {selectedTask && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-white/20 shadow-2xl w-[520px] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 text-[15px] font-display">4-Eye Governance Review</h3>
+              <button onClick={() => setSelectedTask(null)} className="text-slate-400 hover:text-slate-700 transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 text-amber-800 border border-amber-100/50 text-xs p-3 rounded-xl font-medium leading-relaxed">
+                You are performing a 4-Eye authorization. This action is immutable and will be cryptographically logged to the Evidence Ledger.
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Task ID</div>
+                  <div className="font-mono text-indigo-600 font-bold">{selectedTask.packet_id}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Maker (Operator)</div>
+                  <div className="font-semibold text-slate-700">{selectedTask.operator_maker}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Payload</div>
+                  <div className="font-mono text-xs text-slate-500 bg-slate-50 p-3 border border-slate-200/50 rounded-xl">{selectedTask.raw_payload_reference || 'N/A'}</div>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-150 flex justify-end gap-3">
+              <button onClick={() => authorizeMutation.mutate({ taskId: selectedTask.packet_id, action: 'REJECT' })} disabled={authorizeMutation.isPending} className="px-5 py-2.5 text-[13px] font-bold text-red-600 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50">Reject Exception</button>
+              <button onClick={() => authorizeMutation.mutate({ taskId: selectedTask.packet_id, action: 'APPROVE' })} disabled={authorizeMutation.isPending} className="px-5 py-2.5 text-[13px] font-bold text-white bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-xl hover:from-emerald-700 hover:to-emerald-800 shadow-md transition-all active:scale-[0.98] disabled:opacity-50">
+                {authorizeMutation.isPending ? 'Executing...' : 'Approve & Release'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION 3: ROLE-BASED INSIGHTS ───────────────────────────────── */}
       <div className="glass-card rounded-2xl p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-[12px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">

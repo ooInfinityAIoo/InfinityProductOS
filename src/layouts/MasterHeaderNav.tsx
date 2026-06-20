@@ -210,9 +210,13 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">3. Event Catalog</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Inspect system event logs and audit streams.</div>
             </button>
-            <button onClick={() => setActiveModule('execution-audit')} className="px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+            <button onClick={() => setActiveModule('execution-audit')} className="px-4 py-3 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">4. Execution Traces</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Trace transactional lifecycles in detail.</div>
+            </button>
+            <button onClick={() => setActiveModule('global-technical-dashboard')} className="px-4 py-3 text-left hover:bg-slate-50 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">5. Global Technical Dashboard</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Platform infrastructure health, API status, system logs.</div>
             </button>
           </div>
         </div>
@@ -221,23 +225,38 @@ export const MasterHeaderNav: React.FC = () => {
         
         {activeProductContext ? (
           <div className="flex items-center gap-2 ml-4">
-            <button 
-              onClick={() => setActiveModule('domain-dashboard')} 
+            <button
+              onClick={() => setActiveModule('domain-dashboard')}
               className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all active:scale-[0.98] shadow-sm ${activeModule === 'domain-dashboard' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-250 text-indigo-600 hover:bg-slate-50'}`}
             >
               360° Dashboard
             </button>
-            <button 
-              onClick={() => { setProductContext(null); setActiveModule('dashboard'); }} 
+            <button
+              onClick={() => { setProductContext(null); setActiveModule('dashboard'); }}
               className="px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-slate-250 bg-white text-slate-600 hover:bg-slate-50 transition-all active:scale-[0.98] shadow-sm"
             >
               Exit Package
             </button>
           </div>
         ) : (
-          <button onClick={() => setWizardOpen(true)} className="ml-4 px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-transparent bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-md shadow-indigo-600/10">
-            Configure Context
-          </button>
+          /* Global-level nav — shown when no package is active */
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              onClick={() => setActiveModule('dashboard')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all active:scale-[0.98] shadow-sm ${activeModule === 'dashboard' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-250 text-indigo-600 hover:bg-slate-50'}`}
+            >
+              Global 360 Dashboard
+            </button>
+            <button
+              onClick={() => setActiveModule('global-technical-dashboard')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all active:scale-[0.98] shadow-sm ${activeModule === 'global-technical-dashboard' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-250 text-slate-600 hover:bg-slate-50'}`}
+            >
+              Global Technical Dashboard
+            </button>
+            <button onClick={() => setWizardOpen(true)} className="px-3.5 py-1.5 text-xs font-bold uppercase rounded-xl border border-transparent bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-md shadow-indigo-600/10">
+              Configure Context
+            </button>
+          </div>
         )}
       </nav>
     </header>

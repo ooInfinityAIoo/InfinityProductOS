@@ -25,6 +25,7 @@ const UnstructuredDocumentStudio = lazy(() => import('./features/mappers/Unstruc
 const FileTemplateDesignerStudio = lazy(() => import('./features/templates/FileTemplateDesignerStudio').then(m => ({ default: m.FileTemplateDesignerStudio })));
 const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.PackageDashboard })));
 const ProductsRegistry = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.ProductsRegistry })));
+const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalTechnicalDashboard').then(m => ({ default: m.GlobalTechnicalDashboard })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
@@ -52,6 +53,9 @@ function App() {
 
           {activeModule === 'domain-dashboard' && activeProductContext && (
             <PackageDashboard packageName={activeProductContext} />
+          )}
+          {activeModule === 'global-technical-dashboard' && (
+            <GlobalTechnicalDashboard />
           )}
           {activeModule === 'products-registry' && activeProductContext && (
             <ProductsRegistry packageName={activeProductContext} />
