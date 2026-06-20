@@ -4,6 +4,7 @@ import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const DataGatewayStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -95,6 +96,7 @@ export const DataGatewayStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px]">
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="dge-canvas" />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       
       {/* Left Column: List of Blueprints */}

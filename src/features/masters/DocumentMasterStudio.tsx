@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const DocumentMasterStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -29,6 +30,7 @@ export const DocumentMasterStudio: React.FC = () => {
 
   return (
     <div className="flex gap-6 h-[750px] animate-fade-in">
+      <InfinityAIHelper studioKey="document-master" />
       {/* Left List */}
       <div className="flex-1 bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-200 bg-slate-50">

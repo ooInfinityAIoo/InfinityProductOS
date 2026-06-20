@@ -29,6 +29,7 @@ import { WorkflowSidebar } from './WorkflowSidebar';
 import { ReactFlowProvider, useReactFlow } from 'reactflow';
 
 import { StudioNode } from './StudioNode';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 const nodeTypes = {
   customBankingNode: WorkflowNode,
@@ -594,6 +595,7 @@ const WorkflowCanvasInner: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
+      <InfinityAIHelper studioKey="workflow-designer" />
       {/* COCKPIT LOCK UI: Level 2 Core Product Selector */}
       <div className="glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border border-rose-200/50 bg-rose-50/10">
         <div className="flex items-center gap-3">

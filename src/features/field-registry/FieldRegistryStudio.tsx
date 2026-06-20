@@ -38,6 +38,7 @@ import {
   ShieldAlert, Eye, Database, Layers, ChevronRight,
   CheckSquare, Square, X, Filter, ArrowUpDown
 } from 'lucide-react';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -563,6 +564,7 @@ export const FieldRegistryStudio: React.FC = () => {
 
   return (
     <div className="bg-white border border-slate-200 rounded shadow-sm flex flex-col h-[calc(100vh-120px)] relative overflow-hidden">
+      <InfinityAIHelper studioKey="field-registry" />
 
       {/* ── Header ── */}
       <div className="flex justify-between items-start px-6 py-4 border-b border-slate-200 bg-white">

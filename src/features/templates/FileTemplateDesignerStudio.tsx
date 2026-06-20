@@ -18,6 +18,7 @@ import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 import { useToast, ToastContainer } from '../../components/Toast';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const FileTemplateDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -118,6 +119,7 @@ export const FileTemplateDesignerStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <InfinityAIHelper studioKey="file-template-designer" />
       <CockpitLockBanner />
     <div className={`flex gap-6 h-[750px] animate-fade-in transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Templates */}

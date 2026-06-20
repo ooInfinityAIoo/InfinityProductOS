@@ -28,6 +28,7 @@ import {
   Lightbulb, Plus, ChevronRight, Clock, Zap, BarChart2, Bell, Monitor,
   Code, Calculator, CheckCircle, Trash2, ChevronDown, ChevronUp, BookOpen, X
 } from 'lucide-react';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -537,6 +538,7 @@ export const InsightsFactoryStudio: React.FC = () => {
   return (
     <div className="flex gap-6 h-[820px]">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <InfinityAIHelper studioKey="insights-factory" />
 
       {/* ── LEFT: Insight List ── */}
       <div className="w-[380px] flex flex-col gap-0 bg-white/80 backdrop-blur-md border border-white/30 rounded-2xl shadow-glass overflow-hidden">

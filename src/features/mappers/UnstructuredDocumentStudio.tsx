@@ -4,6 +4,7 @@ import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const UnstructuredDocumentStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -63,6 +64,7 @@ export const UnstructuredDocumentStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px] animate-fade-in">
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="unstructured-document-studio" />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Blueprints */}
       <div className="w-[400px] glass-card rounded-2xl flex flex-col overflow-hidden">

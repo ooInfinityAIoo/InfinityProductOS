@@ -33,6 +33,7 @@ import {
   CheckCircle, Plus, Trash2, Activity, Users, BarChart2,
   ChevronRight, Lightbulb, RefreshCw
 } from 'lucide-react';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // ─── PATTERN TEMPLATES ────────────────────────────────────────────────────────
 // Pre-built behavioral pattern definitions banks activate and customize.
@@ -206,6 +207,7 @@ export const BehavioralProfileViewer: React.FC = () => {
   return (
     <div className="flex flex-col gap-0 h-[820px]">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <InfinityAIHelper studioKey="behavioral-profiles" />
 
       {/* Header */}
       <div className="glass-card rounded-2xl p-5 mb-4 flex items-center justify-between">

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const EventRepositoryStudio: React.FC = () => {
   const { activeCoreProductId } = usePlatformStore();
@@ -37,6 +38,7 @@ export const EventRepositoryStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px] animate-fade-in">
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="event-repository" />
       <div className={`flex flex-col gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       
       {/* Top KPI Metrics Row */}

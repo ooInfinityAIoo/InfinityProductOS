@@ -75,7 +75,33 @@ export const ScreenCanvas = ({
             <div className="grid grid-cols-3 gap-6">
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Template Name</label><input disabled={isReadOnly} type="text" value={screenName} onChange={(e) => handleInputChange(setScreenName, e.target.value)} placeholder="e.g., MANAGER_APPROVAL_FORM" className="w-full text-[13px] font-semibold text-slate-800 border border-slate-200 rounded-xl p-2.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none uppercase disabled:bg-slate-50/50 disabled:text-slate-400 bg-white/60" /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Form Description</label><input disabled={isReadOnly} type="text" value={description} onChange={(e) => handleInputChange(setDescription, e.target.value)} placeholder="A brief summary of when this screen is presented." className="w-full text-[13px] text-slate-800 border border-slate-200 rounded-xl p-2.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none disabled:bg-slate-50/50 disabled:text-slate-400 bg-white/60" /></div>
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Template Category</label><select disabled={isReadOnly} value={templateCategory} onChange={(e) => handleInputChange(setTemplateCategory, e.target.value)} className="w-full text-[13px] text-slate-800 border border-slate-200 rounded-xl p-2.5 focus:border-indigo-500 outline-none disabled:bg-slate-50/50 disabled:text-slate-400 bg-white/60"><option value="COMMON_MASTER">Common Master / Static Data</option><option value="BUSINESS_WORKFLOW">Business Workflow</option><option value="PRODUCT_CONFIG">Product Package Config</option></select></div>
+              {/* Screen Type Selector — three types serve distinct lifecycle phases */}
+              <div className="col-span-3">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Screen Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'MAINTENANCE',   label: 'Maintenance',   icon: '🗂️', desc: 'Master/reference data entry. Used rarely after go-live.' },
+                    { value: 'CONFIGURATION', label: 'Configuration', icon: '⚙️', desc: 'Drives workflow routing conditions when submitted.' },
+                    { value: 'TRANSACTION',   label: 'Transaction',   icon: '✅', desc: 'Human-in-the-loop approval attached to a workflow step.' },
+                  ].map(({ value, label, icon, desc }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => !isReadOnly && handleInputChange(setTemplateCategory, value)}
+                      className={`text-left p-3 rounded-xl border-2 transition-all ${
+                        templateCategory === value
+                          ? 'border-indigo-500 bg-indigo-50/60 shadow-sm'
+                          : 'border-slate-200 bg-white/60 hover:border-indigo-300 hover:bg-indigo-50/30'
+                      } disabled:opacity-60 disabled:cursor-default`}
+                    >
+                      <div className="text-[16px] mb-1">{icon}</div>
+                      <div className={`text-[11px] font-extrabold mb-0.5 ${templateCategory === value ? 'text-indigo-700' : 'text-slate-700'}`}>{label}</div>
+                      <div className="text-[9px] text-slate-400 leading-relaxed">{desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div>

@@ -23,6 +23,7 @@ import { ScreenList } from './ScreenList';
 import { ScreenCanvas } from './ScreenCanvas';
 import { DraftConfirmationModal } from './DraftConfirmationModal';
 import { ApiGeneratorModal } from '../integrations/ApiGeneratorModal';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const ScreenDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -39,7 +40,7 @@ export const ScreenDesignerStudio: React.FC = () => {
   // Form State
   const [screenName, setScreenName] = useState('');
   const [description, setDescription] = useState('');
-  const [templateCategory, setTemplateCategory] = useState('COMMON_MASTER');
+  const [templateCategory, setTemplateCategory] = useState('MAINTENANCE');
   const [components, setComponents] = useState([
     { component_type: 'text_input', label_token: '', field_binding: '', category: 'USER_DEFINED', requirement_status: 'MANDATORY', conditional_rule_id: '' }
   ]);
@@ -87,7 +88,7 @@ export const ScreenDesignerStudio: React.FC = () => {
       // Reset form
       setScreenName('');
       setDescription('');
-      setTemplateCategory('COMMON_MASTER');
+      setTemplateCategory('MAINTENANCE');
       setComponents([{ component_type: 'text_input', label_token: '', field_binding: '', category: 'USER_DEFINED', requirement_status: 'MANDATORY', conditional_rule_id: '' }]);
       setPendingApi(null);
     }
@@ -182,6 +183,7 @@ export const ScreenDesignerStudio: React.FC = () => {
     <div className="flex flex-col w-full">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="screen-designer" />
       <div className={`flex gap-6 h-[750px] transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       <ScreenList
         viewMode={viewMode}

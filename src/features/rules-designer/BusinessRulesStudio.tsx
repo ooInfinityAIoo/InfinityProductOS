@@ -20,6 +20,7 @@ import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 import { useToast, ToastContainer } from '../../components/Toast';
 import { Plus, Trash2, GitBranch } from 'lucide-react';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // A Condition is one IF clause: [field] [operator] [value]
 interface Condition {
@@ -167,6 +168,7 @@ export const BusinessRulesStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px] animate-fade-in">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <InfinityAIHelper studioKey="business-rules" />
       <CockpitLockBanner />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Rule Sets */}

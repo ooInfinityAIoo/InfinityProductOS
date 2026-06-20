@@ -4,6 +4,7 @@ import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 export const ReportDesignerStudio: React.FC = () => {
   const queryClient = useQueryClient();
@@ -125,6 +126,7 @@ export const ReportDesignerStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px] animate-fade-in">
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="report-designer" />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Reports */}
       <div className="w-[400px] bg-white border border-slate-200 rounded shadow-sm flex flex-col overflow-hidden">

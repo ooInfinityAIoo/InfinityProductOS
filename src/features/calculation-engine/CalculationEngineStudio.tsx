@@ -21,6 +21,7 @@ import { VariableNode, ConstantNode, OperatorNode } from './CalculationNodes';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 const nodeTypes = {
   variableNode: VariableNode,
@@ -240,6 +241,7 @@ const CalculationEngineInner: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px]">
       <CockpitLockBanner />
+      <InfinityAIHelper studioKey="calculation-engine" />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
       {/* Left Column: List of Formulas */}
       <div className="w-[350px] glass-card rounded-2xl flex flex-col overflow-hidden">

@@ -23,6 +23,7 @@ import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { useToast, ToastContainer } from '../../components/Toast';
 import { Zap, Shield, Clock, CheckCircle, Activity } from 'lucide-react';
+import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // Labeled slider — replaces bare number inputs for rate limit and circuit breaker.
 // Shows the value + a contextual label so a non-technical user understands the setting.
@@ -142,6 +143,7 @@ export const ApiDesignerStudio: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-[800px]">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <InfinityAIHelper studioKey="api-designer" />
       <CockpitLockBanner />
       <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
 
