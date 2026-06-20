@@ -182,6 +182,10 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">9. User Screen Designer</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>
             </button>
+            <button onClick={() => setActiveModule('legacy-onboarding')} className="px-4 py-2.5 text-left hover:bg-amber-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-amber-700">🏛 Legacy Screen Onboarding</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Upload T24/Flexcube screenshots → AI extracts fields → auto-generate screens.</div>
+            </button>
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 4: Monitor, Output & Intelligence

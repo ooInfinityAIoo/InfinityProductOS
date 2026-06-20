@@ -31,6 +31,7 @@ const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboar
 const ProductsRegistry = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.ProductsRegistry })));
 const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalTechnicalDashboard').then(m => ({ default: m.GlobalTechnicalDashboard })));
 const PackageRuntimeShell = lazy(() => import('./features/package-runtime/PackageRuntimeShell').then(m => ({ default: m.PackageRuntimeShell })));
+const LegacyOnboardingStudio = lazy(() => import('./features/legacy-onboarding/LegacyOnboardingStudio').then(m => ({ default: m.LegacyOnboardingStudio })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
@@ -116,6 +117,9 @@ function App() {
           {(activeModule === 'package-runtime' || activeModule === 'runtime-transaction-shell') && (
             <PackageRuntimeShell />
           )}
+
+          {/* WS-4: Legacy Onboarding Studio — screenshot → AI extraction → Screen Designer */}
+          {activeModule === 'legacy-onboarding' && <LegacyOnboardingStudio />}
         </Suspense>
       </main>
     </div>
