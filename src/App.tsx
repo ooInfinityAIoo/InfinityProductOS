@@ -23,6 +23,7 @@ const ReportDesignerStudio = lazy(() => import('./features/reporting/ReportDesig
 const DocumentMasterStudio = lazy(() => import('./features/masters/DocumentMasterStudio').then(m => ({ default: m.DocumentMasterStudio })));
 const UnstructuredDocumentStudio = lazy(() => import('./features/mappers/UnstructuredDocumentStudio').then(m => ({ default: m.UnstructuredDocumentStudio })));
 const FileTemplateDesignerStudio = lazy(() => import('./features/templates/FileTemplateDesignerStudio').then(m => ({ default: m.FileTemplateDesignerStudio })));
+const EntitlementConfigStudio = lazy(() => import('./features/entitlements/EntitlementConfigStudio').then(m => ({ default: m.EntitlementConfigStudio })));
 const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.PackageDashboard })));
 const ProductsRegistry = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.ProductsRegistry })));
 const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalTechnicalDashboard').then(m => ({ default: m.GlobalTechnicalDashboard })));
@@ -102,6 +103,7 @@ function App() {
           {activeModule === 'unstructured-document-studio' && <UnstructuredDocumentStudio />}
 
           {activeModule === 'file-template-designer' && <FileTemplateDesignerStudio />}
+          {activeModule === 'entitlements' && <EntitlementConfigStudio />}
         </Suspense>
       </main>
     </div>

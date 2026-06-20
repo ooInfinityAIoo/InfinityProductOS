@@ -210,6 +210,20 @@ const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: 
       'What event types are emitted by the Reconciliation Engine?',
     ],
   },
+  'entitlements': {
+    title: 'Entitlement Configuration',
+    tips: [
+      'Every entity goes LIVE with deny-by-default permissions — you must explicitly grant access.',
+      'MODIFY DATA = enter/edit records. MODIFY DESIGN = change structure (triggers approval lifecycle).',
+      'ADMIN always has full access and cannot be restricted.',
+      'Changes take effect immediately — no redeploy needed.',
+    ],
+    examples: [
+      'Give OPERATOR role modify data access to Currency Master screen',
+      'Who can approve workflow changes in the FX Hub package?',
+      'How do I restrict VIEWER role from seeing a specific report?',
+    ],
+  },
 };
 
 const DEFAULT_CONTEXT = {

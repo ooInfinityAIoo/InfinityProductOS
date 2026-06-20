@@ -925,5 +925,69 @@ class SimulationJob(Base):
     created_at = Column(String, nullable=False)
 
 
+class EntitlementPolicy(Base):
+    """
+    WHY THIS EXISTS (WS-8 — Entitlement Configuration Module):
+    Every entity that goes LIVE on this platform (screen, workflow, report, rule,
+    calculation) is automatically registered here. An admin then assigns permissions
+    per entity per role — no developer involvement, no code change, no redeploy.
+
+    This replaces ALL hardcoded access control in the frontend (ADR #3 violation
+    that was caught and reverted in session on 2026-06-19).
+
+    Two distinct permission levels per entity+role pair:
+      MODIFY_DATA   — user can view and enter/edit data in this entity (e.g. open
+                      Currency Master screen and add a currency). No approval needed.
+      MODIFY_DESIGN — user can open the entity in its designer studio and change
+                      its structure. Triggers full lifecycle: Draft → Approval → Live.
+
+    Entity types covered:
+      SCREEN       — a Screen Designer screen
+      WORKFLOW     — a Workflow Designer workflow
+      REPORT       — a Report Designer report
+      RULE         — a Business Rules rule set
+      CALCULATION  — a Calculation Engine formula
+      INTEGRATION  — an API Designer integration
+      RECONCILIATION — a Reconciliation Engine template
+      BUSINESS_DOMAIN — the domain/menu section itself (who can move screens between domains)
+
+    Auto-registration flow:
+      Entity goes LIVE → backend calls register_entitlement() →
+      creates one EntitlementPolicy row per role defined in the system →
+      all permissions default to False (deny-by-default) →
+      admin opens this module and grants what's needed.
+
+    WHAT BREAKS IF REMOVED:
+      Every studio becomes accessible to every user. Bank would need developer
+      involvement to control access, defeating the no-code principle.
+    """
+    __tablename__ = "entitlement_policies"
+
+    policy_id = Column(String, primary_key=True, index=True)
+
+    # What entity this policy controls
+    entity_type = Column(String, nullable=False, index=True)   # SCREEN, WORKFLOW, REPORT, RULE, etc.
+    entity_id = Column(String, nullable=False, index=True)     # the actual screen_id / workflow_id etc.
+    entity_name = Column(String, nullable=False)               # human-readable, denormalised for display
+
+    # Package scope — NULL means platform-level (applies across all packages)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # Role this policy applies to
+    role_code = Column(String, nullable=False, index=True)     # ADMIN, OPERATOR, AUDITOR, VIEWER, SALES, RISK, C_LEVEL
+
+    # Permissions — deny by default, admin must explicitly grant
+    can_view = Column(Boolean, default=False, nullable=False)
+    can_modify_data = Column(Boolean, default=False, nullable=False)   # enter/edit data inside entity
+    can_modify_design = Column(Boolean, default=False, nullable=False) # change entity structure (triggers lifecycle)
+    can_approve = Column(Boolean, default=False, nullable=False)       # 4-Eye approver for this entity
+
+    # Audit
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)

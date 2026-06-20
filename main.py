@@ -23,7 +23,7 @@ import schemas
 import openpyxl
 
 # --- Router Imports ---
-from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights, reconciliation_engine, reporting, documents, templates, simulations, iso_domains
+from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights, reconciliation_engine, reporting, documents, templates, simulations, iso_domains, entitlements
 
 api_description = """
 **Infinity ProductOS Core Execution Engine API** 🚀
@@ -96,6 +96,7 @@ def shutdown_event():
 
 # --- INCLUDE THE ROUTERS ---
 app.include_router(iso_domains.router)  # must be before registry to avoid /{field_id} catch-all
+app.include_router(entitlements.router)
 app.include_router(registry.router)
 app.include_router(workflows.router)
 app.include_router(governance.router)

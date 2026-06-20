@@ -183,9 +183,18 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">12. Report Templates</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
             </button>
-            <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 transition-colors">
+            <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-indigo-600">13. Insights Factory</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
+            </button>
+
+            {/* Platform Administration — access control, entitlements */}
+            <div className="px-4 py-2 bg-rose-50/60 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-wider text-rose-400">
+              Platform Administration
+            </div>
+            <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🔐 Entitlement Configuration</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Control who can view, modify, or approve each entity per role.</div>
             </button>
 
           </div>
