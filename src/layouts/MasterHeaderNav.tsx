@@ -1,7 +1,9 @@
 // WHY THIS FILE EXISTS:
 // Master navigation header for InfinityProductOS. Renders the top nav bar with
-// package context, all studio dropdowns, and access-controlled Designer Studio
-// (locked once a package goes live — change management applies after that point).
+// package context and all studio dropdowns.
+// NOTE: Module-level and field-level entitlements are NOT hardcoded here.
+// They will be enforced at runtime by the Entitlement Configuration module,
+// which defines roles, users, and access rights as data — consistent with ADR #3.
 
 import React from 'react';
 import { usePlatformStore } from '../store/usePlatformStore';
@@ -17,27 +19,12 @@ export const MasterHeaderNav: React.FC = () => {
     setWizardOpen,
     workflowDraft,
     workflowReturnStepId,
-    userRole,
   } = usePlatformStore();
 
   const { data: themeData } = useQuery({
     queryKey: ['global-theme'],
     queryFn: async () => (await apiClient.get('/masters/theme')).data
   });
-
-  // Fetch configuration plan to know if the package is live.
-  // A package is "live" when all configured modules have is_configured = true.
-  // Once live, Designer Studio is locked for non-ADMIN roles — change management applies.
-  const { data: configPlanData } = useQuery({
-    queryKey: ['config-plan', activeProductContext],
-    queryFn: async () => (await apiClient.get(`/masters/config-plan?package_name=${encodeURIComponent(activeProductContext!)}`)).data,
-    enabled: !!activeProductContext,
-  });
-
-  const configPlan: any[] = configPlanData?.modules ?? [];
-  const isPackageLive = configPlan.length > 0 && configPlan.every((m: any) => m.is_configured);
-  // Non-admin users lose access to Designer Studio once the package is live
-  const isDesignerLocked = isPackageLive && userRole !== 'ADMIN';
 
   const getLinkClass = (module: string) => {
     return activeModule === module
@@ -125,35 +112,13 @@ export const MasterHeaderNav: React.FC = () => {
         </div>
 
            {/* DESIGNER STUDIO DROPDOWN (DESIGN-TIME BLUEPRINT)
-               Locked for non-ADMIN once package is live — requires change management approval.
-               ADMIN can always access to support emergency changes via proper change management. */}
+               Visibility and field-level access per module are controlled at runtime
+               by the Entitlement Configuration module — not hardcoded here (ADR #3). */}
         <div className="relative group h-full flex items-center py-5">
-          <button
-            disabled={isDesignerLocked}
-            className={`text-[13px] font-extrabold px-3.5 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all ml-1 ${
-              isDesignerLocked
-                ? 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-70'
-                : 'text-indigo-650 hover:text-indigo-850 border-indigo-150 bg-indigo-50/50 hover:bg-indigo-100/50 cursor-default'
-            }`}
-            title={isDesignerLocked ? 'Package is Live — Designer Studio requires Change Management approval. Contact your ADMIN.' : undefined}
-          >
-            {isDesignerLocked ? '🔒' : null}
-            Designer Studio {isDesignerLocked ? '' : '▾'}
-            {isPackageLive && userRole === 'ADMIN' && (
-              <span className="text-[8px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md font-bold ml-0.5">LIVE</span>
-            )}
+          <button className="text-[13px] font-extrabold text-indigo-650 hover:text-indigo-850 px-3.5 py-1.5 rounded-xl border border-indigo-150 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-1 cursor-default transition-all ml-1">
+            Designer Studio ▾
           </button>
-          <div className={`absolute top-[100%] right-0 w-80 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl flex-col z-50 overflow-hidden mt-1 animate-slide-up max-h-[500px] overflow-y-auto ${isDesignerLocked ? 'hidden' : 'hidden group-hover:flex'}`}>
-            {/* Change management warning — shown to ADMIN when package is already live */}
-            {isPackageLive && userRole === 'ADMIN' && (
-              <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-start gap-2.5">
-                <span className="text-amber-600 text-[14px] shrink-0">⚠️</span>
-                <div>
-                  <div className="text-[10px] font-extrabold text-amber-800">Package is Live</div>
-                  <div className="text-[9px] text-amber-700 mt-0.5 leading-relaxed">Changes require Change Management approval. All edits are logged in the Audit Trail.</div>
-                </div>
-              </div>
-            )}
+          <div className="absolute top-[100%] right-0 w-80 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl hidden group-hover:flex flex-col z-50 overflow-hidden mt-1 animate-slide-up max-h-[500px] overflow-y-auto">
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 1: Define the Data
