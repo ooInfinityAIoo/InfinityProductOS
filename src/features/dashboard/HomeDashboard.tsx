@@ -60,9 +60,21 @@ export const HomeDashboard: React.FC = () => {
   });
 
   const activePackages = packagesData?.packages || [];
-  const activeFieldsCount = fieldsData?.total_count?.toLocaleString() || '...';
-  const compiledRulesCount = rulesData?.length?.toLocaleString() || '...';
   const pendingGovCount = governanceData?.pending_tasks?.length || 0;
+
+  // Portfolio health metrics — cross-package story for Global 360
+  const packagesLive = activePackages.filter((p: any) => p.implementation_status === 'COMPLETED').length;
+  const packagesInProgress = activePackages.filter((p: any) => p.implementation_status === 'IN_PROGRESS').length;
+
+  // Overall configuration progress = average % complete across all packages with a plan
+  const packagesWithPlan = activePackages.filter((p: any) => p.configuration_plan?.length > 0);
+  const overallProgressPct = packagesWithPlan.length === 0 ? 0 : Math.round(
+    packagesWithPlan.reduce((sum: number, p: any) => {
+      const total = p.configuration_plan.length;
+      const done = p.configuration_plan.filter((m: any) => m.is_configured).length;
+      return sum + (total === 0 ? 0 : done / total);
+    }, 0) / packagesWithPlan.length * 100
+  );
 
   // ── PLATFORM SETUP GUIDE ──────────────────────────────────────────────────
   // Checks whether the bank has completed InfinityProductOS platform initialization.
@@ -193,56 +205,68 @@ export const HomeDashboard: React.FC = () => {
         </>
       )}
 
-      {/* ── GLOBAL KPI CARDS ─────────────────────────────────────────────── */}
+      {/* ── PORTFOLIO HEALTH KPI CARDS ───────────────────────────────────────
+          Each card answers one question: "should I act?" or "is everything healthy?"
+          No system metrics here — this is an executive portfolio view.           */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <div className="bg-white/80 border border-slate-150 p-5 rounded-2xl shadow-glass flex items-center justify-between group hover:border-indigo-400/50 hover:-translate-y-0.5 transition-all duration-300">
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">ISO Field Attributes</div>
-            <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">{activeFieldsCount}</div>
-            <div className="text-[10px] text-slate-400 font-medium">ISO 20022 schemas</div>
-          </div>
-          <div className="h-10 w-10 rounded-xl bg-indigo-50/60 flex items-center justify-center text-indigo-600 border border-indigo-100/30 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
-          </div>
-        </div>
 
-        <div className="bg-white/80 border border-slate-150 p-5 rounded-2xl shadow-glass flex items-center justify-between group hover:border-indigo-400/50 hover:-translate-y-0.5 transition-all duration-300">
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Business Rules</div>
-            <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">{compiledRulesCount}</div>
-            <div className="text-[10px] text-slate-400 font-medium">Active verification matrices</div>
-          </div>
-          <div className="h-10 w-10 rounded-xl bg-indigo-50/60 flex items-center justify-center text-indigo-600 border border-indigo-100/30 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          </div>
-        </div>
-
+        {/* Card 1: Packages Live — are we generating business? */}
         <div className="bg-white/80 border border-slate-150 p-5 rounded-2xl shadow-glass flex items-center justify-between group hover:border-emerald-400/50 hover:-translate-y-0.5 transition-all duration-300">
           <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Packages</div>
-            <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">{activePackages.length}</div>
-            <div className="text-[10px] text-slate-400 font-medium">Active product packages</div>
+            <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Packages Live</div>
+            <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">{packagesLive}</div>
+            <div className="text-[10px] text-slate-400 font-medium">Fully configured · in production</div>
           </div>
           <div className="h-10 w-10 rounded-xl bg-emerald-50/60 flex items-center justify-center text-emerald-600 border border-emerald-100/30 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
           </div>
         </div>
 
-        {/* Governance pending alert — compact count only; full queue lives on Package 360 */}
+        {/* Card 2: In Configuration — what's being built right now? */}
+        <div className="bg-white/80 border border-slate-150 p-5 rounded-2xl shadow-glass flex items-center justify-between group hover:border-indigo-400/50 hover:-translate-y-0.5 transition-all duration-300">
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">In Configuration</div>
+            <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">{packagesInProgress}</div>
+            <div className="text-[10px] text-slate-400 font-medium">Packages being configured</div>
+          </div>
+          <div className="h-10 w-10 rounded-xl bg-indigo-50/60 flex items-center justify-center text-indigo-600 border border-indigo-100/30 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+          </div>
+        </div>
+
+        {/* Card 3: Overall Progress — how close is the organisation as a whole? */}
+        <div className="bg-white/80 border border-slate-150 p-5 rounded-2xl shadow-glass group hover:border-indigo-400/50 hover:-translate-y-0.5 transition-all duration-300">
+          <div className="flex items-start justify-between mb-3">
+            <div className="space-y-1">
+              <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Overall Progress</div>
+              <div className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">{overallProgressPct}%</div>
+              <div className="text-[10px] text-slate-400 font-medium">Avg. modules configured</div>
+            </div>
+            <div className="h-10 w-10 rounded-xl bg-indigo-50/60 flex items-center justify-center text-indigo-600 border border-indigo-100/30 group-hover:bg-indigo-600 group-hover:text-white transition-all shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            </div>
+          </div>
+          {/* Mini progress bar — gives visual weight to the percentage */}
+          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-700" style={{ width: `${overallProgressPct}%` }} />
+          </div>
+        </div>
+
+        {/* Card 4: Governance Queue — does anyone need to act today? */}
         <div
           onClick={() => pendingGovCount > 0 && activePackages[0] && setProductContext(activePackages[0].package_name)}
           className={`bg-white/80 border p-5 rounded-2xl shadow-glass flex items-center justify-between group transition-all duration-300 ${pendingGovCount > 0 ? 'border-rose-200 hover:border-rose-400 hover:-translate-y-0.5 cursor-pointer' : 'border-slate-150'}`}
         >
           <div className="space-y-1">
             <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Governance Queue</div>
-            <div className={`text-2xl font-extrabold tracking-tight ${pendingGovCount > 0 ? 'text-rose-600' : 'text-slate-400'}`}>{pendingGovCount}</div>
+            <div className={`text-2xl font-extrabold tracking-tight ${pendingGovCount > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{pendingGovCount}</div>
             <div className="text-[10px] text-slate-400 font-medium">
-              {pendingGovCount > 0 ? 'Pending 4-Eye reviews' : 'Inbox clear'}
+              {pendingGovCount > 0 ? 'Pending 4-Eye reviews → click to review' : 'Inbox clear · no action needed'}
             </div>
           </div>
           <div className={`h-10 w-10 rounded-xl flex items-center justify-center border transition-all ${pendingGovCount > 0 ? 'bg-rose-50 text-rose-600 border-rose-100 group-hover:bg-rose-600 group-hover:text-white' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
             {pendingGovCount > 0
-              ? <span className="text-sm font-extrabold">{pendingGovCount}</span>
+              ? <span className="text-sm font-extrabold animate-pulse">{pendingGovCount}</span>
               : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             }
           </div>
