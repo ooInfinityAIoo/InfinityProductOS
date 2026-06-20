@@ -1,93 +1,146 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 
-// --- SUB-COMPONENT: PRODUCT CARD (LEVEL 2 & LEVEL 3) ---
-interface ProductCardProps {
-  product: {
-    product_id: string;
-    product_name: string;
-    description?: string;
-    created_at: string;
-  };
-  onAddSubproduct: (productId: string) => void;
+// WHY THIS COMPONENT EXISTS:
+// Banks launch hundreds of products over time. The old card grid became unusable at scale.
+// This tree-table shows all products as compact rows with inline expand for subproduct
+// variations — the same pattern used in banking product catalogs (T24, Flexcube, etc.).
+// Search filters client-side instantly; subproducts load lazily on first expand.
+interface ProductRowProps {
+  product: any;
+  onAddSubproduct: (productId: string, productName: string) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+  searchTerm: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, onAddSubproduct }) => {
-  // Fetch Level 3 Subproducts for this Product
+const ProductRow: React.FC<ProductRowProps> = ({ product, onAddSubproduct, isExpanded, onToggle, searchTerm }) => {
   const { data: subproductsData, isLoading } = useQuery({
     queryKey: ['subproducts', product.product_id],
     queryFn: async () => {
       const res = await apiClient.get(`/masters/subproducts?product_id=${product.product_id}`);
-      return res.data.subproducts;
-    }
+      return res.data.subproducts ?? [];
+    },
+    // Only fetch when row is expanded — lazy load saves N API calls on page load
+    enabled: isExpanded,
   });
 
+  const subCount = subproductsData?.length ?? 0;
+
   return (
-    <div className="bg-white/80 border border-slate-150 rounded-2xl p-6 shadow-glass hover:border-indigo-400/50 hover:bg-white/95 hover:shadow-glass-hover hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between relative overflow-hidden group">
-      <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-indigo-600"></div>
-      
-      <div>
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 uppercase tracking-wider border border-indigo-100/50">Core Product</span>
-            <h3 className="font-extrabold text-slate-850 text-base tracking-tight font-display mt-1.5">{product.product_name}</h3>
+    <>
+      {/* Product row */}
+      <tr
+        onClick={onToggle}
+        className="group cursor-pointer border-b border-slate-100 hover:bg-indigo-50/40 transition-colors"
+      >
+        <td className="py-3 pl-4 pr-2 w-8">
+          <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${isExpanded ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 text-slate-400 group-hover:border-indigo-400'}`}>
+            <svg className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+            </svg>
           </div>
-          <span className="text-[10px] font-mono text-slate-400 font-bold bg-slate-100/70 px-2.5 py-1 rounded-lg border border-slate-200/50">
-            {product.product_id}
-          </span>
-        </div>
-        
-        <p className="text-xs text-slate-500 line-clamp-3 mb-5 leading-relaxed font-normal">
-          {product.description || "No product description provided."}
-        </p>
-
-        {/* Level 3 Subproducts Section */}
-        <div className="border-t border-slate-100 pt-4 mt-2">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Subproduct Variations</span>
-            <button 
-              onClick={() => onAddSubproduct(product.product_id)}
-              className="text-[10px] font-extrabold text-indigo-650 hover:text-indigo-850 hover:underline flex items-center gap-0.5"
-            >
-              + Add Variation
-            </button>
-          </div>
-
-          {isLoading ? (
-            <div className="text-[11px] text-slate-400 animate-pulse py-2 font-medium">Loading subproducts...</div>
-          ) : subproductsData && subproductsData.length > 0 ? (
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {subproductsData.map((sub: any) => (
-                <div 
-                  key={sub.subproduct_id}
-                  className="bg-slate-50/50 border border-slate-150 rounded-xl p-3 flex flex-col justify-between hover:border-slate-300 hover:bg-slate-50/90 transition-all shadow-inner"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-800 font-display">{sub.subproduct_name}</span>
-                    <span className="text-[9px] font-mono text-slate-400 font-semibold">{sub.subproduct_id}</span>
-                  </div>
-                  {sub.description && (
-                    <p className="text-[10px] text-slate-450 mt-1 font-normal leading-relaxed">{sub.description}</p>
-                  )}
-                </div>
-              ))}
+        </td>
+        <td className="py-3 px-3">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-5 rounded-full bg-indigo-500 opacity-60 group-hover:opacity-100 transition-opacity"></div>
+            <div>
+              <span className="text-sm font-bold text-slate-800 font-display block leading-tight">
+                {highlight(product.product_name, searchTerm)}
+              </span>
+              {product.description && (
+                <span className="text-[10px] text-slate-400 font-normal line-clamp-1">{product.description}</span>
+              )}
             </div>
+          </div>
+        </td>
+        <td className="py-3 px-3">
+          <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">{product.product_id}</span>
+        </td>
+        <td className="py-3 px-3">
+          {isLoading && isExpanded ? (
+            <span className="text-[10px] text-slate-400 animate-pulse">...</span>
           ) : (
-            <div className="text-center py-4 bg-slate-50/40 border border-dashed border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-medium">No subproduct variations defined.</span>
-            </div>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${subCount > 0 ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-400'}`}>
+              {subCount} variation{subCount !== 1 ? 's' : ''}
+            </span>
           )}
-        </div>
-      </div>
+        </td>
+        <td className="py-3 px-3 text-[10px] text-slate-400 font-mono">
+          {new Date(product.created_at).toLocaleDateString()}
+        </td>
+        <td className="py-3 pr-4 text-right" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => onAddSubproduct(product.product_id, product.product_name)}
+            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg transition-all"
+          >
+            + Variation
+          </button>
+        </td>
+      </tr>
 
-      <div className="text-[9px] text-slate-400 font-medium font-mono mt-5 border-t border-slate-100/50 pt-2 flex justify-between items-center">
-        <span>Created: {new Date(product.created_at).toLocaleDateString()}</span>
-      </div>
-    </div>
+      {/* Expanded subproduct rows — inline tree indentation */}
+      {isExpanded && (
+        <>
+          {isLoading ? (
+            <tr className="bg-slate-50/60">
+              <td colSpan={6} className="py-3 pl-14 text-[11px] text-slate-400 animate-pulse">Loading variations...</td>
+            </tr>
+          ) : subproductsData && subproductsData.length > 0 ? (
+            subproductsData.map((sub: any) => (
+              <tr key={sub.subproduct_id} className="bg-indigo-50/20 border-b border-indigo-100/40 hover:bg-indigo-50/40 transition-colors">
+                <td className="py-2 pl-4 pr-2">
+                  {/* Tree indent connector */}
+                  <div className="flex items-center justify-center h-full">
+                    <div className="w-5 h-5 flex items-end justify-center">
+                      <div className="w-px h-3 bg-indigo-200"></div>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-2 px-3" colSpan={2}>
+                  <div className="flex items-center gap-2 pl-4">
+                    <div className="w-1 h-4 rounded-full bg-indigo-300"></div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-700 font-display block">{sub.subproduct_name}</span>
+                      {sub.description && <span className="text-[10px] text-slate-400 line-clamp-1">{sub.description}</span>}
+                    </div>
+                  </div>
+                </td>
+                <td className="py-2 px-3">
+                  <span className="text-[9px] font-mono text-slate-400 bg-white border border-slate-100 px-2 py-0.5 rounded-md">{sub.subproduct_id}</span>
+                </td>
+                <td className="py-2 px-3 text-[10px] text-slate-400 font-mono">
+                  {sub.created_at ? new Date(sub.created_at).toLocaleDateString() : '—'}
+                </td>
+                <td></td>
+              </tr>
+            ))
+          ) : (
+            <tr className="bg-slate-50/40">
+              <td colSpan={6} className="py-3 pl-16 text-[11px] text-slate-400 italic">No variations defined yet.</td>
+            </tr>
+          )}
+        </>
+      )}
+    </>
   );
 };
+
+// Highlights matched search term in product name text
+function highlight(text: string, term: string) {
+  if (!term) return text;
+  const idx = text.toLowerCase().indexOf(term.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-200 text-yellow-900 rounded px-0.5">{text.slice(idx, idx + term.length)}</mark>
+      {text.slice(idx + term.length)}
+    </>
+  );
+}
 
 // --- MAIN PACKAGE DASHBOARD COMPONENT ---
 export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageName }) => {
@@ -96,9 +149,16 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
   const [activeView, setActiveView] = useState<'PRODUCTS' | 'INSIGHTS' | 'CHECKLIST'>('PRODUCTS');
   const [activeInsightTab, setActiveInsightTab] = useState<'360_BUSINESS' | 'TECHNICAL'>('360_BUSINESS');
 
+  // Products Registry state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) =>
+    setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
   // Modals state
   const [isAddProductOpen, setAddProductOpen] = useState(false);
   const [activeProductIdForSubproduct, setActiveProductIdForSubproduct] = useState<string | null>(null);
+  const [activeProductNameForSubproduct, setActiveProductNameForSubproduct] = useState<string>('');
 
   // New item form state
   const [newProductName, setNewProductName] = useState('');
@@ -191,6 +251,13 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
 
   const configurationPlan = currentPackage.configuration_plan || [];
 
+  // Client-side search filter — no extra API call needed
+  const filteredProducts = useMemo(() =>
+    (productsData ?? []).filter((p: any) =>
+      p.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    ), [productsData, searchTerm]);
+
   return (
     <div className="space-y-6 animate-slide-in-right">
       {/* Dynamic Package Header Context */}
@@ -241,18 +308,32 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
         </div>
       </div>
 
-      {/* VIEW 1: PRODUCTS REGISTRY */}
+      {/* VIEW 1: PRODUCTS REGISTRY — tree-table scales to hundreds of products */}
       {activeView === 'PRODUCTS' && (
-        <div className="glass-card rounded-2xl min-h-[500px] p-6 flex flex-col justify-start">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-[12px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-              Core Products (Level 2) & Variations (Level 3)
-            </h2>
+        <div className="glass-card rounded-2xl overflow-hidden">
+          {/* Toolbar: search + stats + add button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white/60">
+            <div className="flex items-center gap-3 flex-1 max-w-sm">
+              <div className="relative flex-1">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/20 outline-none transition-all"
+                />
+              </div>
+              <span className="text-[11px] font-bold text-slate-400 whitespace-nowrap">
+                {filteredProducts.length} of {(productsData ?? []).length} products
+              </span>
+            </div>
             {userRole === 'ADMIN' && (
-              <button 
+              <button
                 onClick={() => setAddProductOpen(true)}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/10 active:scale-[0.98]"
+                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/10 active:scale-[0.98] whitespace-nowrap"
               >
                 + Add Core Product
               </button>
@@ -261,31 +342,55 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
 
           {isLoadingProducts ? (
             <div className="flex h-64 items-center justify-center text-slate-400 font-semibold animate-pulse">Loading Products Registry...</div>
-          ) : productsData && productsData.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {productsData.map((product: any) => (
-                <ProductCard 
-                  key={product.product_id} 
-                  product={product} 
-                  onAddSubproduct={(pid) => setActiveProductIdForSubproduct(pid)}
-                />
-              ))}
+          ) : filteredProducts.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[640px]">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-100">
+                    <th className="py-2.5 pl-4 pr-2 w-8"></th>
+                    <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Product Name</th>
+                    <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-36">Product ID</th>
+                    <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-28">Variations</th>
+                    <th className="py-2.5 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-28">Created</th>
+                    <th className="py-2.5 pr-4 w-28"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.map((product: any) => (
+                    <ProductRow
+                      key={product.product_id}
+                      product={product}
+                      isExpanded={expandedIds.has(product.product_id)}
+                      onToggle={() => toggleExpand(product.product_id)}
+                      onAddSubproduct={(pid, pname) => {
+                        setActiveProductIdForSubproduct(pid);
+                        setActiveProductNameForSubproduct(pname);
+                      }}
+                      searchTerm={searchTerm}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 shadow-inner max-w-xl mx-auto w-full py-12">
-              <svg className="w-12 h-12 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+          ) : productsData?.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 shadow-inner max-w-xl mx-auto w-full py-12 m-6">
               <p className="text-sm font-semibold text-slate-550">No Core Products Defined Yet</p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs text-center leading-relaxed">
-                Begin by creating a Level 2 core product line (like FEDWIRE, CHIPS, or SWIFT) under this application package context.
+                Create a Level 2 core product line (e.g. FEDWIRE, CHIPS, SWIFT) under this package.
               </p>
               {userRole === 'ADMIN' && (
-                <button 
+                <button
                   onClick={() => setAddProductOpen(true)}
                   className="mt-4 bg-white border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-50 transition-colors shadow-sm active:scale-[0.98]"
                 >
                   Create Your First Product
                 </button>
               )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+              <p className="text-sm font-medium">No products match "{searchTerm}"</p>
+              <button onClick={() => setSearchTerm('')} className="text-xs text-indigo-500 hover:underline mt-1">Clear search</button>
             </div>
           )}
         </div>
@@ -455,7 +560,7 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
             <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-extrabold bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent font-display">Create Subproduct Variation (Level 3)</h3>
-                <p className="text-[11px] text-slate-400 mt-1 font-medium">Add a specialized subproduct under product ID: <strong>{activeProductIdForSubproduct}</strong>.</p>
+                <p className="text-[11px] text-slate-400 mt-1 font-medium">Add a specialized subproduct under <strong>{activeProductNameForSubproduct}</strong>.</p>
               </div>
               <button onClick={() => setActiveProductIdForSubproduct(null)} className="text-slate-450 hover:text-slate-700 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
