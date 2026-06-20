@@ -74,8 +74,19 @@ export const MasterHeaderNav: React.FC = () => {
       <nav className="flex items-center gap-2">
         {activeProductContext && (
           <>
-            <button 
-          onClick={() => setActiveModule('ai-assistant')} 
+            {/* WS-12: Launch the deployed banking product runtime — switches from designer mode to operator mode */}
+            <button
+              onClick={() => setActiveModule('package-runtime')}
+              className={`text-[12px] font-bold px-3.5 py-1.5 rounded-xl shadow-sm active:scale-[0.98] transition-all flex items-center gap-1.5 mr-1 ${
+                activeModule === 'package-runtime' || activeModule === 'runtime-transaction-shell'
+                  ? 'bg-emerald-600 text-white shadow-emerald-600/20'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              ▶ Launch App
+            </button>
+            <button
+          onClick={() => setActiveModule('ai-assistant')}
           className="text-[12px] font-bold text-white bg-gradient-to-r from-indigo-600 via-indigo-750 to-indigo-800 hover:from-indigo-750 hover:to-indigo-900 px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/10 active:scale-[0.98] transition-all flex items-center gap-1.5 mr-2"
         >
           <span className="animate-pulse">✨</span> Infinity AI

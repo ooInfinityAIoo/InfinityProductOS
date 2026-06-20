@@ -236,6 +236,44 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during workflow resumption: {str(e)}")
 
+@router.get("/instances/list", summary="List Workflow Execution Instances")
+def list_workflow_instances(
+    workflow_id: Optional[str] = None,
+    instance_status: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    WHY THIS EXISTS (WS-11 Runtime Transaction Shell):
+    The runtime shell needs to show both active (PAUSED) and completed instances
+    so operators can track in-flight transactions and view history.
+    Filterable by workflow_id (to scope to a specific workflow) and status (PAUSED / COMPLETED / FAILED).
+    WHAT BREAKS IF REMOVED: The transaction queue in the Runtime Transaction Shell goes blank.
+    """
+    query = db.query(models.WorkflowExecutionInstance)
+    if workflow_id:
+        query = query.filter(models.WorkflowExecutionInstance.workflow_id == workflow_id)
+    if instance_status:
+        query = query.filter(models.WorkflowExecutionInstance.status == instance_status.upper())
+    instances = query.order_by(models.WorkflowExecutionInstance.created_at.desc()).limit(limit).all()
+    return {
+        "instances": [
+            {
+                "instance_id": i.instance_id,
+                "workflow_id": i.workflow_id,
+                "current_node_id": i.current_node_id,
+                "status": i.status,
+                "current_context": i.current_context,
+                "execution_trace": i.execution_trace,
+                "created_at": i.created_at,
+                "updated_at": i.updated_at,
+            }
+            for i in instances
+        ],
+        "total": len(instances),
+    }
+
 @router.post("/{workflow_id}/execute/download-report", summary="Execute Workflow and Download PDF Report")
 def execute_workflow_and_download_report(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """

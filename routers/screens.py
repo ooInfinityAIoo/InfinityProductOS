@@ -91,14 +91,26 @@ def create_screen_template(payload: schemas.ScreenTemplateCreate, db: Session = 
 @router.get("/", response_model=schemas.ScreenTemplateListResponse, summary="List All Screen Templates")
 def list_screen_templates(
     status: Optional[str] = None,
+    package_id: Optional[str] = None,
+    domain_id: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
+    """
+    WHY package_id + domain_id filters exist:
+    WS-12 Package Sidebar Navigation fetches LIVE screens grouped by BusinessDomain.
+    Without these filters the frontend would have to load all screens and filter client-side,
+    which is unworkable once a bank has hundreds of screens per package.
+    """
     query = db.query(models.ScreenTemplate)
     if status:
         query = query.filter(models.ScreenTemplate.status == status.upper())
+    if package_id:
+        query = query.filter(models.ScreenTemplate.application_package_id == package_id)
+    if domain_id:
+        query = query.filter(models.ScreenTemplate.business_domain_id == domain_id)
     screens = query.order_by(models.ScreenTemplate.screen_name).offset(skip).limit(limit).all()
     response_screens = [_construct_response(s) for s in screens]
     return {"screens": response_screens}

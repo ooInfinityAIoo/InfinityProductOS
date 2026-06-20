@@ -30,6 +30,7 @@ const NotificationEngineStudio = lazy(() => import('./features/notification-engi
 const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.PackageDashboard })));
 const ProductsRegistry = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.ProductsRegistry })));
 const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalTechnicalDashboard').then(m => ({ default: m.GlobalTechnicalDashboard })));
+const PackageRuntimeShell = lazy(() => import('./features/package-runtime/PackageRuntimeShell').then(m => ({ default: m.PackageRuntimeShell })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
@@ -110,6 +111,11 @@ function App() {
           {activeModule === 'comm-templates' && <DocumentTemplateDesigner />}
           {activeModule === 'doc-checklists' && <DocumentChecklistCanvas />}
           {activeModule === 'notification-engine' && <NotificationEngineStudio />}
+
+          {/* WS-12: Package Runtime Mode — deployed banking product UX with sidebar nav */}
+          {(activeModule === 'package-runtime' || activeModule === 'runtime-transaction-shell') && (
+            <PackageRuntimeShell />
+          )}
         </Suspense>
       </main>
     </div>
