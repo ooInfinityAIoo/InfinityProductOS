@@ -21,8 +21,14 @@ export const MasterHeaderNav: React.FC = () => {
     workflowReturnStepId,
   } = usePlatformStore();
 
+  // Designer Studio phase accordions — each phase collapses independently so
+  // the user never has to scroll through all 14 items at once.
+  const [phase1Open, setPhase1Open] = useState(false);
+  const [phase2Open, setPhase2Open] = useState(false);
+  const [phase3Open, setPhase3Open] = useState(false);
+  const [phase4Open, setPhase4Open] = useState(false);
+  // Sub-accordions within phases
   const [ingestionOpen, setIngestionOpen] = useState(false);
-  // Controls the Integration Gateway accordion inside Designer Studio
   const [integrationGatewayOpen, setIntegrationGatewayOpen] = useState(false);
 
   const { data: themeData } = useQuery({
@@ -160,150 +166,206 @@ export const MasterHeaderNav: React.FC = () => {
           <button className="text-[13px] font-extrabold text-indigo-650 hover:text-indigo-850 px-3.5 py-1.5 rounded-xl border border-indigo-150 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-1 cursor-default transition-all ml-1">
             Designer Studio ▾
           </button>
-          <div className="absolute top-[100%] right-0 w-80 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl hidden group-hover:flex flex-col z-50 overflow-hidden mt-1 animate-slide-up max-h-[500px] overflow-y-auto">
+          {/* Designer Studio dropdown — 4 phase accordions, no scrolling needed.
+              Same collapse pattern as Data Ingestion & Mapping: click phase header
+              to expand/collapse its tools inline. All 4 closed by default. */}
+          <div className="absolute top-[100%] right-0 w-80 bg-white/95 backdrop-blur-md border border-slate-200/60 rounded-2xl shadow-xl hidden group-hover:flex flex-col z-50 overflow-hidden mt-1 animate-slide-up">
 
-            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Phase 1: Define the Data
-            </div>
-            <button onClick={() => setActiveModule('doc-checklists')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">1. Document Checklist</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite documents and customer files per workflow step.</div>
-            </button>
-            {/* Data Ingestion & Mapping accordion — clicking the header row expands 4 sub-items
-                inline. Side-flying submenus don't work reliably with a right-anchored dropdown
-                at varying viewport widths; accordion avoids that entirely. */}
+            {/* ── PHASE 1: Define the Data ── */}
             <div className="border-b border-slate-100/50">
               <button
-                onClick={() => setIngestionOpen(o => !o)}
-                className="w-full px-4 py-2.5 text-left hover:bg-cyan-50/40 flex items-center justify-between transition-colors"
+                onClick={() => setPhase1Open(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-slate-50/60 flex items-center justify-between transition-colors bg-slate-50/80"
               >
                 <div>
-                  <div className="text-[12px] font-bold text-cyan-700">2. Data Ingestion & Mapping</div>
-                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">File templates, document extraction, field mapping.</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phase 1</div>
+                  <div className="text-[12px] font-bold text-slate-700 mt-0.5">Define the Data</div>
                 </div>
-                <span className="text-slate-400 text-[10px] ml-2 transition-transform" style={{ transform: ingestionOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: phase1Open ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
               </button>
-              {ingestionOpen && (
-                <div className="bg-cyan-50/30 border-t border-cyan-100/50">
-                  <button onClick={() => setActiveModule('file-template-designer')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
-                    <span className="text-[11px]">📄</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">File Template Designer</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Structured file layouts (CSV, Excel, SWIFT).</div>
-                    </div>
+              {phase1Open && (
+                <div className="border-t border-slate-100/50">
+                  <button onClick={() => setActiveModule('doc-checklists')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">1. Document Checklist</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite documents and customer files per workflow step.</div>
                   </button>
-                  <button onClick={() => setActiveModule('unstructured-document-studio')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
-                    <span className="text-[11px]">🔍</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">Unstructured Document Studio</div>
-                      <div className="text-[10px] text-slate-400 font-normal">AI extraction for PDFs and scanned images.</div>
-                    </div>
+                  {/* Data Ingestion nested accordion — same pattern, one level deeper */}
+                  <div className="border-b border-slate-100/50">
+                    <button
+                      onClick={() => setIngestionOpen(o => !o)}
+                      className="w-full px-4 py-2.5 text-left hover:bg-cyan-50/40 flex items-center justify-between transition-colors"
+                    >
+                      <div>
+                        <div className="text-[12px] font-bold text-cyan-700">2. Data Ingestion & Mapping</div>
+                        <div className="text-[10px] text-slate-400 font-normal mt-0.5">File templates, document extraction, field mapping.</div>
+                      </div>
+                      <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: ingestionOpen ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
+                    </button>
+                    {ingestionOpen && (
+                      <div className="bg-cyan-50/30 border-t border-cyan-100/50">
+                        <button onClick={() => setActiveModule('file-template-designer')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                          <span className="text-[11px]">📄</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">File Template Designer</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Structured file layouts (CSV, Excel, SWIFT).</div>
+                          </div>
+                        </button>
+                        <button onClick={() => setActiveModule('unstructured-document-studio')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                          <span className="text-[11px]">🔍</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">Unstructured Document Studio</div>
+                            <div className="text-[10px] text-slate-400 font-normal">AI extraction for PDFs and scanned images.</div>
+                          </div>
+                        </button>
+                        <button onClick={() => setActiveModule('ingestion-pipeline')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                          <span className="text-[11px]">📥</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">File Import Gateway</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Upload and execute live inbound files.</div>
+                          </div>
+                        </button>
+                        <button onClick={() => setActiveModule('dge-canvas')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 transition-colors flex items-center gap-2">
+                          <span className="text-[11px]">🔀</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">Import File Mappers</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Map inbound fields to ISO 20022 targets.</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── PHASE 2: Design Logic & Flow ── */}
+            <div className="border-b border-slate-100/50">
+              <button
+                onClick={() => setPhase2Open(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-slate-50/60 flex items-center justify-between transition-colors bg-slate-50/80"
+              >
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phase 2</div>
+                  <div className="text-[12px] font-bold text-slate-700 mt-0.5">Design Logic & Flow</div>
+                </div>
+                <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: phase2Open ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
+              </button>
+              {phase2Open && (
+                <div className="border-t border-slate-100/50">
+                  <button onClick={() => setActiveModule('workflow-designer')} className="w-full px-4 py-2.5 text-left hover:bg-indigo-50/30 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-indigo-600">4. Workflow Designer</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design transaction and onboarding workflow DAGs.</div>
                   </button>
-                  <button onClick={() => setActiveModule('ingestion-pipeline')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
-                    <span className="text-[11px]">📥</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">File Import Gateway</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Upload and execute live inbound files.</div>
-                    </div>
+                  <button onClick={() => setActiveModule('business-rules')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">5. Business Rules Engine</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure validation matrices and business rules.</div>
                   </button>
-                  <button onClick={() => setActiveModule('dge-canvas')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 transition-colors flex items-center gap-2">
-                    <span className="text-[11px]">🔀</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">Import File Mappers</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Map inbound fields to ISO 20022 targets.</div>
-                    </div>
+                  <button onClick={() => setActiveModule('calculation-engine')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">6. Calculations & Formulas</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design pricing logic, rates, and math formulas.</div>
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Phase 2: Design Logic & Flow
-            </div>
-            <button onClick={() => setActiveModule('workflow-designer')} className="px-4 py-2.5 text-left hover:bg-indigo-50/30 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">4. Workflow Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design transaction and onboarding workflow DAGs.</div>
-            </button>
-            <button onClick={() => setActiveModule('business-rules')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">5. Business Rules Engine</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure validation matrices and business rules.</div>
-            </button>
-            <button onClick={() => setActiveModule('calculation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">6. Calculations & Formulas</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design pricing logic, rates, and math formulas.</div>
-            </button>
-
-            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Phase 3: Connect & Render
-            </div>
-            {/* Integration Gateway accordion — API + Batch, each with direction/scope quadrant */}
+            {/* ── PHASE 3: Connect & Render ── */}
             <div className="border-b border-slate-100/50">
               <button
-                onClick={() => setIntegrationGatewayOpen(o => !o)}
-                className="w-full px-4 py-2.5 text-left hover:bg-violet-50/40 flex items-center justify-between transition-colors"
+                onClick={() => setPhase3Open(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-slate-50/60 flex items-center justify-between transition-colors bg-slate-50/80"
               >
                 <div>
-                  <div className="text-[12px] font-bold text-violet-700">7. Integration Gateway</div>
-                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">API and batch integration blueprints with governance.</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phase 3</div>
+                  <div className="text-[12px] font-bold text-slate-700 mt-0.5">Connect & Render</div>
                 </div>
-                <span className="text-slate-400 text-[10px] ml-2 transition-transform" style={{ transform: integrationGatewayOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: phase3Open ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
               </button>
-              {integrationGatewayOpen && (
-                <div className="bg-violet-50/20 border-t border-violet-100/50">
-                  <button onClick={() => setActiveModule('api-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 border-b border-violet-100/30 transition-colors flex items-center gap-2">
-                    <span className="text-[13px]">⚡</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">API Gateway Designer</div>
-                      <div className="text-[10px] text-slate-400">Real-time REST/webhook integrations — SWIFT, RTGS, KYC, core banking.</div>
-                    </div>
+              {phase3Open && (
+                <div className="border-t border-slate-100/50">
+                  {/* Integration Gateway nested accordion */}
+                  <div className="border-b border-slate-100/50">
+                    <button
+                      onClick={() => setIntegrationGatewayOpen(o => !o)}
+                      className="w-full px-4 py-2.5 text-left hover:bg-violet-50/40 flex items-center justify-between transition-colors"
+                    >
+                      <div>
+                        <div className="text-[12px] font-bold text-violet-700">7. Integration Gateway</div>
+                        <div className="text-[10px] text-slate-400 font-normal mt-0.5">API and batch integration blueprints with governance.</div>
+                      </div>
+                      <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: integrationGatewayOpen ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
+                    </button>
+                    {integrationGatewayOpen && (
+                      <div className="bg-violet-50/20 border-t border-violet-100/50">
+                        <button onClick={() => setActiveModule('api-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 border-b border-violet-100/30 transition-colors flex items-center gap-2">
+                          <span className="text-[13px]">⚡</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">API Gateway Designer</div>
+                            <div className="text-[10px] text-slate-400">Real-time REST/webhook integrations — SWIFT, RTGS, KYC, core banking.</div>
+                          </div>
+                        </button>
+                        <button onClick={() => setActiveModule('batch-gateway-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 transition-colors flex items-center gap-2">
+                          <span className="text-[13px]">📦</span>
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-700">Batch Gateway Designer</div>
+                            <div className="text-[10px] text-slate-400">Scheduled file jobs — SFTP, S3, MQ, BACS, SEPA bulk files.</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setActiveModule('screen-designer')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">8. Screen Design Studio</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>
                   </button>
-                  <button onClick={() => setActiveModule('batch-gateway-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 transition-colors flex items-center gap-2">
-                    <span className="text-[13px]">📦</span>
-                    <div>
-                      <div className="text-[11px] font-bold text-slate-700">Batch Gateway Designer</div>
-                      <div className="text-[10px] text-slate-400">Scheduled file jobs — SFTP, S3, MQ, BACS, SEPA bulk files.</div>
-                    </div>
+                  <button onClick={() => setActiveModule('legacy-onboarding')} className="w-full px-4 py-2.5 text-left hover:bg-amber-50/40 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-amber-700">🏛 Legacy Screen Onboarding</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Upload T24/Flexcube screenshots → AI extracts fields → auto-generate screens.</div>
+                  </button>
+                  <button onClick={() => setActiveModule('comm-templates')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">9. Document Template Designer</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
+                  </button>
+                  <button onClick={() => setActiveModule('notification-engine')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">10. Notification Engine</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure EMAIL, SMS, and LETTER triggers per workflow node.</div>
                   </button>
                 </div>
               )}
             </div>
-            <button onClick={() => setActiveModule('screen-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">8. Screen Design Studio</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>
-            </button>
-            <button onClick={() => setActiveModule('legacy-onboarding')} className="px-4 py-2.5 text-left hover:bg-amber-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-amber-700">🏛 Legacy Screen Onboarding</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Upload T24/Flexcube screenshots → AI extracts fields → auto-generate screens.</div>
-            </button>
-            <button onClick={() => setActiveModule('comm-templates')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">9. Document Template Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
-            </button>
-            <button onClick={() => setActiveModule('notification-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">10. Notification Engine</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure EMAIL, SMS, and LETTER triggers per workflow node.</div>
-            </button>
 
-            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Phase 4: Monitor, Output & Intelligence
+            {/* ── PHASE 4: Monitor, Output & Intelligence ── */}
+            <div>
+              <button
+                onClick={() => setPhase4Open(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-slate-50/60 flex items-center justify-between transition-colors bg-slate-50/80"
+              >
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phase 4</div>
+                  <div className="text-[12px] font-bold text-slate-700 mt-0.5">Monitor, Output & Intelligence</div>
+                </div>
+                <span className="text-slate-400 text-[10px] ml-2 shrink-0" style={{ transform: phase4Open ? 'rotate(180deg)' : 'none', display:'inline-block' }}>▾</span>
+              </button>
+              {phase4Open && (
+                <div className="border-t border-slate-100/50">
+                  <button onClick={() => setActiveModule('reconciliation-engine')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">11. Reconciliation Engine</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment matching criteria.</div>
+                  </button>
+                  <button onClick={() => setActiveModule('behavioral-profiles')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">12. Behavioral Profiling Models</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
+                  </button>
+                  <button onClick={() => setActiveModule('report-designer')} className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+                    <div className="text-[12px] font-bold text-slate-700">13. Report Designer Engine</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
+                  </button>
+                  <button onClick={() => setActiveModule('insights-factory')} className="w-full px-4 py-2.5 text-left hover:bg-indigo-50/40 transition-colors">
+                    <div className="text-[12px] font-bold text-indigo-600">14. Insights Factory</div>
+                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
+                  </button>
+                </div>
+              )}
             </div>
-            <button onClick={() => setActiveModule('reconciliation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">11. Reconciliation Engine</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment matching criteria.</div>
-            </button>
-            <button onClick={() => setActiveModule('behavioral-profiles')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">12. Behavioral Profiling Models</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
-            </button>
-            <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">13. Report Designer Engine</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
-            </button>
-            <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">14. Insights Factory</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
-            </button>
-
 
           </div>
         </div>
