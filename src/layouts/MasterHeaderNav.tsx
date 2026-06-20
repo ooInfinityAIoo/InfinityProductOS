@@ -201,7 +201,7 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design transaction and onboarding workflow DAGs.</div>
             </button>
             <button onClick={() => setActiveModule('business-rules')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">5. Decision Logic & Policies</div>
+              <div className="text-[12px] font-bold text-slate-700">5. Business Rules Engine</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure validation matrices and business rules.</div>
             </button>
             <button onClick={() => setActiveModule('calculation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
@@ -217,7 +217,7 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design integration endpoints and transaction gateways.</div>
             </button>
             <button onClick={() => setActiveModule('screen-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">8. User Screen Designer</div>
+              <div className="text-[12px] font-bold text-slate-700">8. Screen Design Studio</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>
             </button>
             <button onClick={() => setActiveModule('legacy-onboarding')} className="px-4 py-2.5 text-left hover:bg-amber-50/40 border-b border-slate-100/50 transition-colors">
@@ -229,7 +229,7 @@ export const MasterHeaderNav: React.FC = () => {
               Phase 4: Monitor, Output & Intelligence
             </div>
             <button onClick={() => setActiveModule('reconciliation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">9. Reconciliation Matchers</div>
+              <div className="text-[12px] font-bold text-slate-700">9. Reconciliation Engine</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment matching criteria.</div>
             </button>
             <button onClick={() => setActiveModule('behavioral-profiles')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
@@ -237,7 +237,7 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
             </button>
             <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">11. Report Templates</div>
+              <div className="text-[12px] font-bold text-slate-700">11. Report Designer Engine</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
             </button>
             <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
