@@ -1413,10 +1413,17 @@ class ImageToReportResponse(BaseModel):
 class WireframeToScreenRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 encoded image string of the wireframe.")
     image_mime_type: str = Field(default="image/jpeg", description="MIME type of the uploaded image.")
+    # extraction_mode: bank selects their extraction engine at upload time.
+    # IN_HOUSE_OCR = free, runs on-server, no API cost (default).
+    # ANTHROPIC_VISION = Claude claude-sonnet-4-6 vision, paid per-extraction, highest accuracy.
+    # OPENAI_VISION = GPT-4o vision, legacy path.
+    # Omitting this field falls back to EXTRACTION_MODE env var, then IN_HOUSE_OCR.
+    extraction_mode: Optional[str] = Field(None, description="IN_HOUSE_OCR | ANTHROPIC_VISION | OPENAI_VISION")
 
 class WireframeToScreenResponse(BaseModel):
     message: str
     components: List[ScreenComponent]
+    extraction_mode: Optional[str] = Field(None, description="Which extraction engine was used.")
 
 class TranslateFieldRequest(BaseModel):
     business_name: str = Field(..., description="The English business name to translate.")

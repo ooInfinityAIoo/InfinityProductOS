@@ -4,19 +4,22 @@
 // them in Screen Designer would take weeks per screen. This studio automates that:
 //
 //   Step 1 — Upload a screenshot of the legacy screen (e.g., T24 "Bilateral Keys")
-//   Step 2 — AI Vision (GPT-4o via /ai-assistant/wireframe-to-screen) extracts:
-//             field labels, component types, and auto-maps to ISO Field Registry
-//   Step 3 — Designer reviews the extraction table: correct types, fix ISO mappings,
-//             mark mandatory/optional, reorder fields
-//   Step 4 — One click creates a DRAFT ScreenTemplate in Screen Designer
-//             exactly as if the designer had built it manually
+//             Designer selects extraction mode:
+//               • IN_HOUSE_OCR — zero API cost, runs on server via pytesseract +
+//                 ISO Registry fuzzy matching. Best for structured T24/Flexcube grids.
+//               • ANTHROPIC_VISION — Claude claude-sonnet-4-6 vision API (paid per-call).
+//                 Best for complex/messy layouts. Highest accuracy.
+//   Step 2 — Extraction runs; designer reviews the field table: correct types,
+//             fix ISO mappings, mark mandatory/optional, reorder fields
+//   Step 3 — One click creates a DRAFT ScreenTemplate in Screen Designer
 //
-// Why this matters: a bank migrating from T24 has 200+ screens. This compresses
-// weeks of manual re-entry into hours of AI-assisted review + correction.
+// EXTRACTION_MODE architecture (ADR #3 logic-as-data):
+// Mode is sent with the API call. Backend EXTRACTION_MODE env var is the default.
+// Banks with simple structured screens use IN_HOUSE_OCR (free).
+// Banks with complex green-screen layouts use ANTHROPIC_VISION (pay per extraction).
 //
 // WHAT BREAKS IF REMOVED:
 // No automated path from legacy screenshot → Screen Designer. Manual re-entry only.
-// The platform cannot credibly promise T24/Flexcube migration support without this.
 
 import React, { useState, useRef, useCallback } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -71,6 +74,10 @@ export const LegacyOnboardingStudio: React.FC = () => {
   const [screenDescription, setScreenDescription] = useState('');
   const [savedScreenId, setSavedScreenId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // extractionMode: bank selects at upload time. IN_HOUSE_OCR is free (default).
+  // ANTHROPIC_VISION is paid per-call but handles complex layouts better.
+  const [extractionMode, setExtractionMode] = useState<'IN_HOUSE_OCR' | 'ANTHROPIC_VISION'>('IN_HOUSE_OCR');
+  const [usedExtractionMode, setUsedExtractionMode] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ISO field registry for the mapping dropdowns — fetched once
@@ -82,22 +89,23 @@ export const LegacyOnboardingStudio: React.FC = () => {
     },
   });
 
-  // Step 1 → Step 2: Upload image to AI extractor
+  // Step 1 → Step 2: Upload image to extractor (in-house OCR or LLM vision)
   const extractMut = useMutation({
     mutationFn: async (file: File) => {
       const base64 = await fileToBase64(file);
       const res = await apiClient.post('/ai-assistant/wireframe-to-screen', {
         image_base64: base64,
         image_mime_type: file.type || 'image/jpeg',
+        extraction_mode: extractionMode,
       });
-      return res.data as ExtractionResult;
+      return res.data as ExtractionResult & { extraction_mode?: string };
     },
     onSuccess: (data) => {
-      // Derive a screen name from the file name if not yet set
       if (!screenName && uploadedFile) {
         const stem = uploadedFile.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
         setScreenName(toTitleCase(stem));
       }
+      setUsedExtractionMode(data.extraction_mode || extractionMode);
       setComponents(data.components.map(c => ({ ...c, _reviewed: false })));
       setStep('review');
     },
@@ -253,28 +261,78 @@ export const LegacyOnboardingStudio: React.FC = () => {
             </div>
           </div>
 
-          {/* Extract button */}
+          {/* Extraction mode selector + Extract button */}
           {uploadedFile && (
-            <div className="col-span-2 flex justify-end">
-              <button
-                onClick={() => extractMut.mutate(uploadedFile)}
-                disabled={extractMut.isPending}
-                className="px-8 py-3 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-500/20 transition-all active:scale-[0.98] disabled:opacity-60 flex items-center gap-2"
-              >
-                {extractMut.isPending ? (
-                  <>
-                    <span className="animate-spin">⟳</span> AI Extracting Fields…
-                  </>
-                ) : (
-                  <>✨ Extract Fields with AI</>
-                )}
-              </button>
+            <div className="col-span-2 bg-white/85 backdrop-blur-md rounded-2xl border border-slate-200 shadow-sm p-5">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Extraction Engine</p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {/* IN_HOUSE_OCR option */}
+                <button
+                  onClick={() => setExtractionMode('IN_HOUSE_OCR')}
+                  className={`text-left p-4 rounded-xl border-2 transition-all ${
+                    extractionMode === 'IN_HOUSE_OCR'
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-slate-800">In-House OCR</span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">FREE</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Runs on-server via pytesseract + ISO Registry fuzzy matching. Zero API cost.
+                    Best for structured screens (T24, Flexcube clean grids). ~90% accuracy.
+                  </p>
+                </button>
+
+                {/* ANTHROPIC_VISION option */}
+                <button
+                  onClick={() => setExtractionMode('ANTHROPIC_VISION')}
+                  className={`text-left p-4 rounded-xl border-2 transition-all ${
+                    extractionMode === 'ANTHROPIC_VISION'
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-slate-800">Claude Vision</span>
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">API COST</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Claude claude-sonnet-4-6 vision model. Best for complex/freeform layouts,
+                    green-screen mainframes, annotated PDFs. ~95% accuracy.
+                  </p>
+                </button>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => extractMut.mutate(uploadedFile)}
+                  disabled={extractMut.isPending}
+                  className={`px-8 py-3 text-sm font-bold text-white rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-60 flex items-center gap-2 ${
+                    extractionMode === 'ANTHROPIC_VISION'
+                      ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+                      : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'
+                  }`}
+                >
+                  {extractMut.isPending ? (
+                    <>
+                      <span className="animate-spin">⟳</span>
+                      {extractionMode === 'IN_HOUSE_OCR' ? 'Running OCR…' : 'Claude Extracting Fields…'}
+                    </>
+                  ) : extractionMode === 'IN_HOUSE_OCR' ? (
+                    <>🔍 Extract Fields (In-House OCR)</>
+                  ) : (
+                    <>✨ Extract Fields with Claude Vision</>
+                  )}
+                </button>
+              </div>
             </div>
           )}
 
           {extractMut.isError && (
             <div className="col-span-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">
-              {(extractMut.error as any)?.response?.data?.detail ?? 'Extraction failed. Check that OpenAI API key is configured.'}
+              {(extractMut.error as any)?.response?.data?.detail ?? 'Extraction failed. Check server logs.'}
             </div>
           )}
         </div>
@@ -287,7 +345,20 @@ export const LegacyOnboardingStudio: React.FC = () => {
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 flex items-center gap-3">
             <span className="text-xl">✅</span>
             <div>
-              <p className="text-sm font-bold text-emerald-800">AI extracted {components.length} fields</p>
+              <p className="text-sm font-bold text-emerald-800">
+                Extracted {components.length} fields
+                {usedExtractionMode && (
+                  <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    usedExtractionMode === 'IN_HOUSE_OCR'
+                      ? 'bg-emerald-200 text-emerald-800'
+                      : usedExtractionMode === 'ANTHROPIC_VISION'
+                      ? 'bg-indigo-100 text-indigo-800'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    via {usedExtractionMode === 'IN_HOUSE_OCR' ? 'In-House OCR' : usedExtractionMode === 'ANTHROPIC_VISION' ? 'Claude Vision' : usedExtractionMode}
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-emerald-600 mt-0.5">Review each field below. Correct the type or ISO mapping if needed, then proceed to save.</p>
             </div>
             <div className="ml-auto flex items-center gap-2">

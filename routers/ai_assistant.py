@@ -88,9 +88,17 @@ def generate_screen_from_wireframe(
     """
     ai_service = AIService()
     try:
-        result = ai_service.generate_screen_from_wireframe(db=db, image_base64=payload.image_base64, mime_type=payload.image_mime_type)
+        result = ai_service.generate_screen_from_wireframe(
+            db=db,
+            image_base64=payload.image_base64,
+            mime_type=payload.image_mime_type,
+            # extraction_mode from payload overrides EXTRACTION_MODE env var
+            # Modes: IN_HOUSE_OCR (free, default) | ANTHROPIC_VISION | OPENAI_VISION
+            extraction_mode=getattr(payload, 'extraction_mode', None)
+        )
         if "message" not in result:
-            result["message"] = f"Successfully extracted {len(result.get('components', []))} components."
+            mode = result.get("extraction_mode", "UNKNOWN")
+            result["message"] = f"Successfully extracted {len(result.get('components', []))} components via {mode}."
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
