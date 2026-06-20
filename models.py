@@ -165,6 +165,51 @@ class ISOFieldDefinition(Base):
     created_by = Column(String, default="SYSTEM")
 
 
+# --- LAYER 3 EXTENSION: ISO DOMAIN REGISTRY ---
+class IsoDomain(Base):
+    """
+    WHY THIS EXISTS:
+    Defines the business domain taxonomy for the ISO Field Registry.
+    Every domain (e.g. Wire & SWIFT Payments) has one or more subdomains
+    (e.g. SWIFT Cross-border, RTGS High Value). This table is the master
+    reference — domain_category and subdomain_category on ISOFieldDefinition
+    point here. Packages select which domains they cover via PackageIsoDomain.
+
+    This replaces the flat 'PAYMENTS / ISO_GOLDEN_SOURCE' placeholder tagging
+    that was applied to 3,000 fields during initial seed.
+    """
+    __tablename__ = "iso_domains"
+
+    domain_code = Column(String, primary_key=True)          # e.g. WIRE_PAYMENTS
+    domain_display_name = Column(String, nullable=False)    # e.g. Wire & SWIFT Payments
+    subdomain_code = Column(String, primary_key=True)       # e.g. SWIFT_CROSS_BORDER
+    subdomain_display_name = Column(String, nullable=False) # e.g. SWIFT / Cross-border
+    description = Column(Text, nullable=True)
+    icon = Column(String, nullable=True)                    # emoji for UI
+    sort_order = Column(Integer, default=0)
+    created_at = Column(String, nullable=False)
+
+
+class PackageIsoDomain(Base):
+    """
+    WHY THIS EXISTS:
+    Many-to-many join between a Package and the ISO Domains it covers.
+    When a bank initialises "Payment Hub" and selects Wire & SWIFT + FX domains,
+    those domain codes are stored here. The Field Registry filters by these
+    domains when working inside that package context. The Package sidebar nav
+    groups screens by the domains selected here.
+
+    WHAT BREAKS IF REMOVED: Field Registry loses package-scoped filtering.
+    Package sidebar cannot auto-group screens into correct domain sections.
+    """
+    __tablename__ = "package_iso_domains"
+
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id", ondelete="CASCADE"), primary_key=True)
+    domain_code = Column(String, nullable=False, primary_key=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+
+
 # --- LAYER 6: GOVERNANCE HUB COMMENTS ---
 class GovernanceTaskComment(Base):
     """

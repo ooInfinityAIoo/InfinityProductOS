@@ -25,10 +25,11 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, cast, String, text
 from typing import List, Optional
 import uuid
 import datetime
+from datetime import datetime as dt_datetime
 
 from database import get_db
 import models
@@ -357,3 +358,6 @@ def list_masking_strategies(current_user: CurrentUser = Depends(get_current_user
     ]
     
     return {"strategies": strategies}
+
+# Domain taxonomy endpoints are in routers/iso_domains.py (mounted at /api/v1/fields)
+# to avoid collision with the /{field_id} catch-all route in this router.
