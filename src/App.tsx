@@ -11,6 +11,7 @@ const DataGatewayStudio = lazy(() => import('./features/mappers/DataGatewayStudi
 const CalculationEngineStudio = lazy(() => import('./features/calculation-engine/CalculationEngineStudio').then(m => ({ default: m.CalculationEngineStudio })));
 const BusinessRulesStudio = lazy(() => import('./features/rules-designer/BusinessRulesStudio').then(m => ({ default: m.BusinessRulesStudio })));
 const ApiDesignerStudio = lazy(() => import('./features/integrations/ApiDesignerStudio').then(m => ({ default: m.ApiDesignerStudio })));
+const BatchGatewayDesignerStudio = lazy(() => import('./features/batch-gateway/BatchGatewayDesignerStudio').then(m => ({ default: m.BatchGatewayDesignerStudio })));
 const AiAssistantStudio = lazy(() => import('./features/ai-assistant/AiAssistantStudio').then(m => ({ default: m.AiAssistantStudio })));
 const ScreenDesignerStudio = lazy(() => import('./features/screens/ScreenDesignerStudio').then(m => ({ default: m.ScreenDesignerStudio })));
 const InsightsFactoryStudio = lazy(() => import('./features/insights/InsightsFactoryStudio').then(m => ({ default: m.InsightsFactoryStudio })));
@@ -83,6 +84,7 @@ function App() {
           {activeModule === 'business-rules' && <BusinessRulesStudio />}
           
           {activeModule === 'api-designer' && <ApiDesignerStudio />}
+          {activeModule === 'batch-gateway-designer' && <BatchGatewayDesignerStudio />}
 
           {activeModule === 'ai-assistant' && <AiAssistantStudio />}
 

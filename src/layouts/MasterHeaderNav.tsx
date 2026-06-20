@@ -21,8 +21,9 @@ export const MasterHeaderNav: React.FC = () => {
     workflowReturnStepId,
   } = usePlatformStore();
 
-  // Controls the inline accordion for "Data Ingestion & Mapping" submenu inside Designer Studio dropdown
   const [ingestionOpen, setIngestionOpen] = useState(false);
+  // Controls the Integration Gateway accordion inside Designer Studio
+  const [integrationGatewayOpen, setIntegrationGatewayOpen] = useState(false);
 
   const { data: themeData } = useQuery({
     queryKey: ['global-theme'],
@@ -212,10 +213,37 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 3: Connect & Render
             </div>
-            <button onClick={() => setActiveModule('api-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">7. External Connectors</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design integration endpoints and transaction gateways.</div>
-            </button>
+            {/* Integration Gateway accordion — API + Batch, each with direction/scope quadrant */}
+            <div className="border-b border-slate-100/50">
+              <button
+                onClick={() => setIntegrationGatewayOpen(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-violet-50/40 flex items-center justify-between transition-colors"
+              >
+                <div>
+                  <div className="text-[12px] font-bold text-violet-700">7. Integration Gateway</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">API and batch integration blueprints with governance.</div>
+                </div>
+                <span className="text-slate-400 text-[10px] ml-2 transition-transform" style={{ transform: integrationGatewayOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+              </button>
+              {integrationGatewayOpen && (
+                <div className="bg-violet-50/20 border-t border-violet-100/50">
+                  <button onClick={() => setActiveModule('api-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 border-b border-violet-100/30 transition-colors flex items-center gap-2">
+                    <span className="text-[13px]">⚡</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">API Gateway Designer</div>
+                      <div className="text-[10px] text-slate-400">Real-time REST/webhook integrations — SWIFT, RTGS, KYC, core banking.</div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveModule('batch-gateway-designer')} className="w-full pl-8 pr-4 py-2.5 text-left hover:bg-violet-50/60 transition-colors flex items-center gap-2">
+                    <span className="text-[13px]">📦</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">Batch Gateway Designer</div>
+                      <div className="text-[10px] text-slate-400">Scheduled file jobs — SFTP, S3, MQ, BACS, SEPA bulk files.</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
             <button onClick={() => setActiveModule('screen-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">8. Screen Design Studio</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>

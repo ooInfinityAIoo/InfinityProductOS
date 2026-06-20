@@ -1,20 +1,21 @@
-// WHY THIS FILE EXISTS:
-// API Designer Studio — lets business ops configure outbound API integrations
-// without writing code. Every external system call (SWIFT GPI, Core Banking,
-// RTGS, Sanctions screening) is defined here as a blueprint.
+// WHY THIS FILE EXISTS (API Gateway Designer):
+// Defines real-time API integration blueprints for the Integration Gateway.
+// Every API call a workflow node makes — SWIFT GPI, Core Banking, RTGS, KYC,
+// Sanctions screening — is configured here with governance guardrails.
 //
-// CRITICAL: These are not just URL configs. Each integration enforces:
+// INTEGRATION QUADRANT MODEL:
+//   direction × scope = 4 quadrants, each with different security/compliance defaults:
+//   • INBOUND  + EXTERNAL — external system pushes data TO us (webhooks, callbacks)
+//   • OUTBOUND + EXTERNAL — we call outside the bank (SWIFT, regulators, correspondents)
+//   • INBOUND  + INTERNAL — internal system triggers us (core banking events, fraud alerts)
+//   • OUTBOUND + INTERNAL — we call internal systems (GL posting, CRM update, notify engine)
+//
+// CRITICAL guardrails on every config (ADR #8):
 //   - Rate limiting (token bucket, prevents vendor throttling)
 //   - Circuit breaking (stops cascade failures when external API goes down)
 //   - PII masking (auto-strips sensitive fields before sending outbound)
 //
-// WHY SLIDERS not number inputs: A bank ops user doesn't know what "10 rps" means
-// in isolation. A slider with labeled presets (Conservative / Standard / Aggressive)
-// gives context. The number is shown alongside the slider for precision.
-//
-// WHAT BREAKS IF REMOVED: The Workflow Engine has no way to call external APIs.
-// SWIFT payment tracking, core banking settlement confirmation, sanctions screening
-// — all of these are API calls configured here. Remove this and payments cannot settle.
+// WHAT BREAKS IF REMOVED: Workflow Engine cannot call any external or internal API.
 
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -114,6 +115,12 @@ export const ApiDesignerStudio: React.FC = () => {
   const [circuitBreakerThreshold, setCircuitBreakerThreshold] = useState(5);
   const [circuitBreakerTimeout, setCircuitBreakerTimeout] = useState(60);
   const [maskPiiInBody, setMaskPiiInBody] = useState(true);
+  // Integration quadrant classification — determines security policy defaults and audit category
+  const [direction, setDirection] = useState<'INBOUND' | 'OUTBOUND'>('OUTBOUND');
+  const [scope, setScope] = useState<'INTERNAL' | 'EXTERNAL'>('EXTERNAL');
+  // Active quadrant filter for the left-hand list
+  const [filterDirection, setFilterDirection] = useState<string>('ALL');
+  const [filterScope, setFilterScope] = useState<string>('ALL');
 
   const { data: integrationsData, isLoading } = useQuery({
     queryKey: ['integrations'],
@@ -123,12 +130,19 @@ export const ApiDesignerStudio: React.FC = () => {
   const resetForm = () => {
     setApiName(''); setHttpMethod('POST'); setUrlTemplate(''); setDescription('');
     setRateLimitRps(10); setCircuitBreakerThreshold(5); setCircuitBreakerTimeout(60);
-    setMaskPiiInBody(true);
+    setMaskPiiInBody(true); setDirection('OUTBOUND'); setScope('EXTERNAL');
   };
+
+  // Filtered integration list based on active quadrant filter
+  const filteredIntegrations = (integrationsData?.integrations || []).filter((api: any) => {
+    if (filterDirection !== 'ALL' && api.direction !== filterDirection) return false;
+    if (filterScope !== 'ALL' && api.scope !== filterScope) return false;
+    return true;
+  });
 
   const createApiMutation = useMutation({
     mutationFn: async () => {
-      const payload = { api_name: apiName, http_method: httpMethod, url_template: urlTemplate, description, rate_limit_rps: rateLimitRps, circuit_breaker_threshold: circuitBreakerThreshold, circuit_breaker_timeout_sec: circuitBreakerTimeout, mask_pii_in_body: maskPiiInBody };
+      const payload = { api_name: apiName, http_method: httpMethod, url_template: urlTemplate, description, rate_limit_rps: rateLimitRps, circuit_breaker_threshold: circuitBreakerThreshold, circuit_breaker_timeout_sec: circuitBreakerTimeout, mask_pii_in_body: maskPiiInBody, direction, scope };
       return (await apiClient.post('/integrations/', payload)).data;
     },
     onSuccess: () => {
@@ -151,15 +165,32 @@ export const ApiDesignerStudio: React.FC = () => {
         <div className="w-[380px] glass-card rounded-2xl flex flex-col overflow-hidden">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <div>
-              <h2 className="text-[14px] font-extrabold text-slate-800 tracking-tight">Integration Hub</h2>
-              <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">Outbound API blueprints</p>
+              <h2 className="text-[14px] font-extrabold text-slate-800 tracking-tight">API Gateway Designer</h2>
+              <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">Real-time API integration blueprints</p>
             </div>
             <button
               onClick={() => { setIsCreating(true); setSelectedApi(null); resetForm(); }}
               className="bg-indigo-600 text-white px-3.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.97]"
             >
-              + New Integration
+              + New API
             </button>
+          </div>
+
+          {/* Quadrant filter — direction × scope */}
+          <div className="px-3 py-2 border-b border-slate-100 bg-white flex gap-1.5 flex-wrap">
+            {(['ALL','INBOUND','OUTBOUND'] as const).map(d => (
+              <button key={d} onClick={() => setFilterDirection(d)}
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${filterDirection === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                {d === 'ALL' ? 'All Direction' : d}
+              </button>
+            ))}
+            <span className="text-slate-200 text-[10px] self-center">|</span>
+            {(['ALL','EXTERNAL','INTERNAL'] as const).map(s => (
+              <button key={s} onClick={() => setFilterScope(s)}
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition-all ${filterScope === s ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-500 border-slate-200 hover:border-cyan-300'}`}>
+                {s === 'ALL' ? 'All Scope' : s}
+              </button>
+            ))}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -167,7 +198,7 @@ export const ApiDesignerStudio: React.FC = () => {
               <div className="flex justify-center mt-10">
                 <div className="w-6 h-6 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
               </div>
-            ) : integrationsData?.integrations?.map((api: any) => (
+            ) : filteredIntegrations.map((api: any) => (
               <div
                 key={api.api_id}
                 onClick={() => { setSelectedApi(api); setIsCreating(false); }}
@@ -184,10 +215,20 @@ export const ApiDesignerStudio: React.FC = () => {
                   </span>
                 </div>
                 <div className="text-[10px] font-mono text-slate-400 truncate">{api.url_template}</div>
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  {api.direction && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${api.direction === 'INBOUND' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>
+                      {api.direction}
+                    </span>
+                  )}
+                  {api.scope && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${api.scope === 'EXTERNAL' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-cyan-50 text-cyan-700 border-cyan-200'}`}>
+                      {api.scope}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1 text-[9px] text-slate-400"><Zap size={9} />{api.rate_limit_rps || 10} rps</span>
-                  <span className="flex items-center gap-1 text-[9px] text-slate-400"><Activity size={9} />trips at {api.circuit_breaker_threshold || 5} fails</span>
-                  {api.mask_pii_in_body && <span className="flex items-center gap-1 text-[9px] text-emerald-600"><Shield size={9} />PII masked</span>}
+                  <span className="flex items-center gap-1 text-[9px] text-slate-400"><Activity size={9} />trips@{api.circuit_breaker_threshold || 5}</span>
+                  {api.mask_pii_in_body && <span className="flex items-center gap-1 text-[9px] text-emerald-600"><Shield size={9} />PII</span>}
                 </div>
               </div>
             ))}
@@ -269,6 +310,41 @@ export const ApiDesignerStudio: React.FC = () => {
               </div>
 
               <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                {/* Integration quadrant — direction × scope — set before everything else */}
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Integration Quadrant</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 mb-1.5">Direction</p>
+                      <div className="flex gap-1.5">
+                        {(['OUTBOUND','INBOUND'] as const).map(d => (
+                          <button key={d} onClick={() => setDirection(d)}
+                            className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-all ${direction === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                            {d === 'OUTBOUND' ? '→ Outbound' : '← Inbound'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-400 mb-1.5">Scope</p>
+                      <div className="flex gap-1.5">
+                        {(['EXTERNAL','INTERNAL'] as const).map(s => (
+                          <button key={s} onClick={() => setScope(s)}
+                            className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg border transition-all ${scope === s ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-slate-500 border-slate-200 hover:border-cyan-300'}`}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-1.5">
+                    {direction === 'OUTBOUND' && scope === 'EXTERNAL' && '→ We call an external system (SWIFT, regulator, correspondent bank, KYC provider)'}
+                    {direction === 'OUTBOUND' && scope === 'INTERNAL' && '→ We call an internal system (GL, CRM, fraud engine, core banking)'}
+                    {direction === 'INBOUND' && scope === 'EXTERNAL' && '← External system calls us (webhook, callback, payment scheme push)'}
+                    {direction === 'INBOUND' && scope === 'INTERNAL' && '← Internal system triggers us (core banking event, fraud alert, scheduler)'}
+                  </p>
+                </div>
+
                 {/* Endpoint */}
                 <div className="grid grid-cols-[1fr_120px] gap-4">
                   <div>

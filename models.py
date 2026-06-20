@@ -825,6 +825,17 @@ class ApiConfiguration(Base):
     circuit_breaker_timeout_sec = Column(Integer, default=60, nullable=False) # Cooldown before half-open state
     
     description = Column(Text, nullable=True)
+
+    # Integration classification — added to support Integration Gateway quadrant model.
+    # direction: which way data flows relative to InfinityProductOS.
+    #   INBOUND  = external/internal system sends data TO this platform (webhooks, callbacks, push APIs)
+    #   OUTBOUND = this platform calls external/internal system (POST payment, GET rates, trigger event)
+    # scope: which boundary this integration crosses.
+    #   EXTERNAL = outside the bank (SWIFT, regulators, correspondent banks, payment rails, KYC providers)
+    #   INTERNAL = inside the bank (core banking T24/Flexcube, GL, fraud engine, CRM, internal microservices)
+    direction = Column(String, nullable=False, default="OUTBOUND", index=True)  # INBOUND | OUTBOUND
+    scope = Column(String, nullable=False, default="EXTERNAL", index=True)       # INTERNAL | EXTERNAL
+
     status = Column(String, nullable=False, default="DRAFT", index=True)
     application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
     product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
@@ -833,6 +844,59 @@ class ApiConfiguration(Base):
     created_by = Column(String, default="SYSTEM")
     updated_at = Column(String, nullable=True)
     updated_by = Column(String, nullable=True)
+
+
+class BatchGatewayConfiguration(Base):
+    """
+    WHY THIS EXISTS:
+    Batch Gateway Designer — defines scheduled/file-based integration jobs.
+    Complements ApiConfiguration (real-time) with the async/bulk data movement pattern.
+
+    Banks run hundreds of batch jobs daily: EOD settlement files to SWIFT, BACS/SEPA
+    bulk payment files, inbound nostro statements from correspondents, internal GL feeds.
+    This model stores the WHAT/HOW/WHEN of each job. Execution is triggered by Celery
+    scheduler referencing these configs — no hardcoded cron scripts needed.
+
+    direction + scope: same quadrant model as ApiConfiguration.
+    source_type: where the batch originates (SFTP server, S3 bucket, file drop, API poll).
+    file_template_id: optional reference to a FileTemplate defining the expected layout.
+    """
+    __tablename__ = "batch_gateway_configurations"
+
+    config_id = Column(String, primary_key=True, index=True)
+    config_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Integration quadrant — same axes as ApiConfiguration
+    direction = Column(String, nullable=False, default="INBOUND", index=True)   # INBOUND | OUTBOUND
+    scope = Column(String, nullable=False, default="EXTERNAL", index=True)       # INTERNAL | EXTERNAL
+
+    # Source/destination details
+    source_type = Column(String, nullable=False, default="SFTP")  # SFTP | S3 | FILE_DROP | API_POLL | MQ
+    connection_config = Column(JSONB, nullable=True)  # host, port, path, credential_key_ref — never raw secrets
+
+    # Schedule — cron expression interpreted by Celery beat
+    schedule_cron = Column(String, nullable=True)   # e.g., "0 18 * * 1-5" = weekdays at 6pm
+    timezone = Column(String, nullable=False, default="UTC")
+
+    # Optional reference to a File Template for layout validation
+    file_template_id = Column(String, ForeignKey("file_templates.template_id"), nullable=True, index=True)
+
+    # Fault tolerance
+    retry_max_attempts = Column(Integer, default=3)
+    retry_backoff_sec = Column(Integer, default=60)
+    alert_on_failure_email = Column(String, nullable=True)
+
+    # Lifecycle: DRAFT → PENDING_APPROVAL → LIVE → DISABLED
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # Audit
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+    updated_at = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+
 
 class UserInteractionEvent(Base):
     """

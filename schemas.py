@@ -1283,15 +1283,16 @@ class ApiConfigurationCreate(BaseModel):
     request_body_template: Optional[Dict[str, Any]] = Field(None, description="A JSON template for the request body for POST/PUT requests.")
     headers: Optional[Dict[str, Any]] = Field(None, description="A JSON object of headers to include in the request.")
     mask_pii_in_body: bool = Field(True, description="If true, automatically mask PII fields in the request body before sending to the external system.")
-    
     rate_limit_rps: int = Field(10, description="The maximum number of requests per second allowed globally for this API.")
     circuit_breaker_threshold: int = Field(5, description="The number of consecutive failures before the circuit breaker trips open.")
     circuit_breaker_timeout_sec: int = Field(60, description="The cooldown duration in seconds before the circuit breaker tests recovery.")
-    
     description: Optional[str] = Field(None, description="A description of the API's purpose.")
-    application_package_id: Optional[str] = Field(None, description="The specific product package this API belongs to. Null for Global.")
-    product_id: Optional[str] = Field(None, description="The specific product this API belongs to. Null for Global.")
-    subproduct_id: Optional[str] = Field(None, description="The specific subproduct this API belongs to. Null for Global.")
+    # Integration Gateway quadrant classification
+    direction: str = Field("OUTBOUND", description="INBOUND (system pushes to us) or OUTBOUND (we call the system).")
+    scope: str = Field("EXTERNAL", description="EXTERNAL (outside bank boundary) or INTERNAL (inside bank, cross-system).")
+    application_package_id: Optional[str] = Field(None)
+    product_id: Optional[str] = Field(None)
+    subproduct_id: Optional[str] = Field(None)
 
 class ApiConfigurationResponse(ApiConfigurationCreate):
     api_id: str
@@ -1305,6 +1306,42 @@ class ApiConfigurationResponse(ApiConfigurationCreate):
 
 class ApiConfigurationListResponse(BaseModel):
     integrations: List[ApiConfigurationResponse]
+
+# =====================================================================
+# --- BATCH GATEWAY SCHEMAS ---
+# =====================================================================
+
+class BatchGatewayConfigCreate(BaseModel):
+    """
+    WHY: Batch Gateway Designer — defines scheduled/file-based integration jobs.
+    Each record is one batch job: what data, which direction, where it comes from/goes,
+    when it runs. Referenced by Celery beat scheduler at runtime.
+    """
+    config_name: str = Field(..., description="Unique name for this batch job (e.g. 'SWIFT MT940 EOD Inbound')")
+    description: Optional[str] = None
+    direction: str = Field("INBOUND", description="INBOUND (we receive a file/batch) or OUTBOUND (we send one)")
+    scope: str = Field("EXTERNAL", description="EXTERNAL (outside bank) or INTERNAL (cross-system within bank)")
+    source_type: str = Field("SFTP", description="SFTP | S3 | FILE_DROP | API_POLL | MQ")
+    connection_config: Optional[Dict[str, Any]] = Field(None, description="host, port, path, credential_key_ref — never raw secrets")
+    schedule_cron: Optional[str] = Field(None, description="Cron expression e.g. '0 18 * * 1-5' = weekdays 6pm")
+    timezone: str = Field("UTC")
+    file_template_id: Optional[str] = Field(None, description="Optional File Template for layout validation")
+    retry_max_attempts: int = Field(3)
+    retry_backoff_sec: int = Field(60)
+    alert_on_failure_email: Optional[str] = None
+    application_package_id: Optional[str] = None
+
+class BatchGatewayConfigResponse(BatchGatewayConfigCreate):
+    config_id: str
+    status: str
+    created_at: str
+    created_by: str
+    updated_at: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class BatchGatewayConfigListResponse(BaseModel):
+    configurations: List[BatchGatewayConfigResponse]
 
 # =====================================================================
 # --- AI & MACHINE LEARNING SCHEMAS ---
