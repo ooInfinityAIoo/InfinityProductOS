@@ -5,7 +5,7 @@
 // They will be enforced at runtime by the Entitlement Configuration module,
 // which defines roles, users, and access rights as data — consistent with ADR #3.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { usePlatformStore } from '../store/usePlatformStore';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
@@ -20,6 +20,9 @@ export const MasterHeaderNav: React.FC = () => {
     workflowDraft,
     workflowReturnStepId,
   } = usePlatformStore();
+
+  // Controls the inline accordion for "Data Ingestion & Mapping" submenu inside Designer Studio dropdown
+  const [ingestionOpen, setIngestionOpen] = useState(false);
 
   const { data: themeData } = useQuery({
     queryKey: ['global-theme'],
@@ -142,18 +145,53 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-700">2. Document Checklist</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite files and customer documents.</div>
             </button>
-            <button onClick={() => setActiveModule('file-template-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">3. File Template Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define layouts for structured file import (CSV, Excel, SWIFT).</div>
-            </button>
-            <button onClick={() => setActiveModule('unstructured-document-studio')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">4. Unstructured Document Studio</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">AI extraction for PDFs, scanned images, and legal documents.</div>
-            </button>
-            <button onClick={() => setActiveModule('dge-canvas')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">5. Import File Mappers</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Map inbound fields to ISO targets using mappers.</div>
-            </button>
+            {/* Data Ingestion & Mapping accordion — clicking the header row expands 4 sub-items
+                inline. Side-flying submenus don't work reliably with a right-anchored dropdown
+                at varying viewport widths; accordion avoids that entirely. */}
+            <div className="border-b border-slate-100/50">
+              <button
+                onClick={() => setIngestionOpen(o => !o)}
+                className="w-full px-4 py-2.5 text-left hover:bg-cyan-50/40 flex items-center justify-between transition-colors"
+              >
+                <div>
+                  <div className="text-[12px] font-bold text-cyan-700">3. Data Ingestion & Mapping</div>
+                  <div className="text-[10px] text-slate-400 font-normal mt-0.5">File templates, document extraction, field mapping.</div>
+                </div>
+                <span className="text-slate-400 text-[10px] ml-2 transition-transform" style={{ transform: ingestionOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+              </button>
+              {ingestionOpen && (
+                <div className="bg-cyan-50/30 border-t border-cyan-100/50">
+                  <button onClick={() => setActiveModule('file-template-designer')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                    <span className="text-[11px]">📄</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">File Template Designer</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Structured file layouts (CSV, Excel, SWIFT).</div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveModule('unstructured-document-studio')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                    <span className="text-[11px]">🔍</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">Unstructured Document Studio</div>
+                      <div className="text-[10px] text-slate-400 font-normal">AI extraction for PDFs and scanned images.</div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveModule('ingestion-pipeline')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
+                    <span className="text-[11px]">📥</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">File Import Gateway</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Upload and execute live inbound files.</div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveModule('dge-canvas')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 transition-colors flex items-center gap-2">
+                    <span className="text-[11px]">🔀</span>
+                    <div>
+                      <div className="text-[11px] font-bold text-slate-700">Import File Mappers</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Map inbound fields to ISO 20022 targets.</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 2: Design Logic & Flow
