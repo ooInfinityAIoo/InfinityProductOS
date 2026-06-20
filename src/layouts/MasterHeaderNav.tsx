@@ -107,6 +107,10 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-indigo-600">Products Registry</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Core products, sub-products and variation catalogue.</div>
             </button>
+            <button onClick={() => setActiveModule('field-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">Data Dictionary</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Global data fields and ISO 20022 field registry.</div>
+            </button>
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Reference Tables
             </div>
@@ -137,13 +141,9 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 1: Define the Data
             </div>
-            <button onClick={() => setActiveModule('field-registry')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">1. Data Dictionary</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define global data fields and ISO 20022 schemas.</div>
-            </button>
             <button onClick={() => setActiveModule('document-master')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">2. Document Checklist</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite files and customer documents.</div>
+              <div className="text-[12px] font-bold text-slate-700">1. Document Checklist</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define prerequisite documents and customer files.</div>
             </button>
             {/* Data Ingestion & Mapping accordion — clicking the header row expands 4 sub-items
                 inline. Side-flying submenus don't work reliably with a right-anchored dropdown
@@ -154,7 +154,7 @@ export const MasterHeaderNav: React.FC = () => {
                 className="w-full px-4 py-2.5 text-left hover:bg-cyan-50/40 flex items-center justify-between transition-colors"
               >
                 <div>
-                  <div className="text-[12px] font-bold text-cyan-700">3. Data Ingestion & Mapping</div>
+                  <div className="text-[12px] font-bold text-cyan-700">2. Data Ingestion & Mapping</div>
                   <div className="text-[10px] text-slate-400 font-normal mt-0.5">File templates, document extraction, field mapping.</div>
                 </div>
                 <span className="text-slate-400 text-[10px] ml-2 transition-transform" style={{ transform: ingestionOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
@@ -197,15 +197,15 @@ export const MasterHeaderNav: React.FC = () => {
               Phase 2: Design Logic & Flow
             </div>
             <button onClick={() => setActiveModule('workflow-designer')} className="px-4 py-2.5 text-left hover:bg-indigo-50/30 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">5. Process Flow Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Orchestrate operational workflows and steps.</div>
+              <div className="text-[12px] font-bold text-indigo-600">4. Workflow Designer</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design transaction and onboarding workflow DAGs.</div>
             </button>
             <button onClick={() => setActiveModule('business-rules')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">6. Decision Logic & Policies</div>
+              <div className="text-[12px] font-bold text-slate-700">5. Decision Logic & Policies</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure validation matrices and business rules.</div>
             </button>
             <button onClick={() => setActiveModule('calculation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">7. Calculations & Formulas</div>
+              <div className="text-[12px] font-bold text-slate-700">6. Calculations & Formulas</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design pricing logic, rates, and math formulas.</div>
             </button>
 
@@ -213,11 +213,11 @@ export const MasterHeaderNav: React.FC = () => {
               Phase 3: Connect & Render
             </div>
             <button onClick={() => setActiveModule('api-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">8. External Connectors</div>
+              <div className="text-[12px] font-bold text-slate-700">7. External Connectors</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design integration endpoints and transaction gateways.</div>
             </button>
             <button onClick={() => setActiveModule('screen-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">9. User Screen Designer</div>
+              <div className="text-[12px] font-bold text-slate-700">8. User Screen Designer</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design layout canvases for user interfaces.</div>
             </button>
             <button onClick={() => setActiveModule('legacy-onboarding')} className="px-4 py-2.5 text-left hover:bg-amber-50/40 border-b border-slate-100/50 transition-colors">
@@ -229,19 +229,19 @@ export const MasterHeaderNav: React.FC = () => {
               Phase 4: Monitor, Output & Intelligence
             </div>
             <button onClick={() => setActiveModule('reconciliation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">10. Reconciliation Matchers</div>
+              <div className="text-[12px] font-bold text-slate-700">9. Reconciliation Matchers</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment matching criteria.</div>
             </button>
             <button onClick={() => setActiveModule('behavioral-profiles')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">11. Behavioral Profiling Models</div>
+              <div className="text-[12px] font-bold text-slate-700">10. Behavioral Profiling Models</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
             </button>
             <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">12. Report Templates</div>
+              <div className="text-[12px] font-bold text-slate-700">11. Report Templates</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
             </button>
             <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">13. Insights Factory</div>
+              <div className="text-[12px] font-bold text-indigo-600">12. Insights Factory</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
             </button>
 
