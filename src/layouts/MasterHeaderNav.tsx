@@ -127,6 +127,29 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-slate-500">Holiday & Calendar</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Settlement calendars, cut-off times per jurisdiction.</div>
             </button>
+
+            {/* Access & Authorization — IAM config lives in Master because every studio
+                reads it at runtime (Layer 6). Keeping it here means auditors find it in
+                one place, and the 4-Eye pattern never nests inside the thing it governs. */}
+            <div className="px-4 py-2 bg-rose-50/60 border-t border-rose-100/50 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-wider text-rose-400">
+              Access &amp; Authorization
+            </div>
+            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">🧑‍💼 Users</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Create and manage platform user accounts.</div>
+            </button>
+            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">🏷 Roles</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define named roles (DESIGNER, APPROVER, VIEWER, etc.).</div>
+            </button>
+            <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/50 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🔐 Entitlement Configuration</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Map permissions to roles — who can view, modify, or approve each entity.</div>
+            </button>
+            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 transition-colors opacity-50 cursor-not-allowed">
+              <div className="text-[12px] font-bold text-slate-500">🔲 Authorization Matrix</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Cross-reference view: role × resource × allowed actions.</div>
+            </button>
           </div>
         </div>
 
@@ -252,43 +275,35 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-amber-700">🏛 Legacy Screen Onboarding</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Upload T24/Flexcube screenshots → AI extracts fields → auto-generate screens.</div>
             </button>
+            <button onClick={() => setActiveModule('comm-templates')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">9. Document Template Designer</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
+            </button>
+            <button onClick={() => setActiveModule('notification-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">10. Notification Engine</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure EMAIL, SMS, and LETTER triggers per workflow node.</div>
+            </button>
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Phase 4: Monitor, Output & Intelligence
             </div>
             <button onClick={() => setActiveModule('reconciliation-engine')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">9. Reconciliation Engine</div>
+              <div className="text-[12px] font-bold text-slate-700">11. Reconciliation Engine</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment matching criteria.</div>
             </button>
             <button onClick={() => setActiveModule('behavioral-profiles')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">10. Behavioral Profiling Models</div>
+              <div className="text-[12px] font-bold text-slate-700">12. Behavioral Profiling Models</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Track system activity patterns and risk behaviors.</div>
             </button>
             <button onClick={() => setActiveModule('report-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">11. Report Designer Engine</div>
+              <div className="text-[12px] font-bold text-slate-700">13. Report Designer Engine</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design statements, balances, and export grids.</div>
             </button>
             <button onClick={() => setActiveModule('insights-factory')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">12. Insights Factory</div>
+              <div className="text-[12px] font-bold text-indigo-600">14. Insights Factory</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design analytical workflows, alerts, and intelligence widgets.</div>
             </button>
 
-            {/* Platform Administration — access control, entitlements */}
-            <div className="px-4 py-2 bg-rose-50/60 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-wider text-rose-400">
-              Platform Administration
-            </div>
-            <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-rose-600">🔐 Entitlement Configuration</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Control who can view, modify, or approve each entity per role.</div>
-            </button>
-            <button onClick={() => setActiveModule('comm-templates')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
-              <div className="text-[12px] font-bold text-rose-600">📨 Document Template Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
-            </button>
-            <button onClick={() => setActiveModule('notification-engine')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
-              <div className="text-[12px] font-bold text-rose-600">🔔 Notification Engine</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure EMAIL, SMS Wait, and LETTER triggers per workflow node.</div>
-            </button>
 
           </div>
         </div>
