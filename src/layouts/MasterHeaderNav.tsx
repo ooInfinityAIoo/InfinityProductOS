@@ -204,6 +204,10 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-rose-600">📋 Document Checklist Canvas</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define required documents per workflow step. Mandatory items block progression.</div>
             </button>
+            <button onClick={() => setActiveModule('notification-engine')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🔔 Notification Engine</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure EMAIL, SMS Wait, and LETTER triggers per workflow node.</div>
+            </button>
 
           </div>
         </div>

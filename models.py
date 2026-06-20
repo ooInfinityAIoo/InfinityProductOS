@@ -1127,5 +1127,100 @@ class EntitlementPolicy(Base):
     updated_by = Column(String, nullable=True)
 
 
+class NotificationPolicy(Base):
+    """
+    WHY THIS EXISTS (WS-7 — Notification Engine):
+    A named, versioned collection of notification triggers that can be attached
+    to a workflow node. When the node executes, the Workflow Executor fires every
+    LIVE trigger in the attached policy in sort_order sequence.
+
+    Separating the policy from the workflow node lets the same policy be reused
+    across nodes (e.g. "AML Alert Policy" used by the Credit Approval node in both
+    FX Hub and Trade Finance Hub). Versioned lifecycle means you can update
+    notification config without touching the workflow graph itself.
+
+    WHAT BREAKS IF REMOVED:
+    Workflow nodes have no notification capability — no customer confirmations,
+    no risk team alerts, no SMS-wait gates.
+    """
+    __tablename__ = "notification_policies"
+
+    policy_id = Column(String, primary_key=True, index=True)
+    policy_name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # Scoped to a package — NULL means platform-wide (shared across packages)
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # Versioning — editing a LIVE policy creates a new version; old stays live
+    version_number = Column(Integer, nullable=False, default=1)
+    parent_policy_id = Column(String, nullable=True, index=True)
+
+    # Lifecycle: DRAFT → PENDING_APPROVAL → LIVE → ARCHIVED
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+
+    # Audit
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False)
+    made_live_at = Column(String, nullable=True)
+    made_live_by = Column(String, nullable=True)
+
+
+class NotificationTrigger(Base):
+    """
+    WHY THIS EXISTS:
+    An individual notification instruction within a NotificationPolicy.
+    Defines WHO gets notified, via WHAT channel, using WHICH template,
+    and whether the workflow should PAUSE waiting for their reply (SMS-Wait).
+
+    Recipient resolution at runtime:
+    - ROLE_BASED → all platform users with the given role_code in this package
+    - ISO_FIELD  → contact pulled from the live transaction record
+                   (e.g. ISO.BeneficiaryPhone, ISO.OriginatorEmail)
+                   Works for end customers — their data lives in the transaction
+    - STATIC     → fixed address for external partners / vendor integrations
+                   (accepted override of ADR #3 for truly external systems)
+
+    SMS-Wait: the Workflow Executor sends the SMS then enters WAITING state.
+    It does NOT decide what to do on timeout — that is the workflow graph's job
+    (a timeout branch edge, or a business rule on the next node). Clean separation.
+    """
+    __tablename__ = "notification_triggers"
+
+    trigger_id = Column(String, primary_key=True, index=True)
+    policy_id = Column(String, ForeignKey("notification_policies.policy_id", ondelete="CASCADE"), nullable=False, index=True)
+
+    trigger_name = Column(String, nullable=False)
+
+    # Which comm template provides the content (body, subject, channel type)
+    comm_template_id = Column(String, ForeignKey("communication_templates.template_id"), nullable=True)
+
+    # Channel — EMAIL | SMS_WAIT | LETTER
+    # SMS_WAIT = send SMS and pause the workflow until customer replies (or timeout)
+    notification_type = Column(String, nullable=False)
+
+    # Who gets this notification
+    recipient_mode = Column(String, nullable=False)  # ROLE_BASED | ISO_FIELD | STATIC
+    recipient_role = Column(String, nullable=True)   # e.g. RISK, OPERATOR (ROLE_BASED mode)
+    recipient_iso_field = Column(String, nullable=True)  # e.g. ISO.BeneficiaryEmail (ISO_FIELD mode)
+    recipient_static = Column(String, nullable=True) # e.g. compliance@partner.com (STATIC mode)
+
+    # Human-readable label for who this reaches — shown in the studio UI
+    # e.g. "Customer", "Risk Team", "External Compliance Partner"
+    audience_label = Column(String, nullable=True)
+
+    # SMS-Wait config — only relevant when notification_type = SMS_WAIT
+    # The workflow PAUSES after sending. Timeout = how long to wait for reply.
+    # What happens AFTER timeout is the Workflow Executor's responsibility (graph logic).
+    wait_for_reply = Column(Boolean, nullable=False, default=False)
+    timeout_minutes = Column(Integer, nullable=True)  # NULL = wait indefinitely
+
+    # Execution order within the policy
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(String, nullable=False)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)

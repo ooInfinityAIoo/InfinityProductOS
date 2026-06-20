@@ -224,6 +224,21 @@ const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: 
       'Design a letter notifying counterparty of a failed payment',
     ],
   },
+  'notification-engine': {
+    title: 'Notification Engine',
+    tips: [
+      'EMAIL and LETTER fire and the workflow continues immediately — no pause.',
+      'SMS Wait sends an SMS then PAUSES the workflow until the customer replies. Timeout/escalation is configured in the Workflow Designer, not here.',
+      'ISO Field recipient mode reads the contact from the live transaction — the right way to reach end customers.',
+      'Template picker only shows LIVE templates. Create and publish templates in Document Template Designer first.',
+      'Cannot modify triggers on a LIVE policy — create a new version instead.',
+    ],
+    examples: [
+      'Create a policy that sends an AML alert to the RISK team and waits for customer SMS confirmation',
+      'How do I notify the beneficiary email from the transaction when a payment is approved?',
+      'What is the difference between SMS Wait and Email in terms of workflow behaviour?',
+    ],
+  },
   'doc-checklists': {
     title: 'Document Checklist Canvas',
     tips: [

@@ -26,6 +26,7 @@ const FileTemplateDesignerStudio = lazy(() => import('./features/templates/FileT
 const EntitlementConfigStudio = lazy(() => import('./features/entitlements/EntitlementConfigStudio').then(m => ({ default: m.EntitlementConfigStudio })));
 const DocumentTemplateDesigner = lazy(() => import('./features/comm-templates/DocumentTemplateDesigner').then(m => ({ default: m.DocumentTemplateDesigner })));
 const DocumentChecklistCanvas = lazy(() => import('./features/doc-checklists/DocumentChecklistCanvas').then(m => ({ default: m.DocumentChecklistCanvas })));
+const NotificationEngineStudio = lazy(() => import('./features/notification-engine/NotificationEngineStudio').then(m => ({ default: m.NotificationEngineStudio })));
 const PackageDashboard = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.PackageDashboard })));
 const ProductsRegistry = lazy(() => import('./features/dashboard/PackageDashboard').then(m => ({ default: m.ProductsRegistry })));
 const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalTechnicalDashboard').then(m => ({ default: m.GlobalTechnicalDashboard })));
@@ -108,6 +109,7 @@ function App() {
           {activeModule === 'entitlements' && <EntitlementConfigStudio />}
           {activeModule === 'comm-templates' && <DocumentTemplateDesigner />}
           {activeModule === 'doc-checklists' && <DocumentChecklistCanvas />}
+          {activeModule === 'notification-engine' && <NotificationEngineStudio />}
         </Suspense>
       </main>
     </div>
