@@ -925,6 +925,85 @@ class SimulationJob(Base):
     created_at = Column(String, nullable=False)
 
 
+class DocumentChecklist(Base):
+    """
+    WHY THIS EXISTS (WS-6 — Document Checklist Canvas):
+    Defines which documents must be collected at a specific workflow step before
+    the workflow can advance. A checklist is a named container (e.g. "KYC Checklist
+    for Corporate Onboarding") that holds one or more DocumentChecklistItem rows.
+
+    At runtime the workflow node references a checklist_id. Before allowing the
+    operator to advance to the next step, the Runtime Engine checks:
+      - All MANDATORY items have been uploaded and marked verified
+      - OPTIONAL items are flagged but do not block progression
+
+    A checklist can be reused across multiple workflow nodes and packages.
+    Versioned and 4-Eye approved — same lifecycle as screens and templates.
+
+    WHAT BREAKS IF REMOVED:
+    Workflow steps that require document collection (KYC, credit approval,
+    compliance sign-off) have no enforcement gate — operators can skip past
+    them without uploading required documents.
+    """
+    __tablename__ = "document_checklists"
+
+    checklist_id = Column(String, primary_key=True, index=True)
+    checklist_name = Column(String, nullable=False, index=True)     # e.g. "Corporate KYC Checklist"
+    description = Column(Text, nullable=True)
+
+    # Which workflow step this checklist is designed for (informational — actual
+    # attachment is done in the workflow node config panel, WS-10)
+    intended_workflow_step = Column(String, nullable=True)          # e.g. "Credit Approval", "Account Opening"
+
+    # Package scope
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # Versioning — same pattern as ScreenTemplate and CommunicationTemplate
+    version_number = Column(Integer, nullable=False, default=1)
+    parent_checklist_id = Column(String, nullable=True, index=True)
+
+    # Lifecycle
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    # DRAFT | PENDING_APPROVAL | LIVE | ARCHIVED
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, default="SYSTEM")
+    made_live_at = Column(String, nullable=True)
+    made_live_by = Column(String, nullable=True)
+
+
+class DocumentChecklistItem(Base):
+    """
+    WHY THIS EXISTS:
+    One row per document required within a checklist. Separating items into their
+    own table (rather than a JSONB array on DocumentChecklist) allows:
+    - Independent sort ordering
+    - FK reference to DocumentMaster for type safety
+    - Granular status tracking per item at runtime (uploaded / verified / rejected)
+
+    accepted_formats: comma-separated or JSON list e.g. ["PDF", "JPG", "PNG"]
+    is_mandatory: False = document shown and encouraged but does not block workflow
+    upload_instructions: plain text shown to the bank operator at runtime
+    """
+    __tablename__ = "document_checklist_items"
+
+    item_id = Column(String, primary_key=True, index=True)
+    checklist_id = Column(String, ForeignKey("document_checklists.checklist_id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Reference to the document type master (what kind of doc is this?)
+    document_master_id = Column(String, ForeignKey("document_master.document_id"), nullable=True, index=True)
+    document_name = Column(String, nullable=False)       # denormalised for display when no FK
+
+    is_mandatory = Column(Boolean, nullable=False, default=True)
+    accepted_formats = Column(JSONB, nullable=True)      # e.g. ["PDF", "JPG"]
+    max_file_size_mb = Column(Integer, nullable=True, default=10)
+    upload_instructions = Column(Text, nullable=True)    # shown to operator at runtime
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(String, nullable=False)
+
+
 class CommunicationTemplate(Base):
     """
     WHY THIS EXISTS (WS-5 — Document Template Designer):

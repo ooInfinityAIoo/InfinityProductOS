@@ -224,6 +224,21 @@ const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: 
       'Design a letter notifying counterparty of a failed payment',
     ],
   },
+  'doc-checklists': {
+    title: 'Document Checklist Canvas',
+    tips: [
+      'MANDATORY items block the workflow from advancing until the document is uploaded and verified.',
+      'OPTIONAL items are shown to the operator but do not block progression.',
+      'Cannot submit an empty checklist — at least one document requirement is needed.',
+      '4-Eye rule: the person who approves (Make it Live) must be different from the creator.',
+      'Cannot add/remove items from a LIVE checklist — create a new version instead.',
+    ],
+    examples: [
+      'Create a KYC checklist requiring Company Registration, Directors List, and Bank Reference',
+      'Which documents are mandatory for the Credit Approval workflow step?',
+      'How do I create a new version of a live checklist?',
+    ],
+  },
   'entitlements': {
     title: 'Entitlement Configuration',
     tips: [

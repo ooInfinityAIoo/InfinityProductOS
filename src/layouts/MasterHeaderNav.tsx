@@ -200,6 +200,10 @@ export const MasterHeaderNav: React.FC = () => {
               <div className="text-[12px] font-bold text-rose-600">📨 Document Template Designer</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
             </button>
+            <button onClick={() => setActiveModule('doc-checklists')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">📋 Document Checklist Canvas</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define required documents per workflow step. Mandatory items block progression.</div>
+            </button>
 
           </div>
         </div>
