@@ -210,6 +210,20 @@ const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: 
       'What event types are emitted by the Reconciliation Engine?',
     ],
   },
+  'comm-templates': {
+    title: 'Document Template Designer',
+    tips: [
+      'Use {{ISO.FieldName}} placeholders — the Notification Engine replaces them with live transaction data at runtime.',
+      'SMS templates: keep body under 160 characters. The wait-for-reply pattern can pause a workflow until the customer responds.',
+      'EMAIL and LETTER templates support rich ISO field composition — chain multiple fields in one sentence.',
+      'Going LIVE requires a second approver — a wrong template sends wrong data to bank customers at scale.',
+    ],
+    examples: [
+      'Create an email confirming a SWIFT payment with amount and reference',
+      'Write an SMS asking customer to confirm a high-value transfer',
+      'Design a letter notifying counterparty of a failed payment',
+    ],
+  },
   'entitlements': {
     title: 'Entitlement Configuration',
     tips: [

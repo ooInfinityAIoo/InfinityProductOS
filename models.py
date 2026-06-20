@@ -925,6 +925,65 @@ class SimulationJob(Base):
     created_at = Column(String, nullable=False)
 
 
+class CommunicationTemplate(Base):
+    """
+    WHY THIS EXISTS (WS-5 — Document Template Designer):
+    Stores reusable communication templates for EMAIL, LETTER (PDF), and SMS
+    that are attached to workflow nodes and dispatched by the Notification Engine
+    at runtime. Templates contain ISO field placeholders (e.g. {{Currency.Amount}},
+    {{Counterparty.Name}}) that are substituted with live transaction data when sent.
+
+    Design principles:
+    - Versioned: same lifecycle as ScreenTemplate (DRAFT → PENDING_APPROVAL → LIVE → ARCHIVED)
+    - ISO-anchored: placeholders reference iso_business_name fields — not hardcoded strings
+    - Type-specific: EMAIL has subject+body, LETTER has full rich body for PDF render,
+      SMS has short body only (160 char guidance enforced at UI level)
+    - 4-Eye approved before live: a template going live is a governance action
+      (a wrong template could send incorrect info to bank customers)
+
+    WHAT BREAKS IF REMOVED:
+    Workflow Notification Engine has no templates to render — cannot send
+    emails, letters, or SMS at any workflow step.
+    """
+    __tablename__ = "communication_templates"
+
+    template_id = Column(String, primary_key=True, index=True)
+    template_name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # Template type drives which fields are required and how it's rendered
+    template_type = Column(String, nullable=False, index=True)  # EMAIL | LETTER | SMS
+
+    # EMAIL fields
+    subject_line = Column(String, nullable=True)        # supports placeholders: "Your {{Currency.Amount}} transfer is confirmed"
+
+    # Shared body — plain text with {{ISO.Field}} placeholders
+    # EMAIL: HTML-safe rich text; LETTER: formatted for PDF; SMS: max 160 chars guidance
+    body_content = Column(Text, nullable=False)
+
+    # ISO field placeholders used in this template — stored as JSON array of iso_business_name strings
+    # e.g. ["Currency.Amount", "Counterparty.Name", "Account1.Identification"]
+    # Populated automatically when user inserts a placeholder; used by runtime to pre-fetch fields
+    referenced_iso_fields = Column(JSONB, nullable=True)
+
+    # Versioning — same pattern as ScreenTemplate (WS-2)
+    version_number = Column(Integer, nullable=False, default=1)
+    parent_template_id = Column(String, nullable=True, index=True)  # NULL = v1
+
+    # Lifecycle state
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    # DRAFT | PENDING_APPROVAL | LIVE | ARCHIVED
+
+    # Package scope
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, default="SYSTEM")
+    made_live_at = Column(String, nullable=True)
+    made_live_by = Column(String, nullable=True)
+
+
 class EntitlementPolicy(Base):
     """
     WHY THIS EXISTS (WS-8 — Entitlement Configuration Module):

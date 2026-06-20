@@ -14,7 +14,7 @@ export interface PlatformState {
   userRole: UserRole;
   
   // --- Navigation & Routing State ---
-  activeModule: 'dashboard' | 'domain-dashboard' | 'global-technical-dashboard' | 'products-registry' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'document-master' | 'unstructured-document-studio' | 'file-template-designer' | 'entitlements' | null;
+  activeModule: 'dashboard' | 'domain-dashboard' | 'global-technical-dashboard' | 'products-registry' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'document-master' | 'unstructured-document-studio' | 'file-template-designer' | 'entitlements' | 'comm-templates' | null;
   viewMode: ViewMode;
   hasUnsavedChanges: boolean;
   isWizardOpen: boolean;

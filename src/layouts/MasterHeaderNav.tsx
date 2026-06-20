@@ -192,9 +192,13 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-rose-50/60 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-wider text-rose-400">
               Platform Administration
             </div>
-            <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
+            <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-rose-600">🔐 Entitlement Configuration</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Control who can view, modify, or approve each entity per role.</div>
+            </button>
+            <button onClick={() => setActiveModule('comm-templates')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">📨 Document Template Designer</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Design EMAIL, LETTER and SMS templates with ISO field placeholders.</div>
             </button>
 
           </div>
