@@ -174,14 +174,18 @@ const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: 
   'unstructured-document-studio': {
     title: 'Unstructured Document Studio',
     tips: [
-      'AI extraction confidence scores below 0.85 are flagged for human review.',
-      'Train extraction models by uploading labelled sample documents.',
-      'Map extracted entities back to ISO registry fields for downstream use.',
+      'Create document types first in Document Master Studio (e.g. "Invoice", "Legal Contract") — the extraction profile picker pulls from there.',
+      'PDF Structured: use position hints like "bottom-right, last row of amount table" for OCR zone targeting.',
+      'PDF Agentic: write section prompts that tell the AI WHERE to look in the document, then field prompts for WHAT to extract from that section.',
+      'Image OCR: always enable deskew + denoise for scanned documents. Add contrast_boost for faded or photocopied pages.',
+      'Set confidence threshold high (90%+) for financial fields. Lower (75%) is acceptable for optional metadata fields.',
+      'HUMAN_REVIEW fallback is the safest default — flags low-confidence fields for operator verification before workflow proceeds.',
     ],
     examples: [
-      'How do I extract invoice amounts from unstructured PDFs?',
-      'What happens when AI confidence is too low?',
-      'How do I link extracted fields to the Data Gateway Mapper?',
+      'Create a PDF Agentic blueprint to extract governing law and payment terms from legal contracts',
+      'How do I configure OCR zones for a bank statement PDF with a predictable layout?',
+      'What pre-processing steps should I use for photocopied KYC documents?',
+      'How does the confidence threshold work and what fallback mode should I choose?',
     ],
   },
   'insights-factory': {

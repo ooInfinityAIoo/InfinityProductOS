@@ -23,7 +23,7 @@ import schemas
 import openpyxl
 
 # --- Router Imports ---
-from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights, reconciliation_engine, reporting, documents, templates, simulations, iso_domains, entitlements, comm_templates, doc_checklists, notification_policies
+from routers import registry, workflows, governance, calculations, mappers, masters, ingestion, maintenance, users, dashboard, health, screens, integrations, mock_services, ai_module, rules, domain_apis, ai_assistant, events, insights, reconciliation_engine, reporting, documents, templates, simulations, iso_domains, entitlements, comm_templates, doc_checklists, notification_policies, unstructured_docs
 
 api_description = """
 **Infinity ProductOS Core Execution Engine API** 🚀
@@ -100,6 +100,7 @@ app.include_router(entitlements.router)
 app.include_router(comm_templates.router)
 app.include_router(doc_checklists.router)
 app.include_router(notification_policies.router)
+app.include_router(unstructured_docs.router)
 app.include_router(registry.router)
 app.include_router(workflows.router)
 app.include_router(governance.router)

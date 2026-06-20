@@ -133,11 +133,15 @@ export const MasterHeaderNav: React.FC = () => {
             </button>
             <button onClick={() => setActiveModule('file-template-designer')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-slate-700">3. File Template Designer</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define layouts for importing document streams.</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define layouts for structured file import (CSV, Excel, SWIFT).</div>
+            </button>
+            <button onClick={() => setActiveModule('unstructured-document-studio')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-slate-700">4. Unstructured Document Studio</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">AI extraction for PDFs, scanned images, and legal documents.</div>
             </button>
             <button onClick={() => setActiveModule('dge-canvas')} className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-slate-700">4. Import File Mappers</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Map inbound fields to targets using mappers.</div>
+              <div className="text-[12px] font-bold text-slate-700">5. Import File Mappers</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Map inbound fields to ISO targets using mappers.</div>
             </button>
 
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">

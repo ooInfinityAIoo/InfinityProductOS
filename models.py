@@ -1222,5 +1222,77 @@ class NotificationTrigger(Base):
     created_at = Column(String, nullable=False)
 
 
+class UnstructuredExtractionBlueprint(Base):
+    """
+    WHY THIS EXISTS (WS-9 — Unstructured Document Studio):
+    Configuration blueprint for AI-driven extraction from documents that cannot
+    be read with simple column/cell addressing (unlike File Template Designer,
+    which handles structured CSV/Excel/SWIFT layouts).
+
+    Three extraction profiles:
+      PDF_STRUCTURED — PDF with predictable layout (invoices, bank statements).
+                       Uses OCR zone config: "amount table bottom-right page 1".
+      PDF_AGENTIC    — Long-form documents (legal contracts, KYC packs, compliance
+                       reports). Section-aware agentic chain: the AI reads the whole
+                       document to find governing law, jurisdiction, obligations etc.
+      IMAGE_OCR      — Scanned/photographed documents requiring pre-processing
+                       (deskew, denoise) before OCR zone extraction.
+
+    document_type_id links to DocumentMaster (user-defined, not hardcoded enum).
+    Users create their own types ("Invoice", "Legal Contract", "AML Certificate")
+    in Document Master Studio first — consistent with ADR #3 no-code principle.
+
+    ai_extraction_config JSONB structure varies by profile (see router comments).
+    fallback_mode defines what happens when confidence < threshold:
+      SKIP_FIELD    — leave the ISO field empty, continue processing
+      HUMAN_REVIEW  — flag the extraction for human verification before proceeding
+      USE_DEFAULT   — fill with the default_value specified per rule
+
+    WHAT BREAKS IF REMOVED:
+    PDFs, scanned documents, and long legal contracts cannot be ingested into
+    the platform. KYC document automation, invoice processing, and contract
+    analysis all stop working.
+    """
+    __tablename__ = "unstructured_extraction_blueprints"
+
+    blueprint_id = Column(String, primary_key=True, index=True)
+    blueprint_name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # User-defined document type from DocumentMaster — NOT a hardcoded enum (ADR #3)
+    # e.g., "Invoice", "Legal Contract", "KYC Pack", "AML Certificate"
+    document_type_id = Column(String, ForeignKey("document_master.document_id"), nullable=True, index=True)
+
+    # Which AI extraction approach to use
+    extraction_profile = Column(String, nullable=False)  # PDF_STRUCTURED | PDF_AGENTIC | IMAGE_OCR
+
+    # Profile-specific extraction rules stored as JSONB
+    # PDF_STRUCTURED: {"extraction_rules": [{rule_name, page, position_hint, iso_field, is_mandatory, confidence_threshold}]}
+    # PDF_AGENTIC:    {"sections": [{section_name, section_prompt, fields: [{field_name, extraction_prompt, iso_field, is_mandatory}]}]}
+    # IMAGE_OCR:      {"pre_processing": ["deskew","denoise"], "language": "en", "extraction_rules": [...same as PDF_STRUCTURED...]}
+    ai_extraction_config = Column(JSONB, nullable=True)
+
+    # Global confidence threshold — per-rule overrides live inside ai_extraction_config
+    confidence_threshold = Column(Float, nullable=False, default=0.80)
+
+    # What to do when confidence < threshold
+    fallback_mode = Column(String, nullable=False, default="HUMAN_REVIEW")  # SKIP_FIELD | HUMAN_REVIEW | USE_DEFAULT
+
+    # Scoped to a package
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # Lifecycle: DRAFT → PENDING_APPROVAL → LIVE → ARCHIVED
+    version_number = Column(Integer, nullable=False, default=1)
+    parent_blueprint_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+
+    # Audit
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False)
+    made_live_at = Column(String, nullable=True)
+    made_live_by = Column(String, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
