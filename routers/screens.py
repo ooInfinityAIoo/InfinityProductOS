@@ -245,3 +245,187 @@ def bulk_delete_unused_screen_templates(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during bulk deletion: {str(e)}")
 
     return {"deleted_count": deleted_count, "message": f"Successfully deleted {deleted_count} unused screen templates."}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WS-2: SCREEN LIFECYCLE — "Make it Live" + versioning
+# WS-3: BUSINESS DOMAIN endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/{screen_id}/submit-for-approval", summary="Submit Screen for 4-Eye Approval")
+def submit_screen_for_approval(screen_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """
+    Moves a DRAFT screen to PENDING_APPROVAL.
+    A second approver must then call /make-live to promote it.
+    Builder cannot approve their own screen (4-Eye rule enforced at make-live).
+    """
+    screen = db.query(models.ScreenTemplate).filter(models.ScreenTemplate.screen_id == screen_id).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found.")
+    if screen.status != "DRAFT":
+        raise HTTPException(status_code=400, detail=f"Only DRAFT screens can be submitted. Current status: {screen.status}")
+    screen.status = "PENDING_APPROVAL"
+    screen.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    return {"screen_id": screen_id, "status": "PENDING_APPROVAL", "message": "Screen submitted for 4-Eye approval."}
+
+
+@router.post("/{screen_id}/make-live", summary="Make a Screen Live (4-Eye approval)")
+def make_screen_live(screen_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """
+    WHY THIS EXISTS:
+    The "Make it Live" action — promotes a PENDING_APPROVAL screen to LIVE.
+    When approved:
+    1. The previous LIVE version (if any) is ARCHIVED — never deleted.
+    2. This version becomes LIVE and appears in the Package sidebar navigation.
+    3. bank users can now see and use this screen.
+
+    4-Eye rule: the user making it live must not be the same as created_by.
+    (Currently a warning — full entitlement enforcement comes with WS-8.)
+    """
+    screen = db.query(models.ScreenTemplate).filter(models.ScreenTemplate.screen_id == screen_id).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found.")
+    if screen.status != "PENDING_APPROVAL":
+        raise HTTPException(status_code=400, detail=f"Only PENDING_APPROVAL screens can go live. Current status: {screen.status}")
+
+    now = datetime.datetime.utcnow().isoformat()
+    approver = current_user.get("user_id", "SYSTEM")
+
+    # Soft 4-Eye check — warn but don't hard-block until Entitlement module (WS-8) is live
+    if screen.created_by == approver:
+        raise HTTPException(status_code=403, detail="4-Eye rule: the person who created this screen cannot approve it live. A second reviewer must approve.")
+
+    # Archive any currently LIVE version of this screen (same name, same package)
+    # parent_screen_id=None means this IS the root version; find siblings via parent or self
+    root_id = screen.parent_screen_id or screen.screen_id
+    db.query(models.ScreenTemplate).filter(
+        models.ScreenTemplate.status == "LIVE",
+        models.ScreenTemplate.screen_id != screen_id,
+        (models.ScreenTemplate.screen_id == root_id) |
+        (models.ScreenTemplate.parent_screen_id == root_id)
+    ).update({"status": "ARCHIVED", "updated_at": now}, synchronize_session=False)
+
+    # Promote this version to LIVE
+    screen.status = "LIVE"
+    screen.made_live_at = now
+    screen.made_live_by = approver
+    screen.updated_at = now
+    db.commit()
+
+    return {
+        "screen_id": screen_id,
+        "status": "LIVE",
+        "made_live_at": now,
+        "made_live_by": approver,
+        "message": f"Screen '{screen.screen_name}' v{screen.version_number} is now LIVE."
+    }
+
+
+@router.post("/{screen_id}/create-new-version", summary="Create New Draft Version of a Live Screen")
+def create_new_version(screen_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    """
+    WHY THIS EXISTS:
+    When a bank wants to modify a LIVE screen (e.g. add a holiday calendar field),
+    they must not edit the live version directly. This endpoint creates a new DRAFT
+    copy with version_number incremented. The LIVE version keeps running uninterrupted
+    until the new version passes 4-Eye approval and is made live.
+    """
+    live_screen = db.query(models.ScreenTemplate).filter(models.ScreenTemplate.screen_id == screen_id).first()
+    if not live_screen:
+        raise HTTPException(status_code=404, detail="Screen not found.")
+    if live_screen.status != "LIVE":
+        raise HTTPException(status_code=400, detail="Only LIVE screens can spawn a new version.")
+
+    # Find the highest existing version number for this screen lineage
+    root_id = live_screen.parent_screen_id or live_screen.screen_id
+    max_version = db.query(func.max(models.ScreenTemplate.version_number)).filter(
+        (models.ScreenTemplate.screen_id == root_id) |
+        (models.ScreenTemplate.parent_screen_id == root_id)
+    ).scalar() or 1
+
+    now = datetime.datetime.utcnow().isoformat()
+    new_screen = models.ScreenTemplate(
+        screen_id=f"SCRN-{uuid.uuid4().hex[:12].upper()}",
+        screen_name=live_screen.screen_name,
+        description=live_screen.description,
+        version_number=max_version + 1,
+        parent_screen_id=root_id,
+        status="DRAFT",
+        screen_template_category=live_screen.screen_template_category,
+        application_package_id=live_screen.application_package_id,
+        product_id=live_screen.product_id,
+        subproduct_id=live_screen.subproduct_id,
+        workflow_id=live_screen.workflow_id,
+        workflow_step_id=live_screen.workflow_step_id,
+        linked_api_id=live_screen.linked_api_id,
+        business_domain_id=live_screen.business_domain_id,
+        definition=live_screen.definition,
+        created_at=now,
+        updated_at=now,
+        created_by=current_user.get("user_id", "SYSTEM"),
+    )
+    db.add(new_screen)
+    db.commit()
+    db.refresh(new_screen)
+
+    return {
+        "screen_id": new_screen.screen_id,
+        "version_number": new_screen.version_number,
+        "parent_screen_id": root_id,
+        "status": "DRAFT",
+        "message": f"New draft v{new_screen.version_number} created. Live v{live_screen.version_number} continues running."
+    }
+
+
+@router.get("/{screen_id}/versions", summary="Get All Versions of a Screen")
+def get_screen_versions(screen_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """Returns the full version history of a screen (for audit and design review)."""
+    screen = db.query(models.ScreenTemplate).filter(models.ScreenTemplate.screen_id == screen_id).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found.")
+    root_id = screen.parent_screen_id or screen.screen_id
+    versions = db.query(models.ScreenTemplate).filter(
+        (models.ScreenTemplate.screen_id == root_id) |
+        (models.ScreenTemplate.parent_screen_id == root_id)
+    ).order_by(models.ScreenTemplate.version_number).all()
+    return {
+        "screen_name": screen.screen_name,
+        "versions": [{"screen_id": v.screen_id, "version_number": v.version_number,
+                      "status": v.status, "created_at": v.created_at,
+                      "made_live_at": v.made_live_at, "made_live_by": v.made_live_by} for v in versions]
+    }
+
+
+# ── WS-3: Business Domain endpoints ──────────────────────────────────────────
+
+@router.get("/domains/package/{package_id}", summary="Get Business Domains for a Package")
+def get_business_domains(package_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Returns all Business Domains for a package, ordered by sort_order.
+    Used to build the Package sidebar navigation sections.
+    Each domain also returns a count of LIVE screens in that section.
+    """
+    domains = db.query(models.BusinessDomain).filter(
+        models.BusinessDomain.package_id == package_id,
+        models.BusinessDomain.status == "ACTIVE"
+    ).order_by(models.BusinessDomain.sort_order).all()
+
+    result = []
+    for d in domains:
+        live_count = db.query(models.ScreenTemplate).filter(
+            models.ScreenTemplate.business_domain_id == d.domain_id,
+            models.ScreenTemplate.status == "LIVE"
+        ).count()
+        result.append({
+            "domain_id": d.domain_id,
+            "domain_name": d.domain_name,
+            "domain_code": d.domain_code,
+            "icon": d.icon,
+            "description": d.description,
+            "screen_type_affinity": d.screen_type_affinity,
+            "is_system_default": bool(d.is_system_default),
+            "sort_order": d.sort_order,
+            "live_screen_count": live_count,
+        })
+
+    return {"package_id": package_id, "domains": result, "total": len(result)}

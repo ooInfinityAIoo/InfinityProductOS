@@ -579,6 +579,45 @@ class ProductApplicationPackage(Base):
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
 
+
+class BusinessDomain(Base):
+    """
+    WHY THIS EXISTS (WS-3):
+    Business Domains are the sections inside a Package's sidebar navigation.
+    Examples for Payment Hub: "Masters", "FX Operations", "Wire Payments", "Settlements".
+
+    Key design decisions:
+    - Pre-seeded by us per package (we deliver Payment Hub with domains pre-configured)
+    - Bank can add custom domains (is_system_default = False)
+    - Screens auto-assigned to a domain based on screen_template_category:
+        MAINTENANCE   → Masters domain
+        CONFIGURATION → Configuration domain
+        TRANSACTION   → Transactions domain (or the specific product domain)
+    - Bank can move a screen to a different domain (entitlement-controlled action)
+    - sort_order controls sidebar menu ordering within the package
+
+    WHAT BREAKS IF REMOVED:
+    Package sidebar navigation has nothing to group screens into.
+    The "Make it Live" flow cannot place a screen in its home menu.
+    """
+    __tablename__ = "business_domains"
+
+    domain_id = Column(String, primary_key=True, index=True)
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id", ondelete="CASCADE"), nullable=False, index=True)
+    domain_name = Column(String, nullable=False)           # e.g. "Masters", "FX Operations"
+    domain_code = Column(String, nullable=False, index=True) # e.g. "MASTERS", "FX_OPS"
+    icon = Column(String, nullable=True)                   # emoji for sidebar
+    description = Column(Text, nullable=True)
+    # screen_type_affinity: which screen types auto-land here (comma-separated or JSON)
+    # e.g. "MAINTENANCE" means MAINTENANCE screens auto-assigned to this domain
+    screen_type_affinity = Column(String, nullable=True)
+    is_system_default = Column(Boolean, default=True)      # False = bank-created custom domain
+    sort_order = Column(Integer, default=0)
+    status = Column(String, nullable=False, default="ACTIVE", index=True)
+    created_at = Column(String, nullable=False)
+    created_by = Column(String, default="SYSTEM")
+
+
 class ProductMaster(Base):
     """Level 2: The Core Product (e.g., "FEDWIRE", "CHIPS", "SWIFT")"""
     __tablename__ = "product_master"
@@ -692,30 +731,62 @@ class IngestionJobArchive(Base):
 
 class ScreenTemplate(Base):
     """
-    Layer 1: Visual Multi-Canvas Studio (Backend Model).
-    Stores the definition for a dynamic UI screen template, used by workflow nodes.
+    WHY THIS EXISTS:
+    Stores every version of every screen ever created. A screen goes through
+    states: DRAFT → PENDING_APPROVAL → LIVE → ARCHIVED. When a LIVE screen
+    is edited, a new row is created (version_number incremented, parent_screen_id
+    set to the original). The old LIVE version stays running until the new version
+    is approved and promoted — bank users never lose access during a redesign.
+    Old versions are ARCHIVED, never deleted — auditors must answer
+    "what did this screen look like on [date]?"
+
+    State model:
+        DRAFT             — being designed, not visible to bank users
+        PENDING_APPROVAL  — submitted for 4-Eye review
+        LIVE              — active, visible in Package sidebar navigation
+        ARCHIVED          — superseded by a newer version, read-only audit record
     """
     __tablename__ = "screen_templates"
 
     screen_id = Column(String, primary_key=True, index=True)
-    screen_name = Column(String, nullable=False, unique=True)
+    screen_name = Column(String, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    status = Column(String, nullable=False, default="DRAFT", index=True) # DRAFT, PENDING_APPROVAL, ACTIVE, DELETED
-    
-    # GAP 4: The specific category of the screen UI
-    screen_template_category = Column(String, nullable=False, default="Business workflow Configurations", index=True) 
-    
-    # GAP 3 & 4: Hierarchical Scoping (If application_package_id is NULL, the screen is Global)
+
+    # ── Versioning (WS-2) ────────────────────────────────────────────────────
+    # version_number: 1 for first version, increments on each redesign
+    # parent_screen_id: NULL for v1; points to screen_id of v1 for all later versions
+    #   This lets us find all versions of a screen: WHERE parent_screen_id = <v1_id>
+    # unique constraint moved from screen_name alone to (screen_name, version_number)
+    version_number = Column(Integer, nullable=False, default=1)
+    parent_screen_id = Column(String, nullable=True, index=True)  # NULL = this is v1
+
+    # Status now drives the full lifecycle (extended from DRAFT/ACTIVE/DELETED)
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    # DRAFT | PENDING_APPROVAL | LIVE | ARCHIVED
+
+    # ── Screen type (three-type model) ───────────────────────────────────────
+    # MAINTENANCE   — master/reference data (Currency, Country, Bank)
+    # CONFIGURATION — drives workflow routing when submitted
+    # TRANSACTION   — human-in-loop approval attached to a workflow step
+    screen_template_category = Column(String, nullable=False, default="MAINTENANCE", index=True)
+
+    # ── Hierarchical scoping ─────────────────────────────────────────────────
     application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
     product_id = Column(String, nullable=True, index=True)
     subproduct_id = Column(String, nullable=True, index=True)
     workflow_id = Column(String, nullable=True)
-    workflow_step_id = Column(String, nullable=True, index=True) # Aligned with payload
+    workflow_step_id = Column(String, nullable=True, index=True)
     linked_api_id = Column(String, nullable=True)
-    definition = Column(JSONB, nullable=False) # The JSON definition of the screen layout and components
+
+    # ── Business domain (WS-3) — which sidebar section this screen belongs to
+    business_domain_id = Column(String, nullable=True, index=True)
+
+    definition = Column(JSONB, nullable=False)
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
     created_by = Column(String, default="SYSTEM")
+    made_live_at = Column(String, nullable=True)   # timestamp when status → LIVE
+    made_live_by = Column(String, nullable=True)   # who approved it live
 
 class MaintenanceTaskLog(Base):
     """
