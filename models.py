@@ -880,7 +880,7 @@ class BatchGatewayConfiguration(Base):
     timezone = Column(String, nullable=False, default="UTC")
 
     # Optional reference to a File Template for layout validation
-    file_template_id = Column(String, ForeignKey("file_templates.template_id"), nullable=True, index=True)
+    file_template_id = Column(String, ForeignKey("template_designer_blueprints.template_id"), nullable=True, index=True)
 
     # Fault tolerance
     retry_max_attempts = Column(Integer, default=3)

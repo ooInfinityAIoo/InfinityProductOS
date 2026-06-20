@@ -22,7 +22,7 @@ import schemas
 from database import get_db
 from auth import get_current_user, CurrentUser, require_designer_privileges
 
-router = APIRouter(prefix="/batch-gateway", tags=["Batch Gateway Designer"])
+router = APIRouter(prefix="/api/v1/batch-gateway", tags=["Batch Gateway Designer"])
 
 
 @router.get(
