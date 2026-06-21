@@ -57,6 +57,8 @@ def _migrate_columns():
             ("message_direction VARCHAR", "message_direction"),
             ("party_from VARCHAR",        "party_from"),
             ("party_to VARCHAR",          "party_to"),
+            # WS-15c Universal Taxonomy: node-level type (RECEIVE, DECISION, COMPLIANCE_SCREEN…)
+            ("node_type VARCHAR",         "node_type"),
         ]:
             if col_name not in node_cols:
                 conn.execute(text(f"ALTER TABLE workflow_nodes ADD COLUMN {col_def}"))
@@ -570,24 +572,39 @@ SCENARIOS = [
 ]
 
 
+# Maps the per-node "dir" shorthand to the Universal Taxonomy node_type.
+# The canvas uses node_type for color-coding and shape selection.
+_DIR_TO_NODE_TYPE = {
+    "RECEIVE":  "RECEIVE",
+    "SEND":     "SEND_MESSAGE",
+    "PROCESS":  "CALL_SYSTEM",
+    "VALIDATE": "VALIDATE",
+    "APPROVE":  "HUMAN_APPROVAL",
+    "BRANCH":   "DECISION",
+}
+
+
 def _make_node(wf_id: str, seq: int, n: dict) -> models.WorkflowNode:
     """Build a WorkflowNode ORM object from a scenario node dict."""
+    direction = n.get("dir", "PROCESS")
+    node_type = _DIR_TO_NODE_TYPE.get(direction, "CALL_SYSTEM")
     return models.WorkflowNode(
         node_id=f"NODE-{uuid.uuid4().hex[:8].upper()}",
         workflow_id=wf_id,
         sequence_number=seq + 1,
         node_title=n["title"],
-        node_code=f"{n.get('dir','PROCESS')}_{n.get('msg','INTERNAL') or 'INTERNAL'}".upper().replace(".", "_")[:64],
+        node_code=f"{direction}_{n.get('msg','INTERNAL') or 'INTERNAL'}".upper().replace(".", "_")[:64],
         orchestration_steps=[{
             "step_type": n.get("step", "BUSINESS_RULE"),
             "label": n["title"],
             "iso_message_type": n.get("msg"),
-            "direction": n.get("dir"),
+            "direction": direction,
             "party_from": n.get("frm"),
             "party_to": n.get("to"),
         }],
+        node_type=node_type,
         iso_message_type=n.get("msg"),
-        message_direction=n.get("dir"),
+        message_direction=direction,
         party_from=n.get("frm"),
         party_to=n.get("to"),
         canvas_x_position=100 + seq * 220,

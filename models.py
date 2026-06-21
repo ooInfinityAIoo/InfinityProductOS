@@ -256,6 +256,17 @@ class WorkflowNode(Base):
     events_broadcast = Column(JSONB, nullable=True)  # JSON array of event types
     required_documents = Column(JSONB, nullable=True) # Array of required document/file types
     
+    # Universal Step Type (21-type taxonomy) — the canonical node type on the canvas.
+    # Maps to one of 8 groups: START, VALIDATE, DECIDE, APPROVE, CALCULATE, ACT, WAIT, END.
+    # Controls color-coding, shape rendering, and executor dispatch.
+    # Values: RECEIVE | SCHEDULE | EVENT_TRIGGER | VALIDATE | COMPLIANCE_SCREEN |
+    #         LIMIT_CHECK | DOCUMENT_EXAMINE | DECISION | PARALLEL_SPLIT | PARALLEL_JOIN |
+    #         HUMAN_APPROVAL | DIGITAL_SIGNATURE | CALCULATE | VALUATE | WATERFALL |
+    #         SEND_MESSAGE | POST_ENTRY | CALL_SYSTEM | GENERATE_DOCUMENT |
+    #         AWAIT_RESPONSE | HOLD | ESCALATE | COMPLETE | TERMINATE
+    # NULL = legacy node created before taxonomy; rendered as default indigo.
+    node_type = Column(String, nullable=True, index=True)
+
     # ISO 20022 Message Identity — populated when this node represents a specific
     # ISO message in a scenario workflow (e.g. an RTP Happy Path template).
     # These fields are OPTIONAL — existing custom workflow nodes leave them null.

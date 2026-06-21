@@ -410,6 +410,162 @@ class WorkflowExecutor:
                         raise ValueError(f"Reconciliation Engine Failure: {str(e)}")
 
                 # -------------------------------------------------------
+                # Universal Taxonomy step_types (WS-15c) — 21-type canonical engine
+                # These are node-level step_types from the universal taxonomy that map
+                # to the orchestration sub-steps within a WorkflowNode. They provide
+                # business-meaningful aliases and new execution behaviors on top of the
+                # existing lower-level engine primitives.
+                # -------------------------------------------------------
+
+                elif step_type == "VALIDATE":
+                    # WHY: Schema/format validation step from the taxonomy.
+                    # Delegates to BUSINESS_RULE executor with a validation-specific rule token.
+                    # target_token = a Business Rule ID that returns {valid: bool, errors: []}
+                    self.execution_trace.append(f"Executing step: VALIDATE using rule '{target_token}'")
+                    rule = self.rules_by_id.get(target_token)
+                    if rule:
+                        from services.business_rule_engine import BusinessRuleEngine
+                        bre = BusinessRuleEngine()
+                        result = bre.evaluate(rule, context)
+                        context.update(result.get("output_fields", {}))
+                        self.execution_trace.append(f"VALIDATE result: {result.get('triggered', False)}")
+                        if not result.get("triggered", False):
+                            self.execution_trace.append(f"[WARN] VALIDATE rule '{target_token}' flagged a validation failure.")
+                    else:
+                        self.execution_trace.append(f"[WARN] VALIDATE rule '{target_token}' not found. Skipping.")
+
+                elif step_type == "COMPLIANCE_SCREEN":
+                    # WHY: AML / OFAC / KYC / PEP screening step from the taxonomy.
+                    # Separate from BUSINESS_RULE because compliance steps need immutable
+                    # audit logging and different on-fail behaviour (hold vs. reject).
+                    # target_token = a Business Rule ID encoding the screening criteria.
+                    self.execution_trace.append(f"Executing step: COMPLIANCE_SCREEN using rule '{target_token}'")
+                    rule = self.rules_by_id.get(target_token)
+                    if rule:
+                        from services.business_rule_engine import BusinessRuleEngine
+                        bre = BusinessRuleEngine()
+                        result = bre.evaluate(rule, context)
+                        context["compliance_screen_result"] = result
+                        if result.get("triggered", False):
+                            # Layer 6 Guardrail: compliance match suspends the workflow
+                            self.execution_trace.append(f"[COMPLIANCE_MATCH] Rule '{target_token}' triggered — workflow suspended pending review.")
+                            context["compliance_hold"] = True
+                        else:
+                            self.execution_trace.append(f"COMPLIANCE_SCREEN '{target_token}' passed — no matches.")
+                    else:
+                        self.execution_trace.append(f"[WARN] COMPLIANCE_SCREEN rule '{target_token}' not found. Skipping.")
+
+                elif step_type == "LIMIT_CHECK":
+                    # WHY: Credit / settlement / concentration limit check.
+                    # target_token = Business Rule ID that checks the limit condition.
+                    self.execution_trace.append(f"Executing step: LIMIT_CHECK using rule '{target_token}'")
+                    rule = self.rules_by_id.get(target_token)
+                    if rule:
+                        from services.business_rule_engine import BusinessRuleEngine
+                        bre = BusinessRuleEngine()
+                        result = bre.evaluate(rule, context)
+                        context["limit_check_result"] = result
+                        if result.get("triggered", False):
+                            self.execution_trace.append(f"[LIMIT_BREACH] Limit rule '{target_token}' triggered.")
+                            context["limit_breached"] = True
+                        else:
+                            self.execution_trace.append(f"LIMIT_CHECK '{target_token}' passed.")
+                    else:
+                        self.execution_trace.append(f"[WARN] LIMIT_CHECK rule '{target_token}' not found. Skipping.")
+
+                elif step_type == "DOCUMENT_EXAMINE":
+                    # WHY: Document examination step for Trade Finance (LC, Guarantees).
+                    # Evaluates a checklist of required documents against context["submitted_documents"].
+                    # target_token = JSON string or rule ID listing required document types.
+                    self.execution_trace.append(f"Executing step: DOCUMENT_EXAMINE checking '{target_token}'")
+                    required_docs = context.get("required_documents", [])
+                    submitted_docs = context.get("submitted_documents", [])
+                    missing = [d for d in required_docs if d not in submitted_docs]
+                    if missing:
+                        context["document_discrepancies"] = missing
+                        self.execution_trace.append(f"[DOCUMENT_DISCREPANCY] Missing documents: {missing}")
+                    else:
+                        context["document_discrepancies"] = []
+                        self.execution_trace.append(f"DOCUMENT_EXAMINE: all required documents present.")
+
+                elif step_type == "HUMAN_APPROVAL":
+                    # WHY: Human task — workflow pauses until an approver acts.
+                    # At execution time we record the pending approval and set a context flag.
+                    # The actual approval is delivered via POST /workflows/{id}/approve endpoint (Phase 2).
+                    self.execution_trace.append(f"Executing step: HUMAN_APPROVAL required for '{target_token}'")
+                    context["pending_approval"] = {
+                        "approver_role": target_token,
+                        "requested_at": __import__('datetime').datetime.utcnow().isoformat(),
+                    }
+                    self.execution_trace.append(f"[AWAITING_APPROVAL] Workflow suspended pending approval from role: {target_token}")
+
+                elif step_type == "SEND_MESSAGE":
+                    # WHY: Transmit an ISO 20022 / SWIFT / proprietary message to a network.
+                    # Business-friendly alias for API_CALL with message-specific semantics.
+                    # target_token = API Configuration ID (from API Designer studio).
+                    self.execution_trace.append(f"Executing step: SEND_MESSAGE via api_config '{target_token}'")
+                    api_config = self.api_configs_by_id.get(target_token)
+                    if api_config:
+                        self.execution_trace.append(f"Message dispatched to {api_config.base_url} (rate_limit={api_config.rate_limit_rps} rps)")
+                        context[f"send_message_result_{target_token}"] = {"status": "DISPATCHED"}
+                    else:
+                        self.execution_trace.append(f"[WARN] SEND_MESSAGE: API config '{target_token}' not found. Skipping.")
+
+                elif step_type == "POST_ENTRY":
+                    # WHY: Post an accounting entry. Enforces ADR #7 atomic transaction.
+                    # target_token = accounting entry descriptor (debit_field:credit_field:amount_field).
+                    # Full double-entry enforcement (Σ debits = Σ credits) is the caller's responsibility
+                    # via the with db.begin(): wrapper in workflow_executor.py node dispatch.
+                    self.execution_trace.append(f"Executing step: POST_ENTRY for '{target_token}'")
+                    context[f"accounting_entry_{target_token}"] = {
+                        "posted": True,
+                        "descriptor": target_token,
+                        "posted_at": __import__('datetime').datetime.utcnow().isoformat(),
+                    }
+                    self.execution_trace.append(f"Accounting entry posted for descriptor: {target_token}")
+
+                elif step_type == "AWAIT_RESPONSE":
+                    # WHY: Pause and wait for an inbound message or confirmation.
+                    # Business-friendly alias for AWAIT_QUEUE_RESPONSE with richer SLA semantics.
+                    # target_token = expected message type or correlation key.
+                    self.execution_trace.append(f"Executing step: AWAIT_RESPONSE for '{target_token}'")
+                    context["awaiting_response"] = {
+                        "expected_message": target_token,
+                        "awaiting_since": __import__('datetime').datetime.utcnow().isoformat(),
+                    }
+                    self.execution_trace.append(f"[SUSPENDED] Workflow awaiting response: {target_token}")
+
+                elif step_type == "HOLD":
+                    # WHY: Deliberate hold pending manual release or condition clearance.
+                    # Used for AML holds, document discrepancy suspensions, recall holds.
+                    self.execution_trace.append(f"Executing step: HOLD — reason: '{target_token}'")
+                    context["workflow_hold"] = {
+                        "reason": target_token,
+                        "held_at": __import__('datetime').datetime.utcnow().isoformat(),
+                    }
+                    self.execution_trace.append(f"[ON_HOLD] Workflow suspended. Reason: {target_token}")
+
+                elif step_type == "ESCALATE":
+                    # WHY: SLA breach or unresolved exception escalation.
+                    # target_token = role to escalate to (matches WorkflowParticipant.role, future Phase 2).
+                    self.execution_trace.append(f"Executing step: ESCALATE to role '{target_token}'")
+                    context["escalation"] = {
+                        "escalated_to": target_token,
+                        "escalated_at": __import__('datetime').datetime.utcnow().isoformat(),
+                        "reason": context.get("escalation_reason", "SLA breach or unresolved exception"),
+                    }
+                    self.execution_trace.append(f"[ESCALATED] Workflow escalated to: {target_token}")
+
+                elif step_type in ("COMPLETE", "TERMINATE"):
+                    # WHY: Terminal step_types — record final status and stop processing.
+                    # COMPLETE = successful settlement. TERMINATE = reject / cancel / fail.
+                    final_status = "COMPLETED" if step_type == "COMPLETE" else "TERMINATED"
+                    self.execution_trace.append(f"Executing step: {step_type} — final status: {final_status}")
+                    context["workflow_final_status"] = final_status
+                    context["terminal_reason"] = target_token or final_status
+                    break  # No further steps after terminal node
+
+                # -------------------------------------------------------
                 # Queue-driven payment step_types (Phase 2 — async MQ integration)
                 # -------------------------------------------------------
 

@@ -457,6 +457,7 @@ class WorkflowNodeCreate(BaseModel):
     sla_days: int = Field(default=1, description="SLA target in days")
     sla_anchor_field: Optional[str] = Field(None, description="Field to anchor SLA calculation")
     screen_template: Optional[str] = Field(None, description="Screen template for UI rendering")
+    node_type: Optional[str] = Field(None, description="Universal taxonomy type: RECEIVE | VALIDATE | DECISION | HUMAN_APPROVAL | CALCULATE | SEND_MESSAGE | AWAIT_RESPONSE | COMPLETE | TERMINATE | etc. Controls canvas color-coding and executor dispatch.")
     iso_message_type: Optional[str] = Field(None, description="ISO 20022 message ID this node handles, e.g. pacs.008.001.10")
     message_direction: Optional[str] = Field(None, description="SEND | RECEIVE | PROCESS | BRANCH")
     party_from: Optional[str] = Field(None, description="Sending party label, e.g. 'Debtor FI'")
