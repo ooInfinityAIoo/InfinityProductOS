@@ -196,6 +196,13 @@ const WorkflowCanvasInner: React.FC = () => {
   const [associatedAgent, setAssociatedAgent] = useState<string>('Pacs008_Validator_Agent');
   const [outboundReport, setOutboundReport] = useState<string>('Daily_Ledger_Balance');
 
+  // ISO 20022 template picker state
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateNetworkFilter, setTemplateNetworkFilter] = useState('ALL');
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState('');
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [cloningTemplateId, setCloningTemplateId] = useState<string | null>(null);
+
   const { data: packagesData } = useQuery({
     queryKey: ['product-packages'],
     queryFn: async () => (await apiClient.get('/masters/packages')).data
@@ -227,6 +234,49 @@ const WorkflowCanvasInner: React.FC = () => {
     queryKey: ['workflows'],
     queryFn: async () => (await apiClient.get('/workflows/')).data
   });
+
+  // Fetch all ISO 20022 workflow templates for the template picker modal.
+  // Only fetched when the modal is open to avoid wasting bandwidth.
+  const { data: isoTemplates } = useQuery({
+    queryKey: ['iso-workflow-templates'],
+    queryFn: async () => (await apiClient.get('/workflows/?is_template=true&limit=200')).data,
+    enabled: showTemplateModal,
+  });
+
+  // Clone a template into a new user-owned workflow. Copies nodes and edges but
+  // strips is_template so the copy appears in the regular workflow list.
+  const handleCloneTemplate = async (tpl: any) => {
+    if (!activeCoreProductId) return;
+    setCloningTemplateId(tpl.workflow_id);
+    try {
+      const payload = {
+        workflow_name: `${tpl.workflow_name} (Copy)`,
+        domain_scope: tpl.domain_scope,
+        product_context: activeProductContext || 'Default',
+        description: tpl.description,
+        is_template: false,
+        message_type: tpl.message_type,
+        clearing_network: tpl.clearing_network,
+        template_category: tpl.template_category,
+        product_id: activeCoreProductId,
+        nodes: (tpl.nodes || []).map((n: any) => ({
+          label: n.label,
+          step_type: n.step_type,
+          orchestration_steps: n.orchestration_steps ?? [],
+          position_x: n.position_x,
+          position_y: n.position_y,
+          status: 'ACTIVE',
+        })),
+        edges: [],
+      };
+      await apiClient.post('/workflows/', payload);
+      setShowTemplateModal(false);
+    } catch (e) {
+      console.error('Failed to clone template', e);
+    } finally {
+      setCloningTemplateId(null);
+    }
+  };
 
   useEffect(() => {
     if (workflowDraft) {
@@ -640,8 +690,17 @@ const WorkflowCanvasInner: React.FC = () => {
               </select>
             </div>
           </div>
-          <div className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
-            Process Flow Studio Context
+          <div className="flex items-center gap-3">
+            <div className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
+              Process Flow Studio Context
+            </div>
+            {/* Opens the ISO 20022 message template library picker */}
+            <button
+              onClick={() => setShowTemplateModal(true)}
+              className="text-[11px] font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              📋 New from Template
+            </button>
           </div>
         </div>
 
@@ -1344,6 +1403,156 @@ const WorkflowCanvasInner: React.FC = () => {
           edges={edges}
           nodeTypes={nodeTypes}
         />
+
+        {/* ── ISO 20022 Template Picker Modal ─────────────────────────────
+            Appears when the user clicks "New from Template".
+            Queries /workflows/?is_template=true and displays results
+            grouped by clearing network with full-text search.
+            Cloning creates a new editable workflow from the selected template. */}
+        {showTemplateModal && (
+          <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowTemplateModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Modal header */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">ISO 20022 Workflow Template Library</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Select a message template to start a pre-built workflow. Covers pacs, camt, pain, admi — including FedNow and RTP.
+                  </p>
+                </div>
+                <button onClick={() => setShowTemplateModal(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">×</button>
+              </div>
+
+              {/* Filters */}
+              <div className="px-6 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-3 flex-wrap">
+                {/* Network tabs */}
+                {['ALL', 'SWIFT', 'FEDNOW', 'RTP', 'CHIPS', 'SEPA', 'ACH'].map(net => (
+                  <button
+                    key={net}
+                    onClick={() => setTemplateNetworkFilter(net)}
+                    className={`text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors ${templateNetworkFilter === net ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50'}`}
+                  >
+                    {net === 'ALL' ? '🌐 All Networks' : net === 'FEDNOW' ? '🏛 FedNow' : net === 'RTP' ? '⚡ RTP' : net === 'SWIFT' ? '🌍 SWIFT' : net === 'CHIPS' ? '💰 CHIPS' : net === 'SEPA' ? '🇪🇺 SEPA' : '🏦 ACH'}
+                  </button>
+                ))}
+                <div className="ml-auto flex items-center gap-2">
+                  <select
+                    value={templateCategoryFilter}
+                    onChange={e => setTemplateCategoryFilter(e.target.value)}
+                    className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="CLEARING_SETTLEMENT">Clearing & Settlement</option>
+                    <option value="PAYMENT_INITIATION">Payment Initiation</option>
+                    <option value="CASH_MANAGEMENT">Cash Management</option>
+                    <option value="ADMINISTRATION">Administration</option>
+                  </select>
+                  <input
+                    className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 w-48 bg-white"
+                    placeholder="Search message type or name…"
+                    value={templateSearch}
+                    onChange={e => setTemplateSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Template list */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {!isoTemplates && (
+                  <div className="flex items-center justify-center h-32 text-slate-400 text-sm animate-pulse">Loading templates…</div>
+                )}
+                {isoTemplates && (() => {
+                  // Filter templates based on selected network / category / search
+                  const templates: any[] = Array.isArray(isoTemplates) ? isoTemplates : [];
+                  const filtered = templates.filter(t => {
+                    const netMatch = templateNetworkFilter === 'ALL' || t.clearing_network === templateNetworkFilter || t.clearing_network === 'ALL';
+                    const catMatch = !templateCategoryFilter || t.template_category === templateCategoryFilter;
+                    const q = templateSearch.toLowerCase();
+                    const textMatch = !q || t.workflow_name?.toLowerCase().includes(q) || t.message_type?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q);
+                    return netMatch && catMatch && textMatch;
+                  });
+
+                  if (filtered.length === 0) return (
+                    <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                      <div className="text-3xl mb-2">📭</div>
+                      <p className="text-sm">No templates match. Run <code className="bg-slate-100 px-1 rounded text-xs">python seed_iso_workflow_templates.py</code> to seed them.</p>
+                    </div>
+                  );
+
+                  // Group by template_category for organised display
+                  const CAT_LABELS: Record<string, string> = {
+                    CLEARING_SETTLEMENT: '🔄 Clearing & Settlement',
+                    PAYMENT_INITIATION:  '🚀 Payment Initiation',
+                    CASH_MANAGEMENT:     '💵 Cash Management',
+                    ADMINISTRATION:      '⚙️ Administration',
+                  };
+                  const NET_BADGE: Record<string, string> = {
+                    SWIFT:   'bg-blue-100 text-blue-700',
+                    FEDNOW:  'bg-green-100 text-green-700',
+                    RTP:     'bg-violet-100 text-violet-700',
+                    CHIPS:   'bg-amber-100 text-amber-700',
+                    SEPA:    'bg-sky-100 text-sky-700',
+                    ACH:     'bg-slate-100 text-slate-600',
+                    ALL:     'bg-indigo-100 text-indigo-700',
+                  };
+                  const grouped: Record<string, any[]> = {};
+                  filtered.forEach(t => {
+                    const cat = t.template_category || 'OTHER';
+                    if (!grouped[cat]) grouped[cat] = [];
+                    grouped[cat].push(t);
+                  });
+
+                  return Object.entries(grouped).map(([cat, items]) => (
+                    <div key={cat} className="mb-6">
+                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        {CAT_LABELS[cat] ?? cat} <span className="font-normal text-slate-400 normal-case">({items.length})</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {items.map(tpl => (
+                          <div key={tpl.workflow_id} className="border border-slate-200 rounded-xl p-3.5 bg-white hover:border-indigo-300 hover:shadow-sm transition-all">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-800 leading-tight">{tpl.workflow_name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  <code className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">{tpl.message_type}</code>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${NET_BADGE[tpl.clearing_network] ?? 'bg-slate-100 text-slate-600'}`}>{tpl.clearing_network}</span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed line-clamp-2">{tpl.description}</p>
+                                {tpl.nodes?.length > 0 && (
+                                  <div className="mt-1.5 flex gap-1 flex-wrap">
+                                    {tpl.nodes.slice(0, 5).map((n: any) => (
+                                      <span key={n.node_id ?? n.label} className="text-[9px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-medium">{n.label}</span>
+                                    ))}
+                                    {tpl.nodes.length > 5 && <span className="text-[9px] text-slate-400">+{tpl.nodes.length - 5} more</span>}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleCloneTemplate(tpl)}
+                                disabled={cloningTemplateId === tpl.workflow_id || !activeCoreProductId}
+                                className="shrink-0 text-[11px] font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                                title={!activeCoreProductId ? 'Select a Core Product first' : 'Clone this template into a new workflow'}
+                              >
+                                {cloningTemplateId === tpl.workflow_id ? '…' : '+ Use'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 text-[10px] text-slate-400 rounded-b-2xl">
+                {!activeCoreProductId && <span className="text-amber-600 font-semibold">⚠ Select a Core Product above before using a template.</span>}
+                {activeCoreProductId && <span>Templates are cloned into your active product context. Edit the copy freely — the master template is never modified.</span>}
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

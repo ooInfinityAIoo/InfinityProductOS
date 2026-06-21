@@ -312,7 +312,17 @@ class WorkflowConfiguration(Base):
     subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     description = Column(Text, nullable=True)
-    
+
+    # ISO 20022 Template fields — when is_template=True this record is a reusable
+    # starting-point the user picks from "New from Template" in the Workflow Designer.
+    # message_type: ISO 20022 message ID e.g. "pacs.008.001.10"
+    # clearing_network: SWIFT | FEDNOW | RTP | CHIPS | SEPA | ACH | ALL
+    # template_category: PAYMENT_INITIATION | CLEARING_SETTLEMENT | CASH_MANAGEMENT | ADMINISTRATION
+    is_template = Column(Boolean, nullable=False, default=False, index=True)
+    message_type = Column(String, nullable=True, index=True)
+    clearing_network = Column(String, nullable=True, index=True)
+    template_category = Column(String, nullable=True, index=True)
+
     # Embedded configuration as JSON
     # --- GAP 3: Sub-Workflow Data Scope Contracts ---
     input_schema = Column(JSONB, nullable=True)  # Array of ISO field keys allowed IN

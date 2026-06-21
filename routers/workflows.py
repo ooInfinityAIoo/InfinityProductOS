@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Header, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Any, Optional
@@ -38,7 +38,11 @@ def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = 
         input_schema=payload.input_schema,
         output_schema=payload.output_schema,
         created_at=datetime.datetime.utcnow().isoformat(),
-        created_by=current_user.id
+        created_by=current_user.id,
+        is_template=getattr(payload, 'is_template', False) or False,
+        message_type=getattr(payload, 'message_type', None),
+        clearing_network=getattr(payload, 'clearing_network', None),
+        template_category=getattr(payload, 'template_category', None),
     )
 
     # Create and append node objects using the relationship
@@ -77,12 +81,29 @@ def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = 
     return new_workflow
 
 @router.get("/", response_model=List[schemas.WorkflowConfigurationResponse], summary="List All Workflow Graphs")
-def list_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+def list_workflows(
+    skip: int = 0,
+    limit: int = 100,
+    is_template: Optional[bool] = Query(None, description="Filter to ISO message templates only (true) or user workflows only (false)"),
+    clearing_network: Optional[str] = Query(None, description="Filter templates by clearing network: SWIFT | FEDNOW | RTP | CHIPS | SEPA | ACH | ALL"),
+    template_category: Optional[str] = Query(None, description="Filter templates by category: PAYMENT_INITIATION | CLEARING_SETTLEMENT | CASH_MANAGEMENT | ADMINISTRATION"),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     """
-    Retrieves a paginated list of all workflow configurations. Thanks to relationship loading, each workflow includes its full graph of nodes and edges.
+    Retrieves a paginated list of workflow configurations.
+    Use is_template=true to fetch the ISO 20022 message template library for the
+    'New from Template' picker in the Workflow Designer.
+    Use is_template=false (default behaviour when omitted) to list user-created workflows.
     """
-    workflows = db.query(models.WorkflowConfiguration).offset(skip).limit(limit).all()
-    return workflows
+    q = db.query(models.WorkflowConfiguration)
+    if is_template is not None:
+        q = q.filter(models.WorkflowConfiguration.is_template == is_template)
+    if clearing_network:
+        q = q.filter(models.WorkflowConfiguration.clearing_network == clearing_network)
+    if template_category:
+        q = q.filter(models.WorkflowConfiguration.template_category == template_category)
+    return q.offset(skip).limit(limit).all()
 
 @router.get("/{workflow_id}", response_model=schemas.WorkflowConfigurationResponse, summary="Get a Specific Workflow Graph")
 def get_workflow(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):

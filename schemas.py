@@ -504,6 +504,10 @@ class WorkflowConfigurationCreate(BaseModel):
     application_package_id: Optional[str] = Field(None, description="The specific product package this workflow belongs to.")
     product_id: Optional[str] = Field(None, description="The specific product this workflow belongs to.")
     subproduct_id: Optional[str] = Field(None, description="The specific subproduct this workflow belongs to.")
+    is_template: Optional[bool] = Field(False, description="True = reusable ISO 20022 message template shown in 'New from Template' picker.")
+    message_type: Optional[str] = Field(None, description="ISO 20022 message ID, e.g. pacs.008.001.10")
+    clearing_network: Optional[str] = Field(None, description="SWIFT | FEDNOW | RTP | CHIPS | SEPA | ACH | ALL")
+    template_category: Optional[str] = Field(None, description="PAYMENT_INITIATION | CLEARING_SETTLEMENT | CASH_MANAGEMENT | ADMINISTRATION")
 
 
 class WorkflowConfigurationResponse(BaseModel):
@@ -523,6 +527,10 @@ class WorkflowConfigurationResponse(BaseModel):
     updated_at: Optional[str] = None
     nodes: Optional[List[WorkflowNodeResponse]] = None
     edges: Optional[List[WorkflowEdgeResponse]] = None
+    is_template: Optional[bool] = False
+    message_type: Optional[str] = None
+    clearing_network: Optional[str] = None
+    template_category: Optional[str] = None
 
     class Config:
         from_attributes = True
