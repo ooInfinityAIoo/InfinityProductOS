@@ -1,16 +1,19 @@
 // WHY THIS COMPONENT EXISTS:
-// Three-level "Cockpit Lockdown" banner shown at the top of every Designer Studio module.
-// Enforces Package → Product → Sub-Product context before configuration begins.
-// Without this, a business rule created for "SWIFT B2B" would have no boundary
-// separating it from "SWIFT B2C" or "SEPA Germany".
+// Advanced record filter bar shown at the top of every Designer Studio module.
+// Lets users NARROW the list of existing records by Product and Sub-Product.
+// This is a FILTER, not a lock — studios are always accessible.
 //
-// Level 1: Package (from activeProductContext — set when user enters a package)
-// Level 2: Product (dropdown — populates from Product Registry for this package)
-// Level 3: Sub-Product (dropdown — appears only after Product is selected, optional
-//           since not every studio requires sub-product granularity)
+// Architectural contract (separation of concerns):
+//   - This banner = viewport filter for EXISTING records (read path)
+//   - ProductSubProductPicker (in create/edit forms) = scoping for NEW records (write path)
 //
-// Changing Product resets Sub-Product to null — stale sub-product context from a
-// prior product selection must never bleed into a new product's studio config.
+// When the user selects a product here, the studio lists update to show only records
+// scoped to that product (or "All Products" records, which always show regardless).
+// When the user clears the filter, all records for the package are shown.
+//
+// Pre-populations the form picker (ProductSubProductPicker) for convenience — if the
+// user has filtered to "SWIFT MT103", the create form defaults to the same product
+// so they don't have to re-select it.
 
 import React from 'react';
 import { usePlatformStore } from '../store/usePlatformStore';
@@ -49,32 +52,19 @@ export const CockpitLockBanner: React.FC = () => {
   });
   const subProducts = subProductsData?.subproducts ?? [];
 
-  const isLocked = !activeCoreProductId;
-
   return (
-    <div className={`rounded-2xl p-4 flex items-center justify-between shadow-sm mb-6 border ${
-      isLocked
-        ? 'border-rose-200/50 bg-rose-50/10'
-        : 'border-emerald-200/50 bg-emerald-50/10'
-    }`}>
-      {/* Left — lock icon + label */}
+    <div className="rounded-2xl p-3.5 flex items-center justify-between shadow-sm mb-6 border border-slate-200/60 bg-slate-50/40">
+      {/* Left — filter icon + label */}
       <div className="flex items-center gap-3 shrink-0">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-lg shadow-inner ${
-          isLocked ? 'bg-rose-100/50 text-rose-500' : 'bg-emerald-100/50 text-emerald-600'
-        }`}>
-          {isLocked
-            ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-            : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
-          }
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-500 border border-indigo-100">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" /></svg>
         </div>
         <div>
-          <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight">
-            {isLocked ? 'Three-Level Cockpit Lockdown' : 'Studio Context Active'}
-          </h2>
-          <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-            {isLocked
-              ? 'Select a Product to unlock configuration. Sub-Product further scopes the studio.'
-              : `Configuring for: ${activeProductContext} › ${activeCoreProductId}${activeCoreSubProductId ? ' › ' + activeCoreSubProductId : ''}`
+          <h2 className="text-[12px] font-extrabold text-slate-700 tracking-tight">Advanced Record Filters</h2>
+          <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+            {activeCoreProductId
+              ? `Showing records for: ${activeProductContext} › ${activeCoreProductId}${activeCoreSubProductId ? ' › ' + activeCoreSubProductId : ' (all sub-products)'}`
+              : `Showing all records in package: ${activeProductContext}`
             }
           </p>
         </div>
@@ -84,7 +74,7 @@ export const CockpitLockBanner: React.FC = () => {
       <div className="flex items-center gap-2 flex-wrap justify-end">
         {/* Level 1 — Package (read-only, set by package context) */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">L1: Package</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Package</span>
           <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg whitespace-nowrap">
             {activeProductContext || 'None'}
           </span>
@@ -92,17 +82,15 @@ export const CockpitLockBanner: React.FC = () => {
 
         <span className="text-slate-300 text-[14px]">›</span>
 
-        {/* Level 2 — Product */}
+        {/* Level 2 — Product filter */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">L2: Product</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Product</span>
           <select
             value={activeCoreProductId || ''}
             onChange={(e) => setCoreProductId(e.target.value || null)}
-            className={`text-[12px] font-bold text-slate-800 border-2 bg-white rounded-xl px-3 py-2 outline-none shadow-sm min-w-[180px] ${
-              isLocked ? 'border-rose-200 focus:border-rose-400' : 'border-emerald-200 focus:border-emerald-400'
-            }`}
+            className="text-[12px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl px-3 py-1.5 outline-none shadow-sm min-w-[160px] focus:border-indigo-300"
           >
-            <option value="">— Select Product —</option>
+            <option value="">All Products</option>
             {products.map((p: any) => (
               <option key={p.product_id} value={p.product_id}>
                 {p.alias ?? p.product_name} ({p.product_id})
@@ -111,18 +99,18 @@ export const CockpitLockBanner: React.FC = () => {
           </select>
         </div>
 
-        {/* Level 3 — Sub-Product (only shown once product is selected) */}
+        {/* Level 3 — Sub-Product filter (only shown once product is selected) */}
         {activeCoreProductId && (
           <>
             <span className="text-slate-300 text-[14px]">›</span>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">L3: Sub-Product</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Sub-Product</span>
               <select
                 value={activeCoreSubProductId || ''}
                 onChange={(e) => setCoreSubProductId(e.target.value || null)}
-                className="text-[12px] font-bold text-slate-800 border-2 border-slate-200 bg-white rounded-xl px-3 py-2 outline-none focus:border-indigo-400 shadow-sm min-w-[180px]"
+                className="text-[12px] font-bold text-slate-700 border border-slate-200 bg-white rounded-xl px-3 py-1.5 outline-none focus:border-indigo-300 shadow-sm min-w-[160px]"
               >
-                <option value="">— All Sub-Products —</option>
+                <option value="">All Sub-Products</option>
                 {subProducts.length === 0
                   ? <option disabled value="">No sub-products defined</option>
                   : subProducts.map((sp: any) => (

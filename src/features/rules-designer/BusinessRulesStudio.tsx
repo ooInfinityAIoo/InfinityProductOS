@@ -17,6 +17,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
+import { ProductSubProductPicker } from '../../components/ProductSubProductPicker';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
 import { useToast, ToastContainer } from '../../components/Toast';
 import { Plus, Trash2, GitBranch } from 'lucide-react';
@@ -66,6 +67,11 @@ export const BusinessRulesStudio: React.FC = () => {
   const [tokenCode, setTokenCode] = useState('');
   const [description, setDescription] = useState('');
 
+  // Form-level product scope — independent from the header filter.
+  // '' = not yet selected (blocks save); 'ALL' = applies to all products (null in DB)
+  const [formProductId, setFormProductId] = useState('');
+  const [formSubProductId, setFormSubProductId] = useState('');
+
   // Multi-condition AND/OR group
   const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>('AND');
   const [conditions, setConditions] = useState<Condition[]>([makeCondition()]);
@@ -112,6 +118,7 @@ export const BusinessRulesStudio: React.FC = () => {
 
   const resetForm = () => {
     setBusinessName(''); setTokenCode(''); setDescription('');
+    setFormProductId(''); setFormSubProductId('');
     setConditionLogic('AND');
     setConditions([makeCondition()]);
     setActions([makeAction()]);
@@ -132,7 +139,9 @@ export const BusinessRulesStudio: React.FC = () => {
         token_code: tokenCode,
         description: description,
         financial_domain: activeProductContext,
-        core_product_id: activeCoreProductId,
+        // 'ALL' means package-wide → stored as null in DB
+        core_product_id: formProductId === 'ALL' ? null : formProductId || null,
+        core_subproduct_id: formSubProductId || null,
         condition_logic: conditionLogic,
         rules: [
           {
@@ -170,7 +179,7 @@ export const BusinessRulesStudio: React.FC = () => {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <InfinityAIHelper studioKey="business-rules" />
       <CockpitLockBanner />
-      <div className={`flex gap-6 flex-1 min-h-0 transition-all duration-300 ${!activeCoreProductId ? 'opacity-30 pointer-events-none grayscale' : ''}`}>
+      <div className="flex gap-6 flex-1 min-h-0">
       {/* Left Column: List of Rule Sets */}
       <div className="w-[400px] glass-card rounded-2xl flex flex-col overflow-hidden">
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
@@ -280,6 +289,15 @@ export const BusinessRulesStudio: React.FC = () => {
             </div>
 
             <div className="p-6 flex-1 overflow-y-auto space-y-6">
+              {/* Product Scope Picker — where this rule applies */}
+              <ProductSubProductPicker
+                packageId={packageId ?? null}
+                selectedProductId={formProductId}
+                selectedSubProductId={formSubProductId}
+                onProductChange={setFormProductId}
+                onSubProductChange={setFormSubProductId}
+              />
+
               {/* Header: name + auto token */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -470,7 +488,7 @@ export const BusinessRulesStudio: React.FC = () => {
                 Cancel
               </button>
               <button
-                disabled={createRuleMutation.isPending || !businessName || conditions.filter(c => c.field).length === 0}
+                disabled={createRuleMutation.isPending || !businessName || !formProductId || conditions.filter(c => c.field).length === 0}
                 onClick={() => createRuleMutation.mutate()}
                 className="px-5 py-2.5 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/15 disabled:opacity-50 active:scale-[0.98]"
               >
