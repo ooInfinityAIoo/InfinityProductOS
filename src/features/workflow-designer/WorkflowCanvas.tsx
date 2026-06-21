@@ -257,13 +257,21 @@ const WorkflowCanvasInner: React.FC = () => {
 
       // Build React Flow nodes — carry ISO message identity in data so WorkflowNode card
       // shows the message type badge and From→To party labels immediately on the canvas.
+      // Map node_type to React Flow node component type.
+      // Gateway types (DECISION, PARALLEL_*) use the diamond decisionNode shape.
+      const toRfType = (nodeType?: string) =>
+        ['DECISION', 'PARALLEL_SPLIT', 'PARALLEL_JOIN'].includes(nodeType ?? '')
+          ? 'decisionNode'
+          : 'customBankingNode';
+
       const rfNodes: Node[] = tplNodes.map((n: any, idx: number) => ({
         id: n.node_id || `node-${idx}`,
-        type: 'customBankingNode',
+        type: toRfType(n.node_type),
         position: { x: n.canvas_x_position ?? (100 + idx * 220), y: n.canvas_y_position ?? 200 },
         data: {
           title: n.node_title,
           slaDays: n.sla_days ?? 1,
+          sla_config: n.sla_config ?? null,
           orchestration_steps: n.orchestration_steps ?? [],
           node_type: n.node_type ?? null,
           iso_message_type: n.iso_message_type ?? null,

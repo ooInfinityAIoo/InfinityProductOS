@@ -59,6 +59,8 @@ def _migrate_columns():
             ("party_to VARCHAR",          "party_to"),
             # WS-15c Universal Taxonomy: node-level type (RECEIVE, DECISION, COMPLIANCE_SCREEN…)
             ("node_type VARCHAR",         "node_type"),
+            # WS-15c Structured SLA: replaces sla_days integer with typed config object
+            ("sla_config JSON",           "sla_config"),
         ]:
             if col_name not in node_cols:
                 conn.execute(text(f"ALTER TABLE workflow_nodes ADD COLUMN {col_def}"))
@@ -583,11 +585,25 @@ _DIR_TO_NODE_TYPE = {
     "BRANCH":   "DECISION",
 }
 
+# Default structured SLA per node_type.
+# Replaces the flat sla_days=1 integer with domain-appropriate config.
+# Payment network messages (SEND/RECEIVE) have second-level SLAs per ISO 20022 timing rules.
+# Human tasks and validation steps have banking-day SLAs per industry practice.
+_NODE_TYPE_SLA = {
+    "RECEIVE":        {"value": 30,  "unit": "SECONDS",       "on_breach": "ESCALATE"},
+    "SEND_MESSAGE":   {"value": 10,  "unit": "SECONDS",       "on_breach": "ESCALATE"},
+    "CALL_SYSTEM":    {"value": 5,   "unit": "MINUTES",       "on_breach": "NOTIFY"},
+    "VALIDATE":       {"value": 2,   "unit": "MINUTES",       "on_breach": "REJECT"},
+    "HUMAN_APPROVAL": {"value": 2,   "unit": "BANKING_DAYS",  "on_breach": "ESCALATE"},
+    "DECISION":       {"value": 1,   "unit": "MINUTES",       "on_breach": "PROCEED"},
+}
+
 
 def _make_node(wf_id: str, seq: int, n: dict) -> models.WorkflowNode:
     """Build a WorkflowNode ORM object from a scenario node dict."""
     direction = n.get("dir", "PROCESS")
     node_type = _DIR_TO_NODE_TYPE.get(direction, "CALL_SYSTEM")
+    sla_config = _NODE_TYPE_SLA.get(node_type)
     return models.WorkflowNode(
         node_id=f"NODE-{uuid.uuid4().hex[:8].upper()}",
         workflow_id=wf_id,
@@ -603,6 +619,7 @@ def _make_node(wf_id: str, seq: int, n: dict) -> models.WorkflowNode:
             "party_to": n.get("to"),
         }],
         node_type=node_type,
+        sla_config=sla_config,
         iso_message_type=n.get("msg"),
         message_direction=direction,
         party_from=n.get("frm"),

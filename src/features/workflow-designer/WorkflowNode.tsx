@@ -21,11 +21,20 @@
 import React from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
 
+interface SlaConfig {
+  value: number;
+  unit: 'SECONDS' | 'MINUTES' | 'HOURS' | 'CALENDAR_DAYS' | 'BANKING_DAYS';
+  calendar?: string;
+  on_breach?: 'ESCALATE' | 'NOTIFY' | 'REJECT' | 'PROCEED';
+  breach_notify_role?: string;
+}
+
 interface WorkflowNodeData {
   id: string;
   seq: any;
   title: string;
   slaDays: number;
+  sla_config?: SlaConfig | null;  // Structured SLA — overrides slaDays when present
   onTitleChange?: (newTitle: string) => void;
   node_type?: string;         // 21-type taxonomy value e.g. "DECISION", "COMPLIANCE_SCREEN"
   iso_message_type?: string;  // ISO 20022 message e.g. "pacs.008.001.10"
@@ -295,14 +304,29 @@ export const WorkflowNode: React.FC<WorkflowNodeProps> = ({ data, selected }) =>
             )}
           </div>
 
-          {/* SLA indicator — color shifts for wait/monitor nodes to signal time-sensitivity */}
-          <div className={`text-[9px] font-bold px-2 py-0.5 rounded-md mt-2 w-max ${
-            isWait
-              ? 'text-slate-600 bg-slate-100/60 border border-slate-200/50'
-              : 'text-amber-600 bg-amber-50/40 border border-amber-100/50'
-          }`}>
-            SLA: {data.slaDays} {isWait ? 'day(s) max' : 'Days'}
-          </div>
+          {/* SLA indicator — shows structured config when present, falls back to legacy slaDays */}
+          {(() => {
+            const cfg = data.sla_config;
+            const unit_labels: Record<string, string> = {
+              SECONDS: 's', MINUTES: 'min', HOURS: 'hr',
+              CALENDAR_DAYS: 'd', BANKING_DAYS: 'bd',
+            };
+            const slaText = cfg
+              ? `SLA: ${cfg.value}${unit_labels[cfg.unit] ?? cfg.unit}${cfg.on_breach ? ' · ' + cfg.on_breach : ''}`
+              : `SLA: ${data.slaDays}d`;
+            const isUrgent = cfg && (cfg.unit === 'SECONDS' || cfg.unit === 'MINUTES');
+            return (
+              <div className={`text-[9px] font-bold px-2 py-0.5 rounded-md mt-2 w-max ${
+                isUrgent
+                  ? 'text-red-600 bg-red-50/60 border border-red-200/50'
+                  : isWait
+                    ? 'text-slate-600 bg-slate-100/60 border border-slate-200/50'
+                    : 'text-amber-600 bg-amber-50/40 border border-amber-100/50'
+              }`}>
+                {slaText}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Outgoing Connection Points */}

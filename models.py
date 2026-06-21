@@ -281,7 +281,16 @@ class WorkflowNode(Base):
     party_to = Column(String, nullable=True)
 
     # SLA Configuration
+    # sla_days: legacy integer (kept for backward compat with existing nodes).
+    # sla_config: structured SLA object (overrides sla_days when present).
+    # sla_config shape: {value: int, unit: SECONDS|MINUTES|HOURS|CALENDAR_DAYS|BANKING_DAYS,
+    #                    calendar?: TARGET2|FEDWIRE|NYSE|CUSTOM,
+    #                    on_breach: ESCALATE|NOTIFY|REJECT|PROCEED,
+    #                    breach_notify_role?: str}
+    # WHY: A pacs.002 response has a 10-second SLA. An LC examination has a 5-banking-day SLA.
+    # A single integer cannot express both. sla_config replaces it correctly.
     sla_days = Column(Integer, default=1)
+    sla_config = Column(JSONB, nullable=True)
     sla_anchor_field = Column(String, nullable=True)
 
     # Screen Template
