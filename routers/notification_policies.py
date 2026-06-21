@@ -27,7 +27,7 @@ from database import get_db
 from auth import get_current_user, require_designer_privileges, CurrentUser
 from routers.entitlements import register_entity
 
-router = APIRouter(prefix="/notification-policies", tags=["Notification Engine"])
+router = APIRouter(prefix="/api/v1/notification-policies", tags=["Notification Engine"])
 
 VALID_NOTIFICATION_TYPES = {"EMAIL", "SMS_WAIT", "LETTER"}
 VALID_RECIPIENT_MODES = {"ROLE_BASED", "ISO_FIELD", "STATIC"}

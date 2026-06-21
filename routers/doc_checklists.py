@@ -20,7 +20,7 @@ from database import get_db
 from auth import get_current_user, require_designer_privileges, CurrentUser
 from routers.entitlements import register_entity
 
-router = APIRouter(prefix="/doc-checklists", tags=["Document Checklist Canvas"])
+router = APIRouter(prefix="/api/v1/doc-checklists", tags=["Document Checklist Canvas"])
 
 
 def _serialize_item(i: models.DocumentChecklistItem) -> dict:

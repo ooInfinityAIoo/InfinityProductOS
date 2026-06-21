@@ -657,6 +657,9 @@ class BusinessRuleSet(BaseModel):
     product_id: Optional[str] = Field(None, description="The specific product this rule set belongs to. Null for Global.")
     subproduct_id: Optional[str] = Field(None, description="The specific subproduct this rule set belongs to. Null for Global.")
 
+    class Config:
+        from_attributes = True
+
 # =====================================================================
 # --- ORCHESTRATION ENGINE SCHEMAS ---
 # =====================================================================
@@ -1621,8 +1624,8 @@ class CalcProgramStep(BaseModel):
     var_name becomes a named variable in the execution namespace — later steps can
     reference it directly by name in their expressions.
     """
-    seq: int = Field(..., description="1-based execution order")
-    var_name: str = Field(..., description="Variable name assigned by this step, e.g. GROSS_INT")
+    seq: Optional[int] = Field(None, description="1-based execution order")
+    var_name: Optional[str] = Field(None, description="Variable name assigned by this step, e.g. GROSS_INT")
     expression: str = Field(..., description="Formula expression referencing inputs or prior step var_names")
     description: Optional[str] = None
     is_output: bool = Field(False, description="If true, this step's result is published as an output token")
@@ -1636,7 +1639,7 @@ class CalcProgramInput(BaseModel):
     how the executor resolves the value at runtime.
     """
     name: str = Field(..., description="Variable name — must match usage in step expressions")
-    source_type: str = Field(..., description="ISO_FIELD | RATE_FEED | POLICY_CONSTANT | FORMULA_TOKEN | RUNTIME_INPUT | DAY_COUNT")
+    source_type: Optional[str] = Field(None, description="ISO_FIELD | RATE_FEED | POLICY_CONSTANT | FORMULA_TOKEN | RUNTIME_INPUT | DAY_COUNT")
     iso_field_id: Optional[str] = None           # for ISO_FIELD
     value: Optional[Any] = None                  # for POLICY_CONSTANT (numeric constant)
     feed_code: Optional[str] = None              # for RATE_FEED, e.g. SOFR_ON, LIBOR_3M
@@ -1856,7 +1859,7 @@ class RoleProfileCreate(BaseModel):
     description: Optional[str] = None
     package_id: Optional[str] = None
     is_system_role: bool = False
-    default_permissions: Dict[str, bool] = {
+    default_permissions: Optional[Dict[str, Any]] = {
         "can_view": True,
         "can_modify_data": False,
         "can_modify_design": False,

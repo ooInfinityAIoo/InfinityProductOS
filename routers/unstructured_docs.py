@@ -53,7 +53,7 @@ from database import get_db
 from auth import get_current_user, require_designer_privileges, CurrentUser
 from routers.entitlements import register_entity
 
-router = APIRouter(prefix="/unstructured-docs", tags=["Unstructured Document Studio"])
+router = APIRouter(prefix="/api/v1/unstructured-docs", tags=["Unstructured Document Studio"])
 
 VALID_PROFILES = {"PDF_STRUCTURED", "PDF_AGENTIC", "IMAGE_OCR"}
 VALID_FALLBACK_MODES = {"SKIP_FIELD", "HUMAN_REVIEW", "USE_DEFAULT"}

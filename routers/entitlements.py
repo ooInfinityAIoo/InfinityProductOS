@@ -19,7 +19,7 @@ import schemas
 from database import get_db
 from auth import get_current_user, require_designer_privileges, CurrentUser
 
-router = APIRouter(prefix="/entitlements", tags=["Entitlement Configuration"])
+router = APIRouter(prefix="/api/v1/entitlements", tags=["Entitlement Configuration"])
 
 # Fallback roles used only when the RoleProfile master table is empty (first boot
 # before any roles have been seeded). Once roles exist in the DB, register_entity()

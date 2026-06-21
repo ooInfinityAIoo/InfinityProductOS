@@ -19,7 +19,7 @@ from database import get_db
 from auth import get_current_user, require_designer_privileges, CurrentUser
 from routers.entitlements import register_entity
 
-router = APIRouter(prefix="/comm-templates", tags=["Document Template Designer"])
+router = APIRouter(prefix="/api/v1/comm-templates", tags=["Document Template Designer"])
 
 VALID_TYPES = {"EMAIL", "LETTER", "SMS"}
 VALID_STATUSES = {"DRAFT", "PENDING_APPROVAL", "LIVE", "ARCHIVED"}
