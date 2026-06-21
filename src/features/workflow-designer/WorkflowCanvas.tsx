@@ -210,6 +210,9 @@ const WorkflowCanvasInner: React.FC = () => {
   const [templateCategoryFilter, setTemplateCategoryFilter] = useState('');
   const [templateSearch, setTemplateSearch] = useState('');
   const [cloningTemplateId, setCloningTemplateId] = useState<string | null>(null);
+  // Tracks the workflow_id of the workflow currently on the canvas (set after save/clone).
+  // Used to scope the participant picker in NodePropertiesDrawer to the right workflow.
+  const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(null);
 
   const { data: packagesData } = useQuery({
     queryKey: ['product-packages'],
@@ -325,7 +328,8 @@ const WorkflowCanvasInner: React.FC = () => {
         })),
         edges: [],
       };
-      await apiClient.post('/workflows/', payload);
+      const cloneResp = await apiClient.post('/workflows/', payload);
+      if (cloneResp.data?.workflow_id) setSavedWorkflowId(cloneResp.data.workflow_id);
 
       // Load onto the canvas immediately
       setNodes(rfNodes);
@@ -409,7 +413,8 @@ const WorkflowCanvasInner: React.FC = () => {
         }))
       };
 
-      await apiClient.post('/workflows/', payload);
+      const saveResp = await apiClient.post('/workflows/', payload);
+      if (saveResp.data?.workflow_id) setSavedWorkflowId(saveResp.data.workflow_id);
       alert('Workflow Blueprint Published Successfully!');
     } catch (e) {
       console.error("Save Error", e);
@@ -1002,6 +1007,7 @@ const WorkflowCanvasInner: React.FC = () => {
               {selectedNode && (
                 <NodePropertiesDrawer
                   node={selectedNode}
+                  workflowId={savedWorkflowId}
                   onClose={() => setSelectedNode(null)}
                   onUpdateData={(updated) => selectedNode && handleUpdateNodeData(selectedNode.id, updated)}
                 />

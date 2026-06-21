@@ -31,9 +31,55 @@ import { usePlatformStore } from '../../store/usePlatformStore';
 
 interface NodePropertiesDrawerProps {
   node: Node | null;
+  workflowId: string | null;  // The DB workflow_id of the canvas — used to scope participant picker
   onClose: () => void;
   onUpdateData: (updatedData: any) => void;
 }
+
+// 21-type Universal Step Type Taxonomy, grouped for the dropdown.
+// Each group maps to a visual color on the canvas (see WorkflowNode.tsx getTypeTheme).
+const STEP_TYPE_GROUPS: { group: string; types: { value: string; label: string }[] }[] = [
+  { group: '▶ Start / Trigger', types: [
+    { value: 'RECEIVE',        label: 'Receive — inbound message / file arrives' },
+    { value: 'SCHEDULE',       label: 'Schedule — time-triggered batch start' },
+    { value: 'EVENT_TRIGGER',  label: 'Event Trigger — platform event fires the flow' },
+  ]},
+  { group: '✓ Validate / Check', types: [
+    { value: 'VALIDATE',         label: 'Validate — schema / field / format check' },
+    { value: 'COMPLIANCE_SCREEN',label: 'Compliance Screen — OFAC / AML / sanctions' },
+    { value: 'LIMIT_CHECK',      label: 'Limit Check — exposure / credit / position limit' },
+    { value: 'DOCUMENT_EXAMINE', label: 'Document Examine — LC / trade doc review' },
+  ]},
+  { group: '⑂ Decide / Branch', types: [
+    { value: 'DECISION',       label: 'Decision — IF/THEN gateway (yes / no branch)' },
+    { value: 'PARALLEL_SPLIT', label: 'Parallel Split — fan-out to concurrent branches' },
+    { value: 'PARALLEL_JOIN',  label: 'Parallel Join — wait for all branches to converge' },
+  ]},
+  { group: '👤 Approve / Authorize', types: [
+    { value: 'HUMAN_APPROVAL',    label: 'Human Approval — 4-eye / maker-checker sign-off' },
+    { value: 'DIGITAL_SIGNATURE', label: 'Digital Signature — cryptographic e-sign' },
+  ]},
+  { group: '∑ Calculate', types: [
+    { value: 'CALCULATE',  label: 'Calculate — formula / fee / interest computation' },
+    { value: 'VALUATE',    label: 'Valuate — mark-to-market / FX conversion' },
+    { value: 'WATERFALL',  label: 'Waterfall — structured finance cash allocation' },
+  ]},
+  { group: '→ Send / Act', types: [
+    { value: 'SEND_MESSAGE',      label: 'Send Message — dispatch ISO 20022 / SWIFT message' },
+    { value: 'POST_ENTRY',        label: 'Post Entry — debit / credit ledger entry' },
+    { value: 'CALL_SYSTEM',       label: 'Call System — invoke external API / core banking' },
+    { value: 'GENERATE_DOCUMENT', label: 'Generate Document — produce report / letter / advice' },
+  ]},
+  { group: '⏱ Wait / Monitor', types: [
+    { value: 'AWAIT_RESPONSE', label: 'Await Response — pause until reply received' },
+    { value: 'HOLD',           label: 'Hold — manual exception park' },
+    { value: 'ESCALATE',       label: 'Escalate — SLA breach auto-escalation' },
+  ]},
+  { group: '■ End', types: [
+    { value: 'COMPLETE',   label: 'Complete — successful end state' },
+    { value: 'TERMINATE',  label: 'Terminate — rejected / failed end state' },
+  ]},
+];
 
 type Tab = 'basic' | 'screen' | 'logic' | 'documents' | 'signals';
 
@@ -45,7 +91,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'signals',   label: 'Signals',    icon: '🔔' },
 ];
 
-export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node, onClose, onUpdateData }) => {
+export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node, workflowId, onClose, onUpdateData }) => {
   const {
     setActiveModule,
     setWorkflowReturnStepId,
@@ -83,6 +129,12 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
   const [notificationPolicyId, setNotificationPolicyId] = useState<string>('');
   const [commTemplateId, setCommTemplateId]             = useState<string>('');
 
+  // ── Step type + swim-lane ─────────────────────────────────────────────
+  // nodeType: one of the 21 Universal Taxonomy types (e.g. VALIDATE, HUMAN_APPROVAL).
+  // participantId: the swim-lane band this node belongs to (FK → workflow_participants).
+  const [nodeType, setNodeType]           = useState<string>('');
+  const [participantId, setParticipantId] = useState<string>('');
+
   // ── Read-only guard ───────────────────────────────────────────────────
   const [isReadOnly, setIsReadOnly]         = useState(false);
   const [lastModifiedBy, setLastModifiedBy] = useState('');
@@ -110,6 +162,8 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
     setExtractionBlueprintId(node.data.extraction_blueprint_id || '');
     setNotificationPolicyId(node.data.notification_policy_id || '');
     setCommTemplateId(node.data.comm_template_id || '');
+    setNodeType(node.data.node_type || '');
+    setParticipantId(node.data.participant_id || '');
 
     if (node.data.lastModifiedBy) {
       setIsReadOnly(true);
@@ -137,6 +191,14 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
   const { data: blueprintsData }  = useQuery({ queryKey: ['extraction-blueprints'],  queryFn: async () => (await apiClient.get('/unstructured-docs/')).data });
   const { data: notifPolicies }   = useQuery({ queryKey: ['notification-policies'],  queryFn: async () => (await apiClient.get('/notification-policies/')).data });
   const { data: commTemplates }   = useQuery({ queryKey: ['comm-templates'],         queryFn: async () => (await apiClient.get('/comm-templates/')).data });
+
+  // Swim-lane participants — scoped to the current workflow.
+  // Only fetched when a workflow_id is known (i.e. the canvas has been saved at least once).
+  const { data: participantsData } = useQuery({
+    queryKey: ['participants', workflowId],
+    queryFn: async () => (await apiClient.get(`/workflows/${workflowId}/participants/`)).data,
+    enabled: !!workflowId,
+  });
 
   if (!node) return null;
 
@@ -173,6 +235,8 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
       extraction_blueprint_id: extractionBlueprintId || null,
       notification_policy_id: notificationPolicyId || null,
       comm_template_id: commTemplateId || null,
+      node_type: nodeType || null,
+      participant_id: participantId || null,
       lastModifiedBy: 'Current User',
       lastModifiedAt: new Date().toISOString(),
     });
@@ -276,6 +340,64 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
                 onChange={e => setSeq(Number(e.target.value))}
                 className="w-28 text-[12px] text-slate-800 border border-slate-200 rounded-xl p-2 focus:border-indigo-500 outline-none bg-white"
               />
+            </div>
+
+            {/* ── Step Type (Universal Taxonomy) ── */}
+            <div className="pt-3 border-t border-slate-100">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Step Type
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Controls the canvas color, shape, and executor dispatch. DECISION nodes render as diamonds.
+              </p>
+              <select
+                value={nodeType}
+                onChange={e => setNodeType(e.target.value)}
+                className="w-full text-[11px] text-slate-800 border border-slate-200 rounded-xl p-2 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none bg-white"
+              >
+                <option value="">— No type (legacy node) —</option>
+                {STEP_TYPE_GROUPS.map(g => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.types.map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {nodeType && (
+                <div className="mt-1.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg font-mono">
+                  type: {nodeType}
+                </div>
+              )}
+            </div>
+
+            {/* ── Swim-Lane Participant ── */}
+            <div className="pt-3 border-t border-slate-100">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Swim-Lane Participant
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Assign this node to an org-unit or role band (e.g. "Debtor Bank", "RTP Network").
+                {!workflowId && <span className="text-amber-600 font-semibold"> Save the workflow first to manage participants.</span>}
+              </p>
+              <select
+                value={participantId}
+                onChange={e => setParticipantId(e.target.value)}
+                disabled={!workflowId}
+                className="w-full text-[11px] text-slate-800 border border-slate-200 rounded-xl p-2 focus:border-indigo-500 outline-none bg-white disabled:opacity-50"
+              >
+                <option value="">— No participant (unassigned) —</option>
+                {(participantsData?.participants ?? []).map((p: any) => (
+                  <option key={p.participant_id} value={p.participant_id}>
+                    {p.name}{p.role ? ` · ${p.role}` : ''}
+                  </option>
+                ))}
+              </select>
+              {(participantsData?.participants ?? []).length === 0 && workflowId && (
+                <p className="text-[10px] text-slate-400 italic mt-1.5">
+                  No participants defined yet. Use the Participants panel to add swim-lane bands.
+                </p>
+              )}
             </div>
 
             {isStudioNode ? (
