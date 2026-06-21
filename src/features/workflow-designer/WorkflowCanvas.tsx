@@ -29,6 +29,7 @@ import { WorkflowSidebar } from './WorkflowSidebar';
 import { ReactFlowProvider, useReactFlow } from 'reactflow';
 
 import { StudioNode } from './StudioNode';
+import { LabeledEdge } from './LabeledEdge';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 const nodeTypes = {
@@ -37,6 +38,13 @@ const nodeTypes = {
   eventNode: EventNode,
   gatewayNode: GatewayNode,
   studioNode: StudioNode
+};
+
+// Business-language labels auto-assigned from DECISION handle IDs.
+// 'yes'/'right' handle = accept path; 'no'/'left' handle = reject path.
+// Override stored in edge data.label for persistence.
+const edgeTypes = {
+  labeledEdge: LabeledEdge,
 };
 
 // Dynamic, automatic flowchart sequencing helper
@@ -155,7 +163,7 @@ const PreviewWorkflowModal = ({ isOpen, onClose, nodes, edges, nodeTypes }: any)
           <button onClick={onClose} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md transition-all active:scale-95">Close 360° View</button>
         </div>
         <div className="flex-1 relative bg-slate-50/50">
-          <ReactFlow nodes={previewNodes} edges={previewEdges} nodeTypes={nodeTypes} fitView minZoom={0.1}>
+          <ReactFlow nodes={previewNodes} edges={previewEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView minZoom={0.1}>
             <Background color="#CBD5E1" gap={20} size={1} />
             <Controls className="bg-white border-slate-200 shadow-sm rounded-xl overflow-hidden" />
           </ReactFlow>
@@ -286,10 +294,10 @@ const WorkflowCanvasInner: React.FC = () => {
         id: e.edge_id || `edge-${idx}`,
         source: e.source_node_id,
         target: e.target_node_id,
-        type: 'smoothstep',
+        type: 'labeledEdge',
         markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: '#6366f1', strokeWidth: 2 },
-        data: { label: '' },
+        style: { strokeWidth: 2 },
+        data: { label: e.edge_condition?.label ?? '' },
       }));
 
       // Persist to DB (so the bank's copy survives a page reload)
@@ -522,13 +530,22 @@ const WorkflowCanvasInner: React.FC = () => {
 
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) => {
+      // Auto-label edges from DECISION node handles in business language.
+      // sourceHandleId 'yes'/'right' = accept path; 'no'/'left' = reject path.
+      const handleLabels: Record<string, string> = {
+        yes: '✓ Accepted', no: '✗ Rejected',
+        right: '✓ Accepted', left: '✗ Rejected',
+        default: '→ Continue',
+      };
+      const autoLabel = params.sourceHandle ? handleLabels[params.sourceHandle] ?? '' : '';
       const updated = addEdge({
         ...params,
-        type: 'step',
+        type: 'labeledEdge',
         updatable: true,
         focusable: true,
         markerEnd: { type: MarkerType.ArrowClosed, color: '#6366F1' },
-        style: { stroke: '#6366F1', strokeWidth: 2 }
+        style: { strokeWidth: 2 },
+        data: { label: autoLabel },
       }, eds);
       saveDraft(nodes, updated);
       return updated;
@@ -824,6 +841,7 @@ const WorkflowCanvasInner: React.FC = () => {
                   onNodeContextMenu={onNodeContextMenu}
                   onConnect={onConnect}
                   nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
                   fitView
                   attributionPosition="bottom-right"
                 >
