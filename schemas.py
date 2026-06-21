@@ -445,6 +445,38 @@ class DocumentChecklistItem(BaseModel):
     linked_covenant_rule: Optional[str] = Field(None, description="Linked BRE rule for COVENANT type.")
     override_mapper_id: Optional[str] = Field(None, description="Optional override for the document's default extraction blueprint.")
 
+# --- WORKFLOW PARTICIPANT SCHEMAS ---
+# WHY THESE EXIST:
+# A WorkflowParticipant is a swim-lane band — a named role or org-unit that owns
+# one or more nodes. Examples: "Debtor Bank", "RTP Network", "AML Team".
+# The participant list is managed per-workflow. Nodes are assigned to a participant
+# via participant_id in WorkflowNodeCreate. When the canvas is in Swim-Lane View
+# mode, nodes are rendered inside their participant's horizontal band.
+
+class WorkflowParticipantCreate(BaseModel):
+    name: str = Field(..., description="Participant label shown on the swim-lane band, e.g. 'Debtor Bank'")
+    role: Optional[str] = Field(None, description="Category: BANK | NETWORK | REGULATOR | CLIENT | SYSTEM")
+    color: str = Field(default="#6366f1", description="Hex color for the swim-lane band header")
+    sort_order: int = Field(default=0, description="Top-to-bottom ordering of bands; lower = higher on canvas")
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowParticipantResponse(WorkflowParticipantCreate):
+    participant_id: str
+    workflow_id: str
+    created_at: str
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowParticipantListResponse(BaseModel):
+    participants: List[WorkflowParticipantResponse]
+
+
 class WorkflowNodeCreate(BaseModel):
     sequence_number: int = Field(..., description="Step sequence in workflow")
     node_title: str = Field(..., description="User-facing node label")
@@ -463,6 +495,7 @@ class WorkflowNodeCreate(BaseModel):
     message_direction: Optional[str] = Field(None, description="SEND | RECEIVE | PROCESS | BRANCH")
     party_from: Optional[str] = Field(None, description="Sending party label, e.g. 'Debtor FI'")
     party_to: Optional[str] = Field(None, description="Receiving party label, e.g. 'RTP'")
+    participant_id: Optional[str] = Field(None, description="Swim-lane participant this node belongs to. NULL = no lane assigned.")
 
     class Config:
         from_attributes = True
@@ -533,6 +566,7 @@ class WorkflowConfigurationResponse(BaseModel):
     updated_at: Optional[str] = None
     nodes: Optional[List[WorkflowNodeResponse]] = None
     edges: Optional[List[WorkflowEdgeResponse]] = None
+    participants: Optional[List[WorkflowParticipantResponse]] = None
     is_template: Optional[bool] = False
     message_type: Optional[str] = None
     clearing_network: Optional[str] = None

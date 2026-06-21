@@ -295,13 +295,24 @@ class WorkflowNode(Base):
 
     # Screen Template
     screen_template = Column(String, nullable=True)
-    
+
+    # Swim-Lane Participant — which swim-lane this node lives in.
+    # NULL = no participant assigned (node floats in the Flow View default lane).
+    # Set via the node properties panel dropdown in the Workflow Designer.
+    participant_id = Column(
+        String,
+        ForeignKey("workflow_participants.participant_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Metadata
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
-    
+
     # Relationships
     workflow = relationship("WorkflowConfiguration", back_populates="nodes")
+    participant = relationship("WorkflowParticipant", back_populates="nodes")
     source_for_edges = relationship("WorkflowEdge", foreign_keys="[WorkflowEdge.source_node_id]", back_populates="source_node", cascade="all, delete-orphan")
     target_for_edges = relationship("WorkflowEdge", foreign_keys="[WorkflowEdge.target_node_id]", back_populates="target_node", cascade="all, delete-orphan")
 
@@ -372,6 +383,46 @@ class WorkflowConfiguration(Base):
     # Relationships to automatically load the entire workflow graph.
     nodes = relationship("WorkflowNode", back_populates="workflow", cascade="all, delete-orphan", lazy="joined")
     edges = relationship("WorkflowEdge", back_populates="workflow", cascade="all, delete-orphan", lazy="joined")
+    participants = relationship("WorkflowParticipant", back_populates="workflow", cascade="all, delete-orphan", lazy="joined")
+
+class WorkflowParticipant(Base):
+    """
+    WHY THIS MODEL EXISTS:
+    Represents a swim-lane participant (a role, system, or org unit) that owns
+    one or more nodes in a workflow. Examples: "Debtor Bank", "RTP Network",
+    "AML Compliance Team", "Treasury Ops".
+
+    Participants are the foundation for Swim-Lane View — when the canvas switches
+    from Flow View to Swim-Lane View, nodes are grouped into horizontal bands by
+    participant. Without this table the canvas is flat; with it, a Trade Finance
+    workflow can show exactly which party touches each step (Importer Bank,
+    Issuing Bank, Beneficiary Bank, SWIFT, etc.).
+
+    One participant belongs to exactly one workflow — they are not shared across
+    workflows. Color is a hex string so the frontend can render the band header
+    without any mapping logic.
+    """
+    __tablename__ = "workflow_participants"
+
+    participant_id = Column(String, primary_key=True, index=True)
+    workflow_id = Column(
+        String,
+        ForeignKey("workflow_configurations.workflow_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String, nullable=False)          # e.g. "Debtor Bank"
+    role = Column(String, nullable=True)           # e.g. "BANK" | "NETWORK" | "REGULATOR" | "CLIENT"
+    color = Column(String, default="#6366f1")      # Tailwind-safe hex for swim-lane band header
+    sort_order = Column(Integer, default=0)        # Controls band ordering top-to-bottom
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+
+    # Relationships
+    workflow = relationship("WorkflowConfiguration", back_populates="participants")
+    nodes = relationship("WorkflowNode", back_populates="participant")
+
 
 class WorkflowVersion(Base):
     """
