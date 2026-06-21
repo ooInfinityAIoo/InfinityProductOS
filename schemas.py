@@ -390,7 +390,7 @@ class ISOFieldDefinitionCreate(BaseModel):
     # field_source separates governance origin from display preference (different concerns):
     # ISO_20022 = pre-seeded ISO standard (read-only); BANK_CUSTOM = admin-defined proprietary;
     # CALCULATED = auto-registered when a Formula output token is saved
-    field_source: str = Field("ISO_20022", description="ISO_20022 | BANK_CUSTOM | CALCULATED")
+    field_source: Optional[str] = Field("ISO_20022", description="ISO_20022 | BANK_CUSTOM | CALCULATED")
     formula_ref: Optional[str] = Field(None, description="For CALCULATED fields: program_id of the Formula that produces this field")
 
 

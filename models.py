@@ -1100,6 +1100,21 @@ class TransactionalOutboxEvent(Base):
     status = Column(String, default="PENDING", index=True)      # PENDING, PUBLISHED, FAILED
 
 
+class EventDefinition(Base):
+    """
+    WHY THIS EXISTS:
+    Stores the catalog of all known business events in the Event Repository studio.
+    Each entry is a discoverable event type (e.g. WORKFLOW_COMPLETED, PAYMENT_SETTLED)
+    that other studios can subscribe to for rule triggers, notifications, and insights.
+    """
+    __tablename__ = "event_definitions"
+
+    event_type = Column(String, primary_key=True, index=True)
+    source_module = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(String, nullable=False)
+
+
 class SimulationScenario(Base):
     __tablename__ = "simulation_scenarios"
     simulation_id = Column(String, primary_key=True, index=True)
