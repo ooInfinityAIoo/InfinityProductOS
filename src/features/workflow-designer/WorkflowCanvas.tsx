@@ -30,6 +30,7 @@ import { ReactFlowProvider, useReactFlow } from 'reactflow';
 
 import { StudioNode } from './StudioNode';
 import { LabeledEdge } from './LabeledEdge';
+import { SwimlaneLabelNode } from './SwimlaneLabelNode';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 const nodeTypes = {
@@ -37,7 +38,8 @@ const nodeTypes = {
   decisionNode: DecisionNode,
   eventNode: EventNode,
   gatewayNode: GatewayNode,
-  studioNode: StudioNode
+  studioNode: StudioNode,
+  swimlaneLabelNode: SwimlaneLabelNode,
 };
 
 // Business-language labels auto-assigned from DECISION handle IDs.
@@ -214,6 +216,10 @@ const WorkflowCanvasInner: React.FC = () => {
   // Used to scope the participant picker in NodePropertiesDrawer to the right workflow.
   const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(null);
 
+  // Canvas view mode: 'flow' = free-form x/y positions; 'swimlane' = horizontal bands by participant.
+  // Swimlane mode computes a display-only layout — the underlying nodes state (and DB) keeps Flow positions.
+  const [viewMode, setViewMode] = useState<'flow' | 'swimlane'>('flow');
+
   const { data: packagesData } = useQuery({
     queryKey: ['product-packages'],
     queryFn: async () => (await apiClient.get('/masters/packages')).data
@@ -244,6 +250,14 @@ const WorkflowCanvasInner: React.FC = () => {
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: async () => (await apiClient.get('/workflows/')).data
+  });
+
+  // Participants scoped to the current saved workflow — used by Swimlane View to build
+  // horizontal bands. Only fetched when a workflow has been saved (savedWorkflowId is set).
+  const { data: participantsData } = useQuery({
+    queryKey: ['canvas-participants', savedWorkflowId],
+    queryFn: async () => (await apiClient.get(`/workflows/${savedWorkflowId}/participants/`)).data,
+    enabled: !!savedWorkflowId,
   });
 
   // Fetch all ISO 20022 workflow templates for the template picker modal.
@@ -708,6 +722,75 @@ const WorkflowCanvasInner: React.FC = () => {
     saveDraft(updatedNodes, edges);
   };
 
+  // ── Swimlane layout computation ─────────────────────────────────────────────
+  // Builds a display-only node list for Swimlane View. Never mutates the real `nodes` state.
+  //
+  // Layout rules:
+  //   - One horizontal band per participant (ordered by sort_order) plus an "Unassigned" band at top
+  //   - Band height: 280px. Content nodes placed at band_y + 60 spaced 220px apart on X axis
+  //   - A SwimlaneLabelNode (non-interactive) is inserted to the left of each band
+  //   - Nodes without a participant_id go into the Unassigned band
+  const computeSwimlaneLayout = (contentNodes: Node[], participants: any[]): Node[] => {
+    const BAND_HEIGHT = 280;
+    const BAND_PAD_TOP = 60;
+    const NODE_SPACING_X = 230;
+    const LABEL_X = -200;
+
+    const groups = [
+      { id: null, name: 'Unassigned', role: '', color: '#94a3b8' },
+      ...(participants || []).map((p: any) => ({
+        id: p.participant_id,
+        name: p.name,
+        role: p.role || '',
+        color: p.color || '#6366f1',
+      })),
+    ];
+
+    // Bucket content nodes by participant_id
+    const buckets: Record<string, Node[]> = {};
+    groups.forEach(g => { buckets[g.id ?? '__none__'] = []; });
+    contentNodes.forEach(n => {
+      const pid = n.data?.participant_id ?? null;
+      const key = pid && buckets[pid] !== undefined ? pid : '__none__';
+      buckets[key].push(n);
+    });
+
+    const result: Node[] = [];
+    groups.forEach((group, bandIdx) => {
+      const bandY = bandIdx * BAND_HEIGHT;
+      const key = group.id ?? '__none__';
+      const bandNodes = buckets[key] || [];
+
+      // Insert non-interactive label node
+      result.push({
+        id: `__sw_label_${key}`,
+        type: 'swimlaneLabelNode',
+        position: { x: LABEL_X, y: bandY + BAND_HEIGHT / 2 - 30 },
+        data: { name: group.name, role: group.role, color: group.color, nodeCount: bandNodes.length },
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        connectable: false,
+      } as Node);
+
+      // Position content nodes in a row within the band
+      bandNodes.forEach((node, i) => {
+        result.push({
+          ...node,
+          position: { x: i * NODE_SPACING_X + 60, y: bandY + BAND_PAD_TOP },
+        });
+      });
+    });
+
+    return result;
+  };
+
+  // Nodes passed to <ReactFlow>: swimlane layout when toggle is active, raw nodes otherwise.
+  // onNodesChange / onEdgesChange still operate on the real `nodes` state so positions persist.
+  const displayNodes = viewMode === 'swimlane'
+    ? computeSwimlaneLayout(nodes, participantsData?.participants ?? [])
+    : nodes;
+
   if (isLoading) {
     return (
       <div className="flex h-[600px] w-full flex-col items-center justify-center text-slate-500 font-semibold bg-white/50 backdrop-blur-md border border-white/20 rounded-2xl shadow-glass">
@@ -824,8 +907,37 @@ const WorkflowCanvasInner: React.FC = () => {
               </div>
 
               <div className="flex-1 relative" onDrop={onDrop} onDragOver={onDragOver}>
+                {/* Swimlane band backgrounds — rendered as CSS stripes behind the React Flow canvas.
+                    Positioned using fixed pixel bands matching computeSwimlaneLayout's BAND_HEIGHT=280.
+                    Only visible in swimlane mode; invisible in flow mode. */}
+                {viewMode === 'swimlane' && (
+                  <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+                    {[
+                      { id: '__none__', name: 'Unassigned', color: '#94a3b8' },
+                      ...(participantsData?.participants ?? []).map((p: any) => ({ id: p.participant_id, name: p.name, color: p.color || '#6366f1' })),
+                    ].map((group, idx) => (
+                      <div
+                        key={group.id}
+                        className="absolute left-0 right-0 border-b border-slate-100"
+                        style={{
+                          top: idx * 280,
+                          height: 280,
+                          background: idx % 2 === 0 ? 'rgba(248,250,252,0.7)' : 'rgba(241,245,249,0.7)',
+                          borderLeft: `3px solid ${group.color}20`,
+                        }}
+                      >
+                        <span
+                          className="absolute top-2 left-3 text-[9px] font-bold uppercase tracking-widest opacity-30"
+                          style={{ color: group.color }}
+                        >
+                          {group.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <ReactFlow
-                  nodes={nodes.map(n => ({
+                  nodes={displayNodes.map(n => ({
                     ...n,
                     selected: selectedNode?.id === n.id,
                     data: {
@@ -890,6 +1002,24 @@ const WorkflowCanvasInner: React.FC = () => {
                 <span>💡</span> Drag shapes to canvas
               </div>
               <div className={`absolute top-4 z-40 flex items-center gap-2 transition-all duration-300 ${isFullscreen && isPropertiesOpen ? 'right-[420px]' : 'right-4'}`}>
+                {/* View mode toggle — Flow View (free-form x/y) vs Swimlane View (bands by participant).
+                    Swimlane is only meaningful when participants have been defined and nodes assigned. */}
+                <div className="bg-white/90 border border-slate-200 rounded-xl shadow-lg overflow-hidden flex text-[11px] font-bold">
+                  <button
+                    onClick={() => setViewMode('flow')}
+                    className={`px-3 py-2 flex items-center gap-1.5 transition-colors ${viewMode === 'flow' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                    title="Flow View — free-form canvas"
+                  >
+                    ⬡ Flow
+                  </button>
+                  <button
+                    onClick={() => setViewMode('swimlane')}
+                    className={`px-3 py-2 flex items-center gap-1.5 transition-colors border-l border-slate-200 ${viewMode === 'swimlane' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                    title="Swimlane View — grouped by participant"
+                  >
+                    ☰ Lanes
+                  </button>
+                </div>
                 <button
                   onClick={() => setIsPreviewOpen(true)}
                   className="bg-white/90 hover:bg-white text-indigo-700 border border-indigo-100 font-bold text-[12px] px-4 py-2 rounded-xl shadow-lg transition-all flex items-center gap-2"
