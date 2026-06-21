@@ -110,9 +110,13 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Product Hierarchy
             </div>
-            <button onClick={() => setActiveModule('products-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
-              <div className="text-[12px] font-bold text-indigo-600">Products Registry</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Core products, sub-products and variation catalogue.</div>
+            <button onClick={() => setActiveModule('product-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">Product Registry</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define payment products — SWIFT, SEPA, ACH, RTP, FX. Auto-generates PRD-YYYYMM-NNN ID.</div>
+            </button>
+            <button onClick={() => setActiveModule('subproduct-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">Sub-Product Registry</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define product variations by geography, segment, channel, currency, or limit band.</div>
             </button>
             <button onClick={() => setActiveModule('field-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-indigo-600">Data Dictionary</div>

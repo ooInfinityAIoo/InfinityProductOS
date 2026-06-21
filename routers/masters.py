@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
@@ -146,57 +146,171 @@ def cancel_product_package(package_id: str, db: Session = Depends(get_db), curre
 
 # --- Product and Subproduct Masters for Screen Designer ---
 
-@router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List Products")
-def list_products(package_id: Optional[str] = None, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    """Retrieves a list of products, optionally filtered by package_id."""
+def _next_product_id(db: Session) -> str:
+    """
+    WHY THIS EXISTS: Generates a sequential, human-readable Product ID for audit trails.
+    Format: PRD-YYYYMM-NNN (e.g., PRD-202606-001). Auditors and ops teams can read
+    and sort these — random hex UUIDs cannot be reasoned about in incident reports.
+    """
+    ym = datetime.datetime.utcnow().strftime("%Y%m")
+    prefix = f"PRD-{ym}-"
+    count = db.query(models.ProductMaster).filter(models.ProductMaster.product_id.like(f"{prefix}%")).count()
+    return f"{prefix}{str(count + 1).zfill(3)}"
+
+def _next_subproduct_id(db: Session, product_id: str) -> str:
+    """Sequential Sub-Product ID scoped to the parent product. Format: SP-YYYYMM-NNN."""
+    ym = datetime.datetime.utcnow().strftime("%Y%m")
+    prefix = f"SP-{ym}-"
+    count = db.query(models.SubproductMaster).filter(models.SubproductMaster.subproduct_id.like(f"{prefix}%")).count()
+    return f"{prefix}{str(count + 1).zfill(3)}"
+
+
+@router.get("/products", response_model=schemas.ProductMasterListResponse, summary="List Products",
+    description="Returns all products for the given package. Products are the top-level payment product definitions (e.g. SWIFT Wire, SEPA, ACH).")
+def list_products(
+    package_id: Optional[str] = None,
+    product_type: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
     query = db.query(models.ProductMaster)
     if package_id:
         query = query.filter(models.ProductMaster.package_id == package_id)
-    products = query.order_by(models.ProductMaster.product_name).all()
-    return {"products": products}
+    if product_type:
+        query = query.filter(models.ProductMaster.product_type == product_type.upper())
+    if status:
+        query = query.filter(models.ProductMaster.status == status.upper())
+    return {"products": query.order_by(models.ProductMaster.product_name).all()}
 
-@router.post("/products", response_model=schemas.ProductMasterResponse, status_code=status.HTTP_201_CREATED, summary="Create a Core Product")
+
+@router.post("/products", response_model=schemas.ProductMasterResponse, status_code=status.HTTP_201_CREATED,
+    summary="Create a Product",
+    description="Defines a new Payment Product under a Package. Auto-generates a sequential Product ID (PRD-YYYYMM-NNN) immediately on creation.")
 def create_product(payload: schemas.ProductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
-    """Creates a new core product (Level 2) under an existing application package."""
     package = db.query(models.ProductApplicationPackage).filter(models.ProductApplicationPackage.package_id == payload.package_id).first()
     if not package:
-        raise HTTPException(status_code=404, detail="Parent package not found")
-        
+        raise HTTPException(status_code=404, detail="Parent package not found.")
+    now = datetime.datetime.utcnow().isoformat()
     db_product = models.ProductMaster(
-        product_id=f"PRD-{uuid.uuid4().hex[:8].upper()}",
+        product_id=_next_product_id(db),
         package_id=payload.package_id,
         product_name=payload.product_name,
+        alias=payload.alias,
+        product_code=payload.product_code,
+        product_type=payload.product_type.upper() if payload.product_type else None,
         description=payload.description,
-        created_at=datetime.datetime.utcnow().isoformat()
+        owner_user_id=payload.owner_user_id,
+        effective_date=payload.effective_date,
+        status="DRAFT",
+        created_at=now,
+        updated_at=now,
+        created_by=current_user.user_id,
     )
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
     return db_product
 
-@router.get("/subproducts", response_model=schemas.SubproductMasterListResponse, summary="List Subproducts for a Product")
-def list_subproducts(product_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
-    """Retrieves a list of subproducts filtered by a specific product_id."""
-    subproducts = db.query(models.SubproductMaster).filter(
-        models.SubproductMaster.product_id == product_id
-    ).order_by(models.SubproductMaster.subproduct_name).all()
-    return {"subproducts": subproducts}
 
-@router.post("/subproducts", response_model=schemas.SubproductMasterResponse, status_code=status.HTTP_201_CREATED, summary="Create a Subproduct Variation")
+@router.patch("/products/{product_id}", response_model=schemas.ProductMasterResponse, summary="Update a Product")
+def update_product(product_id: str, payload: schemas.ProductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    product = db.query(models.ProductMaster).filter(models.ProductMaster.product_id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    for field, value in payload.dict(exclude_unset=True, exclude={"package_id"}).items():
+        if field == "product_type" and value:
+            value = value.upper()
+        setattr(product, field, value)
+    product.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.patch("/products/{product_id}/status", response_model=schemas.ProductMasterResponse, summary="Update Product Status",
+    description="Moves a product through DRAFT → ACTIVE → DEPRECATED lifecycle.")
+def update_product_status(product_id: str, new_status: str = Query(..., description="DRAFT | ACTIVE | DEPRECATED"),
+    db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    product = db.query(models.ProductMaster).filter(models.ProductMaster.product_id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    product.status = new_status.upper()
+    product.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.get("/subproducts", response_model=schemas.SubproductMasterListResponse, summary="List Sub-Products",
+    description="Returns sub-products for a given product_id. Sub-products are variations of a product (by geography, segment, channel, currency, or limit band).")
+def list_subproducts(
+    product_id: Optional[str] = None,
+    variation_type: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    query = db.query(models.SubproductMaster)
+    if product_id:
+        query = query.filter(models.SubproductMaster.product_id == product_id)
+    if variation_type:
+        query = query.filter(models.SubproductMaster.variation_type == variation_type.upper())
+    if status:
+        query = query.filter(models.SubproductMaster.status == status.upper())
+    return {"subproducts": query.order_by(models.SubproductMaster.subproduct_name).all()}
+
+
+@router.post("/subproducts", response_model=schemas.SubproductMasterResponse, status_code=status.HTTP_201_CREATED,
+    summary="Create a Sub-Product",
+    description="Defines a new Sub-Product variation under a Product. Parent Product ID is required. Auto-generates SP-YYYYMM-NNN ID on creation.")
 def create_subproduct(payload: schemas.SubproductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
-    """Creates a new subproduct variation (Level 3) under a core product."""
     product = db.query(models.ProductMaster).filter(models.ProductMaster.product_id == payload.product_id).first()
     if not product:
-        raise HTTPException(status_code=404, detail="Parent product not found")
-        
+        raise HTTPException(status_code=404, detail="Parent product not found.")
+    now = datetime.datetime.utcnow().isoformat()
     db_subproduct = models.SubproductMaster(
-        subproduct_id=f"SUB-{uuid.uuid4().hex[:8].upper()}",
+        subproduct_id=_next_subproduct_id(db, payload.product_id),
         product_id=payload.product_id,
         subproduct_name=payload.subproduct_name,
+        alias=payload.alias,
+        subproduct_code=payload.subproduct_code,
+        variation_type=payload.variation_type.upper() if payload.variation_type else None,
         description=payload.description,
-        created_at=datetime.datetime.utcnow().isoformat()
+        status="DRAFT",
+        created_at=now,
+        updated_at=now,
+        created_by=current_user.user_id,
     )
     db.add(db_subproduct)
     db.commit()
     db.refresh(db_subproduct)
     return db_subproduct
+
+
+@router.patch("/subproducts/{subproduct_id}", response_model=schemas.SubproductMasterResponse, summary="Update a Sub-Product")
+def update_subproduct(subproduct_id: str, payload: schemas.SubproductMasterCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    sp = db.query(models.SubproductMaster).filter(models.SubproductMaster.subproduct_id == subproduct_id).first()
+    if not sp:
+        raise HTTPException(status_code=404, detail="Sub-Product not found.")
+    for field, value in payload.dict(exclude_unset=True, exclude={"product_id"}).items():
+        if field == "variation_type" and value:
+            value = value.upper()
+        setattr(sp, field, value)
+    sp.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(sp)
+    return sp
+
+
+@router.patch("/subproducts/{subproduct_id}/status", response_model=schemas.SubproductMasterResponse, summary="Update Sub-Product Status")
+def update_subproduct_status(subproduct_id: str, new_status: str = Query(..., description="DRAFT | ACTIVE | DEPRECATED"),
+    db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    sp = db.query(models.SubproductMaster).filter(models.SubproductMaster.subproduct_id == subproduct_id).first()
+    if not sp:
+        raise HTTPException(status_code=404, detail="Sub-Product not found.")
+    sp.status = new_status.upper()
+    sp.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(sp)
+    return sp

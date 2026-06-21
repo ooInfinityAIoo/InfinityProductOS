@@ -103,15 +103,27 @@ class ProductApplicationPackageListResponse(BaseModel):
 class ProductMasterCreate(BaseModel):
     package_id: str
     product_name: str
+    alias: Optional[str] = None
+    product_code: Optional[str] = None
+    product_type: Optional[str] = None   # PAYMENTS | LENDING | TREASURY | TRADE_FINANCE | CARDS | FX | RECONCILIATION
     description: Optional[str] = None
+    owner_user_id: Optional[str] = None
+    effective_date: Optional[str] = None
 
 class ProductMasterResponse(BaseModel):
     product_id: str
+    product_code: Optional[str] = None
     package_id: str
     product_name: str
-    description: Optional[str]
+    alias: Optional[str] = None
+    product_type: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "DRAFT"
+    owner_user_id: Optional[str] = None
+    effective_date: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None
+    created_by: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -119,17 +131,25 @@ class ProductMasterListResponse(BaseModel):
     products: List[ProductMasterResponse]
 
 class SubproductMasterCreate(BaseModel):
-    product_id: str
+    product_id: str   # Required — parent Product must be selected first
     subproduct_name: str
+    alias: Optional[str] = None
+    subproduct_code: Optional[str] = None
+    variation_type: Optional[str] = None  # BY_GEOGRAPHY | BY_SEGMENT | BY_CHANNEL | BY_CURRENCY | BY_LIMIT
     description: Optional[str] = None
 
 class SubproductMasterResponse(BaseModel):
     subproduct_id: str
+    subproduct_code: Optional[str] = None
     product_id: str
     subproduct_name: str
-    description: Optional[str]
+    alias: Optional[str] = None
+    variation_type: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "DRAFT"
     created_at: str
     updated_at: Optional[str] = None
+    created_by: Optional[str] = None
     class Config:
         from_attributes = True
 

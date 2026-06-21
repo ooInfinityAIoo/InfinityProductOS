@@ -619,24 +619,54 @@ class BusinessDomain(Base):
 
 
 class ProductMaster(Base):
-    """Level 2: The Core Product (e.g., "FEDWIRE", "CHIPS", "SWIFT")"""
+    """
+    WHY THIS EXISTS:
+    Level 2 master — a Payment Product within a Package. Examples: SWIFT MT103 Wire,
+    SEPA Credit Transfer, FEDWIRE, ACH, RTP, Letter of Credit, FX Spot.
+    Each product is independently configurable with its own workflow, rules, screens.
+
+    WHAT BREAKS IF REMOVED:
+    All Designer Studio modules lose their product-scoped context. Business rules,
+    workflows, and calculations would have no product boundary.
+    """
     __tablename__ = "product_master"
-    product_id = Column(String, primary_key=True, index=True)
-    package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=False, index=True)
-    product_name = Column(String, nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    created_at = Column(String, nullable=False)
-    updated_at = Column(String, nullable=True)
+    product_id     = Column(String, primary_key=True, index=True)   # Auto: PRD-{YYYYMM}-{seq3}
+    product_code   = Column(String, nullable=True, index=True)       # Short code e.g. "SWIFT-WIRE"
+    package_id     = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=False, index=True)
+    product_name   = Column(String, nullable=False, index=True)      # Full name e.g. "SWIFT MT103 Cross-Border Wire"
+    alias          = Column(String, nullable=True)                   # Short display name e.g. "SWIFT Wire"
+    product_type   = Column(String, nullable=True, index=True)       # PAYMENTS | LENDING | TREASURY | TRADE_FINANCE | CARDS | FX | RECONCILIATION
+    description    = Column(Text, nullable=True)                     # Purpose and scope of this product
+    status         = Column(String, nullable=False, default="DRAFT", index=True)  # DRAFT | ACTIVE | DEPRECATED
+    owner_user_id  = Column(String, nullable=True)                   # Business SME who owns this product
+    effective_date = Column(String, nullable=True)                   # When this product goes live
+    created_at     = Column(String, nullable=False)
+    updated_at     = Column(String, nullable=True)
+    created_by     = Column(String, nullable=True)
 
 class SubproductMaster(Base):
-    """Level 3: Product Variations (e.g., "FEDWIRE-B2B")"""
+    """
+    WHY THIS EXISTS:
+    Level 3 master — a variation of a Product. product_id is the required first field.
+    Examples: "SWIFT MT103 - Corporate B2B", "SEPA - Germany Retail", "ACH - Payroll".
+    Sub-products share the parent's product_type but carry their own studio configuration.
+
+    WHAT BREAKS IF REMOVED:
+    Studios cannot distinguish product variations. A Business Rule for "SWIFT B2B"
+    would apply to "SWIFT B2C" with no separation boundary.
+    """
     __tablename__ = "subproduct_master"
-    subproduct_id = Column(String, primary_key=True, index=True)
+    subproduct_id   = Column(String, primary_key=True, index=True)  # Auto: SP-{YYYYMM}-{seq3}
+    subproduct_code = Column(String, nullable=True, index=True)      # e.g. "SWIFT-WIRE-B2B"
+    product_id      = Column(String, ForeignKey("product_master.product_id"), nullable=False, index=True)
     subproduct_name = Column(String, nullable=False)
-    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    created_at = Column(String, nullable=False)
-    updated_at = Column(String, nullable=True)
+    alias           = Column(String, nullable=True)                  # Short display name
+    variation_type  = Column(String, nullable=True)                  # BY_GEOGRAPHY | BY_SEGMENT | BY_CHANNEL | BY_CURRENCY | BY_LIMIT
+    description     = Column(Text, nullable=True)
+    status          = Column(String, nullable=False, default="DRAFT", index=True)  # DRAFT | ACTIVE | DEPRECATED
+    created_at      = Column(String, nullable=False)
+    updated_at      = Column(String, nullable=True)
+    created_by      = Column(String, nullable=True)
 
     product = relationship("ProductMaster")
 
