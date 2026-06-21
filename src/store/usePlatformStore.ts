@@ -9,6 +9,7 @@ export interface PlatformState {
   // --- Global Application Context ---
   activeProductContext: string | null;
   activeCoreProductId: string | null;
+  activeCoreSubProductId: string | null;
   currentLanguage: LanguageCode;
   globalAdminDesignerMode: boolean;
   userRole: UserRole;
@@ -30,6 +31,7 @@ export interface PlatformState {
   toggleAdminMode: () => void;
   setProductContext: (productName: string | null) => void;
   setCoreProductId: (productId: string | null) => void;
+  setCoreSubProductId: (subProductId: string | null) => void;
   setActiveModule: (moduleName: PlatformState['activeModule']) => void;
   setUserRole: (role: UserRole) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -50,6 +52,7 @@ export const usePlatformStore = create<PlatformState>((set) => ({
   // Initial State
   activeProductContext: null, // Null means we are on the Home Landing Page
   activeCoreProductId: null,
+  activeCoreSubProductId: null,
   currentLanguage: 'EN',
   globalAdminDesignerMode: false,
   activeModule: 'dashboard',
@@ -74,13 +77,17 @@ export const usePlatformStore = create<PlatformState>((set) => ({
   setProductContext: (productName) => set({ 
     activeProductContext: productName,
     activeCoreProductId: null, // Reset core product when domain changes
+  activeCoreSubProductId: null,
     // When setting a product context, automatically navigate to the domain dashboard
     activeModule: productName ? 'domain-dashboard' : 'dashboard',
     viewMode: 'LIST',
     hasUnsavedChanges: false
   }),
   
-  setCoreProductId: (productId) => set({ activeCoreProductId: productId }),
+  // Resetting sub-product when product changes ensures studios never show stale
+  // sub-product data from a previously selected product.
+  setCoreProductId: (productId) => set({ activeCoreProductId: productId, activeCoreSubProductId: null }),
+  setCoreSubProductId: (subProductId) => set({ activeCoreSubProductId: subProductId }),
   
   setActiveModule: (moduleName) => set({ 
     activeModule: moduleName,
