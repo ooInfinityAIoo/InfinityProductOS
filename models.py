@@ -1166,6 +1166,103 @@ class CommunicationTemplate(Base):
     made_live_by = Column(String, nullable=True)
 
 
+class RoleProfile(Base):
+    """
+    WHY THIS EXISTS:
+    Role Profiles are the master definition of who can do what on this platform.
+    Previously roles were hardcoded as a Python list in routers/entitlements.py
+    (ALL_ROLES = ["ADMIN", "OPERATOR", ...]). That meant adding a new role required
+    a code change and redeploy — violating ADR #3 (no hardcoded logic).
+
+    By storing roles as DB records, a System Administrator can:
+      1. Create a new role (e.g. "COMPLIANCE_OFFICER") without touching code
+      2. Assign that role to users via UserProfile
+      3. Grant it permissions via EntitlementPolicy — all from the UI
+
+    is_system_role = True means this role was seeded at startup and cannot be
+    deleted (ADMIN, AUDITOR, VIEWER must always exist for the platform to function).
+
+    WHAT BREAKS IF REMOVED: EntitlementPolicy.role_code references become orphaned.
+    The Entitlement Configuration studio cannot auto-populate role columns.
+    """
+    __tablename__ = "role_profiles"
+
+    role_id = Column(String, primary_key=True, index=True)
+    role_code = Column(String, nullable=False, unique=True, index=True)
+    # e.g. ADMIN, OPERATOR, RISK, AUDITOR, VIEWER, SALES, C_LEVEL, COMPLIANCE_OFFICER
+
+    role_name = Column(String, nullable=False)
+    # Display name, e.g. "Risk Manager"
+    description = Column(Text, nullable=True)
+
+    # NULL = platform-wide role; set package_id for package-specific roles
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    # System roles are seeded at startup and cannot be deleted
+    is_system_role = Column(Boolean, nullable=False, default=False)
+
+    # Default permission template — used when auto-registering a new entity
+    # Stored as JSONB: { "can_view": true, "can_modify_data": false, "can_modify_design": false, "can_approve": false }
+    default_permissions = Column(JSONB, nullable=False, default=dict)
+
+    status = Column(String, nullable=False, default="ACTIVE", index=True)
+    # ACTIVE | INACTIVE
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
+class UserProfile(Base):
+    """
+    WHY THIS EXISTS:
+    User Profiles are the person-level record for everyone who logs into the platform.
+    Currently the frontend injects X-User-Id: designer_admin as a header (local dev
+    mode — see auth.py). In production, the OIDC JWT provides the user_id.
+
+    Having users as DB records enables:
+      1. Auditors can see "who" made every change (user_id links to a name/email)
+      2. Queue entitlements: allowed_user_ids on MessageQueue reference these user_ids
+         for temporary access overrides (weekend cover, staff absence)
+      3. 4-Eye approval: the second approver is a UserProfile, not an anonymous string
+
+    primary_role_code: the main role that determines default permissions.
+    additional_role_codes: multi-role support (e.g. someone who is both OPERATOR and RISK).
+    package_ids: which packages this user can access (empty = access all).
+
+    WHAT BREAKS IF REMOVED: Queue entitlement user overrides have no validation source.
+    Audit logs show user_id strings with no way to resolve them to real names.
+    """
+    __tablename__ = "user_profiles"
+
+    user_id = Column(String, primary_key=True, index=True)
+    username = Column(String, nullable=False, unique=True, index=True)
+    display_name = Column(String, nullable=False)
+    email = Column(String, nullable=True, unique=True, index=True)
+
+    primary_role_code = Column(String, ForeignKey("role_profiles.role_code"), nullable=False)
+    # Additional roles — evaluated with OR logic (user has permission if ANY role grants it)
+    additional_role_codes = Column(JSONB, nullable=False, default=list)
+
+    # Package access scope — empty list means user has access to all packages
+    package_ids = Column(JSONB, nullable=False, default=list)
+
+    # Optional: direct queue access overrides (referenced by MessageQueue.allowed_user_ids)
+    # These are queue_ids, not queue_codes — for explicit per-user queue access
+    explicit_queue_ids = Column(JSONB, nullable=False, default=list)
+
+    status = Column(String, nullable=False, default="ACTIVE", index=True)
+    # ACTIVE | SUSPENDED | LOCKED
+
+    last_login_at = Column(String, nullable=True)
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
 class EntitlementPolicy(Base):
     """
     WHY THIS EXISTS (WS-8 — Entitlement Configuration Module):

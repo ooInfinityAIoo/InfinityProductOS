@@ -1791,3 +1791,75 @@ class QueuePublishResponse(BaseModel):
     status: str  # PUBLISHED | FAILED
     timestamp: str
     error: Optional[str] = None
+
+# ── Role Profile schemas ──────────────────────────────────────────────────────
+
+class RoleProfileCreate(BaseModel):
+    """
+    WHY THIS EXISTS:
+    Input schema for creating/updating a Role Profile master.
+    role_code must be UPPER_SNAKE_CASE — it is used as a key across
+    EntitlementPolicy.role_code and UserProfile.primary_role_code.
+    default_permissions seeds the permission matrix when this role is
+    auto-registered against a new entity going LIVE.
+    """
+    role_code: str
+    role_name: str
+    description: Optional[str] = None
+    package_id: Optional[str] = None
+    is_system_role: bool = False
+    default_permissions: Dict[str, bool] = {
+        "can_view": True,
+        "can_modify_data": False,
+        "can_modify_design": False,
+        "can_approve": False,
+    }
+    status: str = "ACTIVE"
+
+class RoleProfileResponse(RoleProfileCreate):
+    role_id: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+    updated_by: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class RoleProfileListResponse(BaseModel):
+    roles: List[RoleProfileResponse]
+    total_count: int
+
+
+# ── User Profile schemas ──────────────────────────────────────────────────────
+
+class UserProfileCreate(BaseModel):
+    """
+    WHY THIS EXISTS:
+    Input schema for creating/updating a User Profile.
+    primary_role_code references an existing RoleProfile.role_code.
+    additional_role_codes supports multi-role users — permissions are
+    evaluated with OR logic: user has access if ANY of their roles grants it.
+    package_ids is empty list = access all packages (admin/platform-level users).
+    """
+    username: str
+    display_name: str
+    email: Optional[str] = None
+    primary_role_code: str
+    additional_role_codes: List[str] = []
+    package_ids: List[str] = []
+    explicit_queue_ids: List[str] = []
+    status: str = "ACTIVE"
+
+class UserProfileResponse(UserProfileCreate):
+    user_id: str
+    last_login_at: Optional[str] = None
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+    updated_by: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class UserProfileListResponse(BaseModel):
+    users: List[UserProfileResponse]
+    total_count: int

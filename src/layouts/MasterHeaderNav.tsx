@@ -144,21 +144,28 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-rose-50/60 border-t border-rose-100/50 border-b border-rose-100/50 text-[10px] font-bold uppercase tracking-wider text-rose-400">
               Access &amp; Authorization
             </div>
-            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">🧑‍💼 Users</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Create and manage platform user accounts.</div>
+            <button onClick={() => setActiveModule('user-profiles')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🧑‍💼 Users</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Create and manage platform user accounts and role assignments.</div>
             </button>
-            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">🏷 Roles</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define named roles (DESIGNER, APPROVER, VIEWER, etc.).</div>
+            <button onClick={() => setActiveModule('role-profiles')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🏷 Role Profiles</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Define named roles (ADMIN, OPERATOR, RISK, AUDITOR, etc.) as data masters.</div>
             </button>
             <button onClick={() => setActiveModule('entitlements')} className="px-4 py-2.5 text-left hover:bg-rose-50/50 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-rose-600">🔐 Entitlement Configuration</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Map permissions to roles — who can view, modify, or approve each entity.</div>
             </button>
-            <button className="px-4 py-2.5 text-left hover:bg-rose-50/30 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">🔲 Authorization Matrix</div>
+            <button onClick={() => setActiveModule('authorization-matrix')} className="px-4 py-2.5 text-left hover:bg-rose-50/40 border-b border-slate-100/50 transition-colors">
+              <div className="text-[12px] font-bold text-rose-600">🔲 Authorization Matrix</div>
               <div className="text-[10px] text-slate-400 font-normal mt-0.5">Cross-reference view: role × resource × allowed actions.</div>
+            </button>
+            <div className="px-4 py-2 bg-sky-50/60 border-t border-sky-100/50 border-b border-sky-100/50 text-[10px] font-bold uppercase tracking-wider text-sky-400">
+              Queue Infrastructure
+            </div>
+            <button onClick={() => setActiveModule('queue-infrastructure')} className="px-4 py-2.5 text-left hover:bg-sky-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-sky-600">📬 Queue Infrastructure</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Configure external MQ connections (IBM MQ, Kafka, TIBCO, SWIFT), queues, and routing rules.</div>
             </button>
           </div>
         </div>

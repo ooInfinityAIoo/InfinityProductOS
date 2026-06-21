@@ -34,6 +34,10 @@ const PackageRuntimeShell = lazy(() => import('./features/package-runtime/Packag
 const LegacyOnboardingStudio = lazy(() => import('./features/legacy-onboarding/LegacyOnboardingStudio').then(m => ({ default: m.LegacyOnboardingStudio })));
 const ProductRegistryStudio = lazy(() => import('./features/product-registry/ProductRegistryStudio').then(m => ({ default: m.ProductRegistryStudio })));
 const SubProductRegistryStudio = lazy(() => import('./features/subproduct-registry/SubProductRegistryStudio').then(m => ({ default: m.SubProductRegistryStudio })));
+const QueueInfrastructureStudio = lazy(() => import('./features/queue-infrastructure/QueueInfrastructureStudio').then(m => ({ default: m.QueueInfrastructureStudio })));
+const AuthorizationMatrixStudio = lazy(() => import('./features/entitlements/AuthorizationMatrixStudio').then(m => ({ default: m.AuthorizationMatrixStudio })));
+const RoleProfileStudio = lazy(() => import('./features/entitlements/RoleProfileStudio').then(m => ({ default: m.RoleProfileStudio })));
+const UserProfileStudio = lazy(() => import('./features/entitlements/UserProfileStudio').then(m => ({ default: m.UserProfileStudio })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
@@ -123,6 +127,10 @@ function App() {
           {activeModule === 'legacy-onboarding' && <LegacyOnboardingStudio />}
           {activeModule === 'product-registry' && <ProductRegistryStudio />}
           {activeModule === 'subproduct-registry' && <SubProductRegistryStudio />}
+          {activeModule === 'queue-infrastructure' && <QueueInfrastructureStudio />}
+          {activeModule === 'authorization-matrix' && <AuthorizationMatrixStudio />}
+          {activeModule === 'role-profiles' && <RoleProfileStudio />}
+          {activeModule === 'user-profiles' && <UserProfileStudio />}
         </Suspense>
       </main>
     </div>

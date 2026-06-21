@@ -21,11 +21,10 @@ from auth import get_current_user, require_designer_privileges, CurrentUser
 
 router = APIRouter(prefix="/entitlements", tags=["Entitlement Configuration"])
 
-# All roles recognised by the platform — used when auto-registering a new entity
-ALL_ROLES = ["ADMIN", "OPERATOR", "AUDITOR", "VIEWER", "SALES", "RISK", "C_LEVEL"]
-
-# Default grants per role when an entity is first registered (deny-by-default except ADMIN)
-ROLE_DEFAULTS = {
+# Fallback roles used only when the RoleProfile master table is empty (first boot
+# before any roles have been seeded). Once roles exist in the DB, register_entity()
+# reads them from there — no hardcoded list needed (ADR #3).
+_FALLBACK_ROLES = {
     "ADMIN":    {"can_view": True,  "can_modify_data": True,  "can_modify_design": True,  "can_approve": True},
     "OPERATOR": {"can_view": True,  "can_modify_data": True,  "can_modify_design": False, "can_approve": False},
     "AUDITOR":  {"can_view": True,  "can_modify_data": False, "can_modify_design": False, "can_approve": False},
@@ -34,6 +33,27 @@ ROLE_DEFAULTS = {
     "RISK":     {"can_view": True,  "can_modify_data": False, "can_modify_design": False, "can_approve": True},
     "C_LEVEL":  {"can_view": True,  "can_modify_data": False, "can_modify_design": False, "can_approve": False},
 }
+
+
+def _get_roles_from_db(db: Session) -> dict:
+    """
+    WHY THIS EXISTS:
+    Reads active RoleProfile records from the DB and returns a dict of
+    {role_code: default_permissions}. Falls back to _FALLBACK_ROLES if the
+    RoleProfile table is empty (first boot / DB not yet seeded).
+
+    This makes register_entity() respect custom roles created by administrators
+    without any code change — ADR #3 compliance.
+    """
+    try:
+        db_roles = db.query(models.RoleProfile).filter(
+            models.RoleProfile.status == "ACTIVE"
+        ).all()
+        if db_roles:
+            return {r.role_code: r.default_permissions for r in db_roles}
+    except Exception:
+        pass  # table not yet created (pre-migration) — use fallback
+    return _FALLBACK_ROLES
 
 
 def register_entity(
@@ -63,9 +83,10 @@ def register_entity(
         return []
 
     now = datetime.now(timezone.utc).isoformat()
+    role_map = _get_roles_from_db(db)
     policies = []
-    for role in ALL_ROLES:
-        defaults = ROLE_DEFAULTS.get(role, {"can_view": False, "can_modify_data": False, "can_modify_design": False, "can_approve": False})
+    for role, defaults in role_map.items():
+        defaults = defaults or {"can_view": False, "can_modify_data": False, "can_modify_design": False, "can_approve": False}
         policy = models.EntitlementPolicy(
             policy_id=f"ENT-{uuid.uuid4().hex[:12].upper()}",
             entity_type=entity_type,
