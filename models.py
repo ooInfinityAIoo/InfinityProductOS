@@ -256,10 +256,23 @@ class WorkflowNode(Base):
     events_broadcast = Column(JSONB, nullable=True)  # JSON array of event types
     required_documents = Column(JSONB, nullable=True) # Array of required document/file types
     
+    # ISO 20022 Message Identity — populated when this node represents a specific
+    # ISO message in a scenario workflow (e.g. an RTP Happy Path template).
+    # These fields are OPTIONAL — existing custom workflow nodes leave them null.
+    # iso_message_type: the canonical message ID e.g. "pacs.008.001.10"
+    # message_direction: SEND | RECEIVE | PROCESS | BRANCH
+    # party_from / party_to: human-readable party labels e.g. "Debtor FI", "RTP", "Creditor FI"
+    # These make the canvas node card self-describing so the bank immediately knows
+    # which message is being handled and in which direction — no documentation needed.
+    iso_message_type = Column(String, nullable=True, index=True)
+    message_direction = Column(String, nullable=True)
+    party_from = Column(String, nullable=True)
+    party_to = Column(String, nullable=True)
+
     # SLA Configuration
     sla_days = Column(Integer, default=1)
     sla_anchor_field = Column(String, nullable=True)
-    
+
     # Screen Template
     screen_template = Column(String, nullable=True)
     

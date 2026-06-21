@@ -246,30 +246,73 @@ const WorkflowCanvasInner: React.FC = () => {
   // Clone a template into a new user-owned workflow. Copies nodes and edges but
   // strips is_template so the copy appears in the regular workflow list.
   const handleCloneTemplate = async (tpl: any) => {
+    // Clone a scenario template onto the canvas. Two things happen:
+    // 1. A new user-owned workflow is persisted to the DB (is_template=false)
+    // 2. The canvas is immediately populated with the template nodes so the bank
+    //    can start editing without reloading — modularity preserved.
     if (!activeCoreProductId) return;
     setCloningTemplateId(tpl.workflow_id);
     try {
+      const tplNodes: any[] = tpl.nodes || [];
+
+      // Build React Flow nodes — carry ISO message identity in data so WorkflowNode card
+      // shows the message type badge and From→To party labels immediately on the canvas.
+      const rfNodes: Node[] = tplNodes.map((n: any, idx: number) => ({
+        id: n.node_id || `node-${idx}`,
+        type: 'customBankingNode',
+        position: { x: n.canvas_x_position ?? (100 + idx * 220), y: n.canvas_y_position ?? 200 },
+        data: {
+          title: n.node_title,
+          slaDays: n.sla_days ?? 1,
+          orchestration_steps: n.orchestration_steps ?? [],
+          iso_message_type: n.iso_message_type ?? null,
+          message_direction: n.message_direction ?? null,
+          party_from: n.party_from ?? null,
+          party_to: n.party_to ?? null,
+        },
+      }));
+
+      // Build React Flow edges from the template edge list
+      const rfEdges: Edge[] = (tpl.edges || []).map((e: any, idx: number) => ({
+        id: e.edge_id || `edge-${idx}`,
+        source: e.source_node_id,
+        target: e.target_node_id,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#6366f1', strokeWidth: 2 },
+        data: { label: '' },
+      }));
+
+      // Persist to DB (so the bank's copy survives a page reload)
       const payload = {
         workflow_name: `${tpl.workflow_name} (Copy)`,
         domain_scope: tpl.domain_scope,
         product_context: activeProductContext || 'Default',
         description: tpl.description,
         is_template: false,
-        message_type: tpl.message_type,
         clearing_network: tpl.clearing_network,
         template_category: tpl.template_category,
         product_id: activeCoreProductId,
-        nodes: (tpl.nodes || []).map((n: any) => ({
-          label: n.label,
-          step_type: n.step_type,
+        nodes: tplNodes.map((n: any, idx: number) => ({
+          sequence_number: idx + 1,
+          node_title: n.node_title,
+          node_code: n.node_code || 'STEP',
           orchestration_steps: n.orchestration_steps ?? [],
-          position_x: n.position_x,
-          position_y: n.position_y,
-          status: 'ACTIVE',
+          canvas_x_position: n.canvas_x_position ?? (100 + idx * 220),
+          canvas_y_position: n.canvas_y_position ?? 200,
+          iso_message_type: n.iso_message_type ?? null,
+          message_direction: n.message_direction ?? null,
+          party_from: n.party_from ?? null,
+          party_to: n.party_to ?? null,
         })),
         edges: [],
       };
       await apiClient.post('/workflows/', payload);
+
+      // Load onto the canvas immediately
+      setNodes(rfNodes);
+      setEdges(rfEdges);
+      setWorkflowDraft({ nodes: rfNodes, edges: rfEdges });
       setShowTemplateModal(false);
     } catch (e) {
       console.error('Failed to clone template', e);
