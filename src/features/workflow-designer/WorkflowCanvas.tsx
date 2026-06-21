@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -219,6 +219,11 @@ const WorkflowCanvasInner: React.FC = () => {
   // Canvas view mode: 'flow' = free-form x/y positions; 'swimlane' = horizontal bands by participant.
   // Swimlane mode computes a display-only layout — the underlying nodes state (and DB) keeps Flow positions.
   const [viewMode, setViewMode] = useState<'flow' | 'swimlane'>('flow');
+
+  // Parse Diagram — Claude vision upload state
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseWarnings, setParseWarnings] = useState<string[]>([]);
+  const diagramInputRef = useRef<HTMLInputElement>(null);
 
   const { data: packagesData } = useQuery({
     queryKey: ['product-packages'],
@@ -722,6 +727,79 @@ const WorkflowCanvasInner: React.FC = () => {
     saveDraft(updatedNodes, edges);
   };
 
+  // ── Parse Diagram handler ──────────────────────────────────────────────────
+  // Uploads an image to POST /workflows/parse-diagram, receives node/edge JSON
+  // from Claude vision, and maps it directly onto the React Flow canvas.
+  // The toRfType helper maps node_type → RF component type (same as template clone).
+  const toRfTypeFromNodeType = (nodeType?: string) =>
+    ['DECISION', 'PARALLEL_SPLIT', 'PARALLEL_JOIN'].includes(nodeType ?? '')
+      ? 'decisionNode'
+      : 'customBankingNode';
+
+  const handleParseDiagram = async (file: File) => {
+    if (!activeCoreProductId) {
+      alert('Select a Core Product first before parsing a diagram.');
+      return;
+    }
+    setIsParsing(true);
+    setParseWarnings([]);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiClient.post('/workflows/parse-diagram', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const parsed = res.data;
+
+      // Map Claude's node list → React Flow nodes
+      const rfNodes: Node[] = (parsed.nodes || []).map((n: any, idx: number) => ({
+        id: n.id || `PARSED-${idx + 1}`,
+        type: toRfTypeFromNodeType(n.node_type),
+        position: { x: n.x ?? (100 + idx * 220), y: n.y ?? 200 },
+        data: {
+          title: n.title || `Step ${idx + 1}`,
+          node_type: n.node_type || null,
+          slaDays: 1,
+          sla_config: null,
+          orchestration_steps: [],
+          iso_message_type: null,
+          message_direction: null,
+          party_from: null,
+          party_to: null,
+        },
+      }));
+
+      // Map Claude's edge list → React Flow edges (labeled)
+      const rfEdges: Edge[] = (parsed.edges || []).map((e: any, idx: number) => ({
+        id: `pe-${idx}`,
+        source: e.source,
+        target: e.target,
+        type: 'labeledEdge',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { strokeWidth: 2 },
+        data: { label: e.condition || '' },
+      }));
+
+      setNodes(rfNodes);
+      setEdges(rfEdges);
+      setWorkflowDraft({ nodes: rfNodes, edges: rfEdges });
+
+      if (parsed.warnings?.length) setParseWarnings(parsed.warnings);
+      if (parsed.confidence < 0.6) {
+        setParseWarnings(prev => [
+          ...prev,
+          `Low confidence (${Math.round(parsed.confidence * 100)}%) — review all nodes carefully.`,
+        ]);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Diagram parsing failed.';
+      alert(`Parse Diagram error: ${msg}`);
+    } finally {
+      setIsParsing(false);
+      if (diagramInputRef.current) diagramInputRef.current.value = '';
+    }
+  };
+
   // ── Swimlane layout computation ─────────────────────────────────────────────
   // Builds a display-only node list for Swimlane View. Never mutates the real `nodes` state.
   //
@@ -852,15 +930,58 @@ const WorkflowCanvasInner: React.FC = () => {
             <div className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">
               Process Flow Studio Context
             </div>
-            {/* Opens the ISO 20022 message template library picker */}
-            <button
-              onClick={() => setShowTemplateModal(true)}
-              className="text-[11px] font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
-            >
-              📋 New from Template
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Parse Diagram — upload a hand-drawn or digital workflow image;
+                  Claude vision extracts nodes + edges and loads them onto the canvas */}
+              <input
+                ref={diagramInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) handleParseDiagram(file);
+                }}
+              />
+              <button
+                onClick={() => diagramInputRef.current?.click()}
+                disabled={isParsing || !activeCoreProductId}
+                title={!activeCoreProductId ? 'Select a Core Product first' : 'Upload a diagram image — Claude will extract nodes and edges'}
+                className="text-[11px] font-bold px-3 py-1.5 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-lg flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isParsing ? (
+                  <><span className="animate-spin inline-block">⟳</span> Parsing…</>
+                ) : (
+                  <>📷 Parse Diagram</>
+                )}
+              </button>
+              {/* Opens the ISO 20022 message template library picker */}
+              <button
+                onClick={() => setShowTemplateModal(true)}
+                className="text-[11px] font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+              >
+                📋 New from Template
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Parse warnings banner — shown after a successful parse with low confidence
+            or ambiguous shapes. Dismissed automatically on next parse. */}
+        {parseWarnings.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-start gap-3">
+            <span className="text-amber-500 text-lg mt-0.5">⚠️</span>
+            <div className="flex-1">
+              <p className="text-[11px] font-bold text-amber-800 mb-1">Diagram Parser Warnings</p>
+              <ul className="space-y-0.5">
+                {parseWarnings.map((w, i) => (
+                  <li key={i} className="text-[10px] text-amber-700">{w}</li>
+                ))}
+              </ul>
+            </div>
+            <button onClick={() => setParseWarnings([])} className="text-amber-400 hover:text-amber-600 text-xs font-bold">✕</button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 bg-white/80 backdrop-blur-md border border-slate-200/50 rounded-2xl shadow-glass flex flex-col gap-2.5">

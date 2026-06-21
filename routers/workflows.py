@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Header, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Any, Optional
 import uuid
 import datetime
+import base64
+import json
+import os
+import re
 
 from database import get_db
 import models
@@ -565,3 +569,165 @@ def revert_to_workflow_version(
     db.commit()
     db.refresh(active_workflow)
     return active_workflow
+
+
+# ---------------------------------------------------------------------------
+# DIAGRAM PARSER — Claude Vision → Workflow JSON
+# ---------------------------------------------------------------------------
+
+_PARSE_SYSTEM_PROMPT = """
+You are a workflow diagram parser for a banking process automation platform.
+The user will upload an image of a hand-drawn or digital workflow / BPMN diagram.
+
+Your job: extract every node (box, diamond, circle, swimlane step) and every arrow from
+the diagram and return a strictly valid JSON object.
+
+Output schema (no markdown fences, plain JSON only):
+{
+  "workflow_name": "<inferred name or 'Parsed Workflow'>",
+  "nodes": [
+    {
+      "id": "n1",
+      "title": "<label on the shape>",
+      "node_type": "<one of: RECEIVE|SCHEDULE|EVENT_TRIGGER|VALIDATE|COMPLIANCE_SCREEN|LIMIT_CHECK|DOCUMENT_EXAMINE|DECISION|PARALLEL_SPLIT|PARALLEL_JOIN|HUMAN_APPROVAL|DIGITAL_SIGNATURE|CALCULATE|VALUATE|WATERFALL|SEND_MESSAGE|POST_ENTRY|CALL_SYSTEM|GENERATE_DOCUMENT|AWAIT_RESPONSE|HOLD|ESCALATE|COMPLETE|TERMINATE>",
+      "x": <integer canvas x position, spacing shapes 220px apart horizontally>,
+      "y": <integer canvas y position, 200 for a single row>,
+      "notes": "<any text near the shape that is not the label>"
+    }
+  ],
+  "edges": [
+    {
+      "source": "n1",
+      "target": "n2",
+      "condition": "<label on the arrow, or empty string>"
+    }
+  ],
+  "confidence": <0.0–1.0, how clearly readable the diagram was>,
+  "warnings": ["<any ambiguous shapes or unreadable text>"]
+}
+
+Node type mapping rules:
+- Rectangle / rounded rectangle = VALIDATE (default for process boxes)
+- Diamond / rhombus = DECISION
+- Circle / oval at start = RECEIVE
+- Circle / oval at end = COMPLETE
+- Parallelogram = SEND_MESSAGE (I/O shape)
+- Cylinder / drum = POST_ENTRY (database/ledger)
+- Document shape = GENERATE_DOCUMENT
+- Person / actor icon = HUMAN_APPROVAL
+- Clock / timer = SCHEDULE
+- Bolt / lightning = EVENT_TRIGGER
+- Crossed circle = TERMINATE
+
+Position nodes left-to-right in flow order, y=200 for a single row.
+For parallel branches, offset y by 200 for each branch.
+Start at x=100. Space each node 220px apart on x.
+""".strip()
+
+
+@router.post(
+    "/parse-diagram",
+    summary="Parse a workflow diagram image into canvas JSON",
+    description=(
+        "Accepts a JPG/PNG/WebP image of a hand-drawn or digital workflow diagram "
+        "and returns structured node/edge JSON that can be loaded directly onto the "
+        "Workflow Designer canvas. Uses Claude claude-sonnet-4-6 vision. "
+        "Requires ANTHROPIC_API_KEY environment variable."
+    ),
+)
+async def parse_workflow_diagram(
+    file: UploadFile = File(..., description="PNG / JPG / WebP diagram image, max 10 MB"),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    WHY THIS ENDPOINT EXISTS:
+    Banks often start workflow design with a whiteboard sketch or a Visio diagram.
+    Instead of manually recreating it in the canvas node by node, the designer uploads
+    the image here. Claude vision reads the shapes and arrows and returns the node/edge
+    JSON that the frontend loads directly onto the React Flow canvas.
+
+    WHAT BREAKS IF REMOVED: The 'Parse Diagram' upload button in the Workflow Designer
+    becomes a dead endpoint. The feature degrades gracefully — no canvas state is lost.
+    """
+    # Validate file type
+    allowed = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"}
+    content_type = file.content_type or "image/png"
+    if content_type not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported file type '{content_type}'. Upload PNG, JPG, WebP, or GIF."
+        )
+
+    # Read and base64-encode the image
+    raw_bytes = await file.read()
+    if len(raw_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image exceeds 10 MB limit.")
+
+    image_b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
+
+    # Check API key
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="ANTHROPIC_API_KEY is not configured. Set it in the environment to enable diagram parsing."
+        )
+
+    try:
+        import anthropic as anthropic_sdk
+        client = anthropic_sdk.Anthropic(api_key=api_key)
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=_PARSE_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": content_type,
+                            "data": image_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "Parse this workflow diagram. "
+                            "Return the JSON schema described in the system prompt. "
+                            "Plain JSON only — no markdown, no explanation."
+                        ),
+                    },
+                ],
+            }],
+        )
+
+        raw = response.content[0].text.strip()
+        # Strip markdown code fences if Claude adds them despite instructions
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.IGNORECASE)
+            raw = raw.rstrip("`").strip()
+
+        result = json.loads(raw)
+
+        # Validate minimal structure
+        if "nodes" not in result or "edges" not in result:
+            raise ValueError("Response missing 'nodes' or 'edges' keys.")
+
+        return {
+            "workflow_name": result.get("workflow_name", "Parsed Workflow"),
+            "nodes": result.get("nodes", []),
+            "edges": result.get("edges", []),
+            "confidence": result.get("confidence", 0.0),
+            "warnings": result.get("warnings", []),
+        }
+
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Claude returned non-JSON output. Raw (first 300 chars): {raw[:300]}"
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Diagram parsing failed: {str(exc)}")
