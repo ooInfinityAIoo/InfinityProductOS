@@ -217,13 +217,6 @@ export const MasterHeaderNav: React.FC = () => {
                             <div className="text-[10px] text-slate-400 font-normal">AI extraction for PDFs and scanned images.</div>
                           </div>
                         </button>
-                        <button onClick={() => setActiveModule('ingestion-pipeline')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 border-b border-cyan-100/30 transition-colors flex items-center gap-2">
-                          <span className="text-[11px]">📥</span>
-                          <div>
-                            <div className="text-[11px] font-bold text-slate-700">File Import Gateway</div>
-                            <div className="text-[10px] text-slate-400 font-normal">Upload and execute live inbound files.</div>
-                          </div>
-                        </button>
                         <button onClick={() => setActiveModule('dge-canvas')} className="w-full pl-8 pr-4 py-2 text-left hover:bg-cyan-50/60 transition-colors flex items-center gap-2">
                           <span className="text-[11px]">🔀</span>
                           <div>
