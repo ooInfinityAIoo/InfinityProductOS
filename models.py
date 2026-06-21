@@ -161,6 +161,15 @@ class ISOFieldDefinition(Base):
     masking_strategy = Column(String, nullable=True) # e.g., REDACT_ALL, SHOW_LAST_4, EMAIL
     localized_overrides = Column(JSONB, nullable=True) # e.g., {"US_en": {"name": "SSN"}}
     default_value = Column(String, nullable=True)
+    # WHY field_source IS A SEPARATE COLUMN FROM display_preference:
+    # display_preference (ISO | CLIENT) controls which *name* to show — it is a display concern.
+    # field_source controls *who created this field and what it represents* — it is a governance concern.
+    # ISO_20022    — pre-seeded from the ISO 20022 standard catalogue (read-only)
+    # BANK_CUSTOM  — bank-defined proprietary field added by a Field Registry admin
+    # CALCULATED   — output token auto-registered when a Formula is saved/activated;
+    #                formula_ref stores the program_id of the producing Formula
+    field_source = Column(String, nullable=False, default="ISO_20022", index=True)
+    formula_ref = Column(String, ForeignKey("calculation_programs.program_id"), nullable=True, index=True)
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
 

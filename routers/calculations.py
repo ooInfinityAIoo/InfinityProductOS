@@ -358,9 +358,66 @@ import time as _time
 from services.calculation_engine import execute_program, execute_program_batch
 
 
+def _sync_calculated_fields(db: Session, program: models.CalculationProgram) -> None:
+    """
+    WHY THIS EXISTS:
+    When a Formula is saved, every output step (is_output=True) produces a named token
+    (e.g. TOTAL_FEE). That token must become a first-class field in the Field Registry
+    so Business Rules, Workflow conditions, and other Formulas can reference it by name.
+
+    This is the governance guarantee: you cannot reference a field that isn't registered.
+    Calculated fields are auto-registered here — the user never has to manually add them
+    to the Field Registry. But they ARE in the registry, so they are traceable and auditable.
+
+    WHAT BREAKS IF REMOVED: Business Rules Engine field picker will not show calculated
+    outputs. Formula chaining (one formula referencing another's output) will fail because
+    the IsoFieldSelector won't find the field.
+    """
+    now = datetime.datetime.utcnow().isoformat()
+    steps = program.steps or []
+
+    for step in steps:
+        if not step.get("is_output") or not step.get("output_token"):
+            continue
+
+        token = step["output_token"].strip().upper()
+        # Idempotent — if a field with this technical_sys_name already exists and is CALCULATED,
+        # just update its description and formula_ref (the formula may have been renamed).
+        existing = db.query(models.ISOFieldDefinition).filter(
+            models.ISOFieldDefinition.technical_sys_name == token
+        ).first()
+
+        if existing:
+            if existing.field_source == "CALCULATED":
+                existing.client_business_name = step.get("description") or program.business_name
+                existing.iso_business_name = step.get("description") or program.business_name
+                existing.formula_ref = program.program_id
+                existing.description = f"Calculated output of Formula '{program.business_name}' (step {step.get('seq', '?')})"
+        else:
+            field = models.ISOFieldDefinition(
+                field_id=f"CALC-{uuid.uuid4().hex[:8].upper()}",
+                technical_sys_name=token,
+                client_business_name=step.get("description") or token,
+                iso_business_name=step.get("description") or token,
+                display_preference="CLIENT",  # no ISO standard name — always show bank name
+                data_type="Decimal",           # all formula outputs are numeric
+                domain_category=program.domain or "GENERAL",
+                subdomain_category=None,
+                description=f"Calculated output of Formula '{program.business_name}' (step {step.get('seq', '?')}). Auto-registered when formula was saved.",
+                status="ACTIVE",
+                is_mandatory=False,
+                is_pii=False,
+                field_source="CALCULATED",
+                formula_ref=program.program_id,
+                created_at=now,
+                created_by="SYSTEM",
+            )
+            db.add(field)
+
+
 @router.post("/programs", response_model=schemas.CalcProgramResponse, status_code=status.HTTP_201_CREATED,
-    summary="Create a Calculation Program",
-    description="Creates a new multi-step Calculation Program. Each step defines a named variable computed from a formula expression referencing inputs or prior step results.")
+    summary="Create a Formula",
+    description="Creates a new multi-step Formula. Each step defines a named variable computed from an expression referencing Field Registry fields or prior step results. Output steps are auto-registered as CALCULATED fields in the Field Registry.")
 def create_calc_program(
     payload: schemas.CalcProgramCreate,
     db: Session = Depends(get_db),
@@ -389,6 +446,11 @@ def create_calc_program(
         created_by=current_user.user_id,
     )
     db.add(db_program)
+    db.flush()  # flush to get program_id before _sync needs it for formula_ref FK
+
+    # Auto-register output tokens as CALCULATED fields in the Field Registry
+    _sync_calculated_fields(db, db_program)
+
     db.commit()
     db.refresh(db_program)
     return db_program
@@ -471,6 +533,9 @@ def update_calc_program(
     program.subproduct_id = payload.subproduct_id
     program.updated_at = datetime.datetime.utcnow().isoformat()
     program.updated_by = current_user.user_id
+
+    # Re-sync calculated fields — output tokens may have been added, removed, or renamed
+    _sync_calculated_fields(db, program)
 
     db.commit()
     db.refresh(program)

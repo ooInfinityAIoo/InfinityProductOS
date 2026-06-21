@@ -4,15 +4,17 @@
 // scripts, MS Access macros, and User-Defined Tables that analytics teams currently
 // maintain as black boxes.
 //
-// Layout: 3-panel
-//   Left   — My Programs list + Formula Registry browser (search, domain filter, templates)
-//   Center — Step editor: ordered rows (seq, var_name, expression, is_output toggle)
-//            + Input mapper (6 variable source types)
-//   Right  — Live Test panel: enter sample values → see per-step execution trace
+// DOMAIN SCOPING (compliance requirement):
+// The domain is DERIVED from the active Package — never chosen by the user.
+// A Payments ops user inside "Payment Hub" must never see CLO waterfall formulas.
+// A Structured Finance user must never see FEDWIRE calculations.
+// The Package's business_domain field is the domain boundary for this studio.
+// Only globalAdminDesignerMode users can see across all domains.
 //
-// This follows the Header-as-Filter / Form-as-Scope pattern (see CockpitLockBanner.tsx):
-//   - CockpitLockBanner = filter for what programs are SHOWN
-//   - ProductSubProductPicker (in create form) = scope for what a NEW PROGRAM is scoped to
+// Layout: 3-panel
+//   Left   — My Programs list + Formula Registry (pre-filtered to package domain)
+//   Center — Step editor + form (domain auto-set from package, read-only)
+//   Right  — Inputs panel + Live Test execution trace
 //
 // Data contract: /api/v1/calculations/programs (CRUD + /execute + /clone)
 
@@ -48,23 +50,42 @@ interface CalcInput {
   description: string;
 }
 
-const DOMAINS = [
-  { code: '', label: 'All Domains' },
-  { code: 'PAYMENTS', label: 'Payments' },
-  { code: 'STRUCTURED_FINANCE', label: 'Structured Finance' },
-  { code: 'CREDIT_RISK', label: 'Credit Risk' },
-  { code: 'TREASURY', label: 'Treasury' },
-  { code: 'INVESTMENT_BANKING', label: 'Investment Banking' },
-  { code: 'RETAIL_BANKING', label: 'Retail Banking' },
-  { code: 'CORPORATE_BANKING', label: 'Corporate Banking' },
-];
+// Maps ProductApplicationPackage.business_domain → our Calculation Engine domain codes.
+// WHY: Package.business_domain is the authoritative domain boundary. The user never
+// picks the domain — the Package they're working inside determines it.
+const PACKAGE_DOMAIN_MAP: Record<string, string> = {
+  'Payments': 'PAYMENTS',
+  'PAYMENTS': 'PAYMENTS',
+  'Treasury': 'TREASURY',
+  'TREASURY': 'TREASURY',
+  'Structured Finance': 'STRUCTURED_FINANCE',
+  'STRUCTURED_FINANCE': 'STRUCTURED_FINANCE',
+  'Credit Risk': 'CREDIT_RISK',
+  'CREDIT_RISK': 'CREDIT_RISK',
+  'Investment Banking': 'INVESTMENT_BANKING',
+  'INVESTMENT_BANKING': 'INVESTMENT_BANKING',
+  'Retail Banking': 'RETAIL_BANKING',
+  'RETAIL_BANKING': 'RETAIL_BANKING',
+  'Corporate Banking': 'CORPORATE_BANKING',
+  'CORPORATE_BANKING': 'CORPORATE_BANKING',
+};
+
+const DOMAIN_LABELS: Record<string, string> = {
+  PAYMENTS: 'Payments',
+  STRUCTURED_FINANCE: 'Structured Finance',
+  CREDIT_RISK: 'Credit Risk',
+  TREASURY: 'Treasury',
+  INVESTMENT_BANKING: 'Investment Banking',
+  RETAIL_BANKING: 'Retail Banking',
+  CORPORATE_BANKING: 'Corporate Banking',
+};
 
 const SOURCE_TYPES = [
   { code: 'RUNTIME_INPUT', label: 'Runtime Input', desc: 'Provided per-record at execution (e.g. collateral value)' },
   { code: 'POLICY_CONSTANT', label: 'Policy Constant', desc: 'Fixed numeric constant (e.g. senior fee rate 0.015)' },
   { code: 'ISO_FIELD', label: 'ISO 20022 Field', desc: 'ISO field from the semantic registry' },
   { code: 'RATE_FEED', label: 'Rate Feed', desc: 'Market rate (e.g. SOFR_ON, LIBOR_3M)' },
-  { code: 'FORMULA_TOKEN', label: 'Formula Token', desc: 'Output from another Calculation Program' },
+  { code: 'FORMULA_TOKEN', label: 'Formula Token', desc: 'Calculated field output from another Formula' },
   { code: 'DAY_COUNT', label: 'Day Count Fraction', desc: 'Computed from start/end dates per convention' },
 ];
 
@@ -106,16 +127,119 @@ const makeInput = (): CalcInput => ({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-// Step row in the program editor
+// ---------------------------------------------------------------------------
+// FieldPicker — inline search popover for inserting Field Registry tokens into
+// an expression. WHY THIS EXISTS: Users cannot free-type field names. Every field
+// reference in a formula must resolve to a registered field (ISO_20022, BANK_CUSTOM,
+// or CALCULATED). This picker enforces that governance rule at the point of authoring.
+// Inserting a field adds its technical_sys_name (the stable machine-readable identifier)
+// into the expression at the cursor — not the display name, which can change.
+// ---------------------------------------------------------------------------
+const FieldPicker: React.FC<{
+  packageDomain: string;
+  onInsert: (technicalName: string) => void;
+}> = ({ packageDomain, onInsert }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['field-picker', packageDomain, search],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: '20' });
+      if (search) params.set('search', search);
+      if (packageDomain) params.set('domain_category', packageDomain);
+      return (await apiClient.get(`/fields/registry/?${params}`)).data;
+    },
+    enabled: open,
+  });
+
+  const fields: any[] = data?.fields ?? [];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="text-[10px] font-bold text-indigo-600 border border-indigo-200 rounded-lg px-2 py-1 hover:bg-indigo-50 whitespace-nowrap"
+        title="Insert a registered field token into the expression"
+      >+ Field</button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-2 space-y-1.5">
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search Field Registry..."
+              className="flex-1 text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-400"
+            />
+            <button onClick={() => setOpen(false)} className="text-slate-300 hover:text-slate-500 font-bold text-[14px] leading-none px-1">×</button>
+          </div>
+          {isLoading && <div className="text-[10px] text-slate-400 text-center py-3">Searching...</div>}
+          {!isLoading && fields.length === 0 && (
+            <div className="text-[10px] text-slate-400 text-center py-3 italic">No fields found.</div>
+          )}
+          <div className="max-h-52 overflow-y-auto space-y-0.5">
+            {fields.map((f: any) => (
+              <button
+                key={f.field_id}
+                type="button"
+                onClick={() => { onInsert(f.technical_sys_name); setOpen(false); setSearch(''); }}
+                className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono font-bold text-indigo-700 truncate flex-1">{f.technical_sys_name}</span>
+                  {/* Source badge: shows whether field is ISO standard, bank custom, or a calculated formula output */}
+                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${
+                    f.field_source === 'CALCULATED' ? 'bg-emerald-100 text-emerald-700' :
+                    f.field_source === 'BANK_CUSTOM' ? 'bg-amber-100 text-amber-700' :
+                    'bg-blue-100 text-blue-700'
+                  }`}>{f.field_source === 'ISO_20022' ? 'ISO' : f.field_source === 'BANK_CUSTOM' ? 'CUSTOM' : 'CALC'}</span>
+                </div>
+                <div className="text-[9px] text-slate-400 truncate">{f.client_business_name}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Step row in the formula editor
 const StepRow: React.FC<{
   step: CalcStep;
   index: number;
   total: number;
+  packageDomain: string;
   onChange: (field: keyof CalcStep, val: any) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-}> = ({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown }) => (
+}> = ({ step, index, total, packageDomain, onChange, onRemove, onMoveUp, onMoveDown }) => {
+  // Ref to the expression input so FieldPicker can insert at cursor position
+  const exprRef = React.useRef<HTMLInputElement>(null);
+
+  const insertField = (token: string) => {
+    const el = exprRef.current;
+    if (!el) {
+      onChange('expression', step.expression + token);
+      return;
+    }
+    const start = el.selectionStart ?? step.expression.length;
+    const end = el.selectionEnd ?? step.expression.length;
+    const next = step.expression.slice(0, start) + token + step.expression.slice(end);
+    onChange('expression', next);
+    // Restore cursor after the inserted token
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
+  return (
   <div className={`border rounded-xl p-3 ${step.is_output ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200 bg-white'}`}>
     <div className="flex items-start gap-2">
       {/* Seq badge + move controls */}
@@ -129,24 +253,29 @@ const StepRow: React.FC<{
       <div className="flex-1 grid grid-cols-12 gap-2">
         {/* var_name */}
         <div className="col-span-3">
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Variable Name</label>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Result Name</label>
           <input
             type="text"
             value={step.var_name}
             onChange={e => onChange('var_name', e.target.value.toUpperCase().replace(/\s/g, '_'))}
-            placeholder="e.g. GROSS_INT"
+            placeholder="e.g. TOTAL_FEE"
             className="w-full text-[11px] font-mono font-bold text-indigo-700 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-400 bg-slate-50"
           />
         </div>
 
-        {/* expression */}
+        {/* expression + field picker */}
         <div className="col-span-6">
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Expression</label>
+          <div className="flex items-center justify-between mb-0.5">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Expression</label>
+            {/* FieldPicker enforces governance: all field references must come from the Field Registry */}
+            <FieldPicker packageDomain={packageDomain} onInsert={insertField} />
+          </div>
           <input
+            ref={exprRef}
             type="text"
             value={step.expression}
             onChange={e => onChange('expression', e.target.value)}
-            placeholder="e.g. OUTSTANDING_BAL * COUPON_RATE / 360 * DAYS"
+            placeholder="e.g. ADMIN_FEE + TRANSACTION_FEE"
             className="w-full text-[11px] font-mono border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-400 bg-white"
           />
         </div>
@@ -192,7 +321,8 @@ const StepRow: React.FC<{
       </div>
     </div>
   </div>
-);
+  );
+};
 
 // Single input row in the Inputs panel
 const InputRow: React.FC<{
@@ -289,12 +419,12 @@ const InputRow: React.FC<{
 
 export const CalculationEngineStudio: React.FC = () => {
   const queryClient = useQueryClient();
-  const { activeProductContext, activeCoreProductId, activeCoreSubProductId } = usePlatformStore();
+  const { activeProductContext, activeCoreProductId, activeCoreSubProductId, globalAdminDesignerMode } = usePlatformStore();
 
   // --- View state ---
   const [activeTab, setActiveTab] = useState<'programs' | 'registry'>('programs');
-  const [registryDomain, setRegistryDomain] = useState('');
   const [registrySearch, setRegistrySearch] = useState('');
+  const [showAllDomains, setShowAllDomains] = useState(false); // admin-only override
   const [programsSearch, setProgramsSearch] = useState('');
   const [rightPanel, setRightPanel] = useState<'inputs' | 'test'>('inputs');
 
@@ -303,11 +433,10 @@ export const CalculationEngineStudio: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Form-level fields
+  // Form-level fields (domain is NOT user-controlled — derived from package)
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formDomain, setFormDomain] = useState('');
   const [formTier, setFormTier] = useState('T1');
   const [formSteps, setFormSteps] = useState<CalcStep[]>([makeStep(1)]);
   const [formInputs, setFormInputs] = useState<CalcInput[]>([makeInput()]);
@@ -319,7 +448,7 @@ export const CalculationEngineStudio: React.FC = () => {
   const [testResult, setTestResult] = useState<any>(null);
   const [testLoading, setTestLoading] = useState(false);
 
-  // --- Package resolution (for ProductSubProductPicker) ---
+  // --- Package resolution ---
   const { data: packagesData } = useQuery({
     queryKey: ['packages'],
     queryFn: async () => (await apiClient.get('/masters/packages')).data,
@@ -328,7 +457,14 @@ export const CalculationEngineStudio: React.FC = () => {
   const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
   const packageId = currentPackage?.package_id ?? null;
 
-  // --- Programs list (user programs, not templates) ---
+  // WHY: Domain is derived from the Package's business_domain — never chosen by the user.
+  // A Payments ops user must never see CLO waterfall formulas. A Structured Finance analyst
+  // must never see FEDWIRE calculations. The Package IS the domain boundary.
+  const packageDomain = PACKAGE_DOMAIN_MAP[currentPackage?.business_domain ?? ''] ?? '';
+  // registryDomain: normally locked to packageDomain; admin mode can override
+  const registryDomain = (globalAdminDesignerMode && showAllDomains) ? '' : packageDomain;
+
+  // --- Programs list (user programs, not templates, scoped to this package) ---
   const { data: programsData, isLoading: programsLoading } = useQuery({
     queryKey: ['calc-programs', packageId, activeCoreProductId, programsSearch],
     queryFn: async () => {
@@ -340,7 +476,7 @@ export const CalculationEngineStudio: React.FC = () => {
     },
   });
 
-  // --- Formula Registry (templates) ---
+  // --- Formula Registry (templates, domain-scoped to this package by default) ---
   const { data: registryData, isLoading: registryLoading } = useQuery({
     queryKey: ['calc-registry', registryDomain, registrySearch],
     queryFn: async () => {
@@ -358,7 +494,7 @@ export const CalculationEngineStudio: React.FC = () => {
         program_code: formCode,
         business_name: formName,
         description: formDescription,
-        domain: formDomain || null,
+        domain: packageDomain || null,   // always use package domain, never user input
         tier: formTier,
         is_template: false,
         locked_steps: false,
@@ -392,7 +528,6 @@ export const CalculationEngineStudio: React.FC = () => {
     setFormName('');
     setFormCode('');
     setFormDescription('');
-    setFormDomain('');
     setFormTier('T1');
     setFormSteps([makeStep(1)]);
     setFormInputs([makeInput()]);
@@ -491,7 +626,7 @@ export const CalculationEngineStudio: React.FC = () => {
       <div className="flex gap-5 flex-1 min-h-0">
 
         {/* ================================================================
-            LEFT PANEL — Programs list + Formula Registry browser
+            LEFT PANEL — My Formulas list + Formula Library browser
         ================================================================ */}
         <div className="w-[300px] glass-card rounded-2xl flex flex-col overflow-hidden flex-shrink-0">
           {/* Tab switcher */}
@@ -499,7 +634,7 @@ export const CalculationEngineStudio: React.FC = () => {
             <button
               onClick={() => setActiveTab('programs')}
               className={`flex-1 px-3 py-2.5 text-[11px] font-bold transition-colors ${activeTab === 'programs' ? 'text-indigo-700 border-b-2 border-indigo-600 bg-white' : 'text-slate-400 hover:text-slate-600'}`}
-            >My Programs</button>
+            >My Formulas</button>
             <button
               onClick={() => setActiveTab('registry')}
               className={`flex-1 px-3 py-2.5 text-[11px] font-bold transition-colors ${activeTab === 'registry' ? 'text-indigo-700 border-b-2 border-indigo-600 bg-white' : 'text-slate-400 hover:text-slate-600'}`}
@@ -513,13 +648,13 @@ export const CalculationEngineStudio: React.FC = () => {
                   type="text"
                   value={programsSearch}
                   onChange={e => setProgramsSearch(e.target.value)}
-                  placeholder="Search programs..."
+                  placeholder="Search formulas..."
                   className="flex-1 text-[11px] border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-white"
                 />
                 <button
                   onClick={() => {
                     setSelectedProgram(null); setIsEditing(false);
-                    setFormName(''); setFormCode(''); setFormDescription(''); setFormDomain(''); setFormTier('T1');
+                    setFormName(''); setFormCode(''); setFormDescription(''); setFormTier('T1');
                     setFormSteps([makeStep(1)]); setFormInputs([makeInput()]);
                     setFormProductId(''); setFormSubProductId('');
                     setTestValues({}); setTestResult(null);
@@ -531,7 +666,7 @@ export const CalculationEngineStudio: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {programsLoading && <div className="text-[10px] text-slate-400 text-center py-8">Loading...</div>}
                 {!programsLoading && (programsData?.programs ?? []).length === 0 && (
-                  <div className="text-[10px] text-slate-400 text-center py-8 italic">No programs yet.<br/>Click + New to create one.</div>
+                  <div className="text-[10px] text-slate-400 text-center py-8 italic">No formulas yet.<br/>Click + New to create one.</div>
                 )}
                 {(programsData?.programs ?? []).map((prog: any) => (
                   <div
@@ -565,13 +700,23 @@ export const CalculationEngineStudio: React.FC = () => {
                   placeholder="Search 293 formulas..."
                   className="w-full text-[11px] border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400 bg-white"
                 />
-                <select
-                  value={registryDomain}
-                  onChange={e => setRegistryDomain(e.target.value)}
-                  className="w-full text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-400 bg-white font-semibold"
-                >
-                  {DOMAINS.map(d => <option key={d.code} value={d.code}>{d.label}</option>)}
-                </select>
+                {/* Domain is locked to the active package — compliance boundary */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Domain:</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${domainColor[packageDomain] || 'bg-slate-100 text-slate-600'}`}>
+                      {DOMAIN_LABELS[packageDomain] || packageDomain || 'All'}
+                    </span>
+                    {!packageDomain && <span className="text-[9px] text-slate-400 italic">— select a package first</span>}
+                  </div>
+                  {/* Admin-only: override domain lock to browse all templates across packages */}
+                  {globalAdminDesignerMode && (
+                    <button
+                      onClick={() => setShowAllDomains(v => !v)}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded border transition-colors ${showAllDomains ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-400 hover:border-amber-300 hover:text-amber-600'}`}
+                    >{showAllDomains ? '🔓 Showing All' : '🔒 Admin: Show All'}</button>
+                  )}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {registryLoading && <div className="text-[10px] text-slate-400 text-center py-8">Loading registry...</div>}
@@ -605,7 +750,7 @@ export const CalculationEngineStudio: React.FC = () => {
         </div>
 
         {/* ================================================================
-            CENTER PANEL — Program editor (steps + form) OR detail view
+            CENTER PANEL — Formula editor (steps + form) OR detail view
         ================================================================ */}
         <div className="flex-1 glass-card rounded-2xl flex flex-col overflow-hidden min-w-0">
 
@@ -613,8 +758,8 @@ export const CalculationEngineStudio: React.FC = () => {
           {!isCreating && !selectedProgram && (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
               <span className="text-5xl">🧮</span>
-              <p className="text-[13px] font-bold text-slate-500">Select a program or create a new one</p>
-              <p className="text-[11px] text-slate-400 max-w-sm text-center">Build sequential calculation programs that replace Python scripts and MS Access macros. Each step assigns a named variable others can reference.</p>
+              <p className="text-[13px] font-bold text-slate-500">Select a formula or create a new one</p>
+              <p className="text-[11px] text-slate-400 max-w-sm text-center">Build formulas using fields from the Field Registry. Each step creates a named result others can reference — including Business Rules and Workflow conditions.</p>
             </div>
           )}
 
@@ -640,7 +785,7 @@ export const CalculationEngineStudio: React.FC = () => {
                     </button>
                   )}
                   {!selectedProgram.locked_steps && (
-                    <button onClick={() => { setIsEditing(true); setFormName(selectedProgram.business_name); setFormCode(selectedProgram.program_code); setFormDescription(selectedProgram.description || ''); setFormDomain(selectedProgram.domain || ''); setFormTier(selectedProgram.tier || 'T1'); setFormSteps(selectedProgram.steps?.length ? selectedProgram.steps : [makeStep(1)]); setFormInputs(selectedProgram.inputs?.length ? selectedProgram.inputs : [makeInput()]); setFormProductId(selectedProgram.product_id || ''); setFormSubProductId(selectedProgram.subproduct_id || ''); }}
+                    <button onClick={() => { setIsEditing(true); setFormName(selectedProgram.business_name); setFormCode(selectedProgram.program_code); setFormDescription(selectedProgram.description || ''); setFormTier(selectedProgram.tier || 'T1'); setFormSteps(selectedProgram.steps?.length ? selectedProgram.steps : [makeStep(1)]); setFormInputs(selectedProgram.inputs?.length ? selectedProgram.inputs : [makeInput()]); setFormProductId(selectedProgram.product_id || ''); setFormSubProductId(selectedProgram.subproduct_id || ''); }}
                       className="px-3 py-1.5 text-[11px] font-bold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">
                       Edit
                     </button>
@@ -694,18 +839,22 @@ export const CalculationEngineStudio: React.FC = () => {
               <div className="p-4 border-b border-slate-100 bg-white z-10">
                 <div className="grid grid-cols-4 gap-3 mb-3">
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Program Name *</label>
-                    <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. CLO Waterfall Distribution" className="w-full text-[12px] font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400" />
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Formula Name *</label>
+                    <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. Total Fee Calculation" className="w-full text-[12px] font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400" />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Program Code *</label>
-                    <input type="text" value={formCode} onChange={e => setFormCode(e.target.value.toUpperCase())} placeholder="e.g. CP-SF-001" className="w-full text-[12px] font-mono font-bold text-indigo-700 border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400" />
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Formula Code *</label>
+                    <input type="text" value={formCode} onChange={e => setFormCode(e.target.value.toUpperCase())} placeholder="e.g. FML-PAY-001" className="w-full text-[12px] font-mono font-bold text-indigo-700 border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-400" />
                   </div>
                   <div>
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Domain</label>
-                    <select value={formDomain} onChange={e => setFormDomain(e.target.value)} className="w-full text-[12px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-400 bg-white">
-                      {DOMAINS.map(d => <option key={d.code} value={d.code}>{d.label}</option>)}
-                    </select>
+                    {/* Read-only — derived from the active Package, never user-selectable (compliance boundary) */}
+                    <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-2 bg-slate-50">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${domainColor[packageDomain] || 'bg-slate-100 text-slate-500'}`}>
+                        {DOMAIN_LABELS[packageDomain] || packageDomain || '—'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 truncate">from {activeProductContext || 'package'}</span>
+                    </div>
                   </div>
                   <div>
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Complexity Tier</label>
@@ -754,6 +903,7 @@ export const CalculationEngineStudio: React.FC = () => {
                     step={step}
                     index={i}
                     total={formSteps.length}
+                    packageDomain={packageDomain}
                     onChange={(field, val) => updateStep(i, field, val)}
                     onRemove={() => removeStep(i)}
                     onMoveUp={() => moveStep(i, 'up')}

@@ -387,6 +387,11 @@ class ISOFieldDefinitionCreate(BaseModel):
     is_pii: bool = Field(False, description="Indicates if the field contains Personally Identifiable Information (PII).")
     masking_strategy: Optional[str] = Field(None, description="Explicit masking strategy to use (e.g., EMAIL, SHOW_LAST_4). Overrides data_type default.")
     localized_overrides: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="JSON object for country-specific overrides (e.g., {'US_en': {'name': 'SSN'}}).")
+    # field_source separates governance origin from display preference (different concerns):
+    # ISO_20022 = pre-seeded ISO standard (read-only); BANK_CUSTOM = admin-defined proprietary;
+    # CALCULATED = auto-registered when a Formula output token is saved
+    field_source: str = Field("ISO_20022", description="ISO_20022 | BANK_CUSTOM | CALCULATED")
+    formula_ref: Optional[str] = Field(None, description="For CALCULATED fields: program_id of the Formula that produces this field")
 
 
 class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):
