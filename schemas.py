@@ -1556,3 +1556,106 @@ class SimulationJobResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Calculation Program schemas (new multi-step program model)
+# ---------------------------------------------------------------------------
+
+class CalcProgramStep(BaseModel):
+    """
+    WHY THIS EXISTS: One step in a Calculation Program's ordered execution sequence.
+    var_name becomes a named variable in the execution namespace — later steps can
+    reference it directly by name in their expressions.
+    """
+    seq: int = Field(..., description="1-based execution order")
+    var_name: str = Field(..., description="Variable name assigned by this step, e.g. GROSS_INT")
+    expression: str = Field(..., description="Formula expression referencing inputs or prior step var_names")
+    description: Optional[str] = None
+    is_output: bool = Field(False, description="If true, this step's result is published as an output token")
+    output_token: Optional[str] = Field(None, description="Published token name when is_output=true, e.g. SR_FEE_PAID")
+
+
+class CalcProgramInput(BaseModel):
+    """
+    WHY THIS EXISTS: Typed variable source declaration. Tells the executor WHERE to get
+    the value for a named variable before the step sequence runs. The source_type determines
+    how the executor resolves the value at runtime.
+    """
+    name: str = Field(..., description="Variable name — must match usage in step expressions")
+    source_type: str = Field(..., description="ISO_FIELD | RATE_FEED | POLICY_CONSTANT | FORMULA_TOKEN | RUNTIME_INPUT | DAY_COUNT")
+    iso_field_id: Optional[str] = None           # for ISO_FIELD
+    value: Optional[Any] = None                  # for POLICY_CONSTANT (numeric constant)
+    feed_code: Optional[str] = None              # for RATE_FEED, e.g. SOFR_ON, LIBOR_3M
+    token_ref: Optional[str] = None              # for FORMULA_TOKEN — token_code of upstream formula
+    convention: Optional[str] = None             # for DAY_COUNT: ACT_360 | ACT_365 | 30_360 | 30E_360 | ACT_ACT
+    description: Optional[str] = None
+
+
+class CalcProgramCreate(BaseModel):
+    """Request body for creating or updating a Calculation Program."""
+    program_code: str = Field(..., description="Unique human-readable code, e.g. CP-SF-001")
+    business_name: str
+    description: Optional[str] = None
+    domain: Optional[str] = None        # PAYMENTS | CREDIT_RISK | TREASURY | STRUCTURED_FINANCE | INVESTMENT_BANKING | RETAIL_BANKING | CORPORATE_BANKING
+    tier: Optional[str] = None          # T1 | T2 | T3
+    tags: Optional[List[str]] = None
+    is_template: bool = False
+    locked_steps: bool = False
+    steps: List[CalcProgramStep] = Field(default_factory=list)
+    inputs: List[CalcProgramInput] = Field(default_factory=list)
+    application_package_id: Optional[str] = None
+    product_id: Optional[str] = None
+    subproduct_id: Optional[str] = None
+
+
+class CalcProgramResponse(CalcProgramCreate):
+    program_id: str
+    status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+
+    class Config:
+        from_attributes = True
+
+
+class CalcProgramListResponse(BaseModel):
+    programs: List[CalcProgramResponse]
+    total_count: int
+
+
+class CalcProgramExecuteRequest(BaseModel):
+    """
+    WHY THIS EXISTS: Single-record test execution. The user provides sample values for each
+    RUNTIME_INPUT and POLICY_CONSTANT declared in the program's inputs[], and the engine
+    runs all steps, returning per-step intermediate values so the user can trace through
+    the logic like a debugger.
+    """
+    runtime_values: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Key = input variable name, Value = sample numeric value for test execution"
+    )
+
+
+class CalcProgramStepResult(BaseModel):
+    seq: int
+    var_name: str
+    expression: str
+    result: Any
+    is_output: bool
+    output_token: Optional[str]
+
+
+class CalcProgramExecuteResponse(BaseModel):
+    """
+    WHY THIS EXISTS: Step-by-step execution trace. Analytics users can see exactly what
+    each step computed — equivalent to selecting individual cells in Excel to see intermediate
+    values. This replaces the need to read Python scripts to understand what the program does.
+    """
+    program_id: str
+    status: str                             # SUCCESS | PARTIAL_FAILURE | ERROR
+    step_results: List[CalcProgramStepResult]
+    outputs: Dict[str, Any]                 # only the steps marked is_output=true
+    error: Optional[str] = None
+    execution_time_ms: Optional[float] = None

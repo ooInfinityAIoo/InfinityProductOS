@@ -1388,5 +1388,76 @@ class UnstructuredExtractionBlueprint(Base):
     made_live_by = Column(String, nullable=True)
 
 
+class CalculationProgram(Base):
+    """
+    WHY THIS MODEL EXISTS:
+    The new first-class entity for the Calculation Engine. Replaces the old single-expression
+    SymbolicFormulaAsset paradigm with a sequential, stateful computation program — the
+    direct replacement for Python scripts, MS Access macros, and User-Defined Tables that
+    analytics teams currently maintain as black boxes.
+
+    A Calculation Program is an ordered list of steps. Each step assigns a named variable
+    from a formula expression. State accumulates through the namespace so later steps can
+    reference earlier results. One or more steps can be marked as outputs (published tokens).
+
+    This model serves BOTH the Formula Registry (is_template=True) AND user programs
+    (is_template=False). A simple 1-step formula is just a program with one step.
+    A 12-step CLO waterfall is a program with 12 steps. Same table, same engine.
+
+    JSON shape for steps[]:
+      [{
+        "seq": 1,
+        "var_name": "GROSS_INT",
+        "expression": "OUTSTANDING_BAL * COUPON / 360 * DAYS",
+        "description": "Gross interest on the period",
+        "is_output": false,
+        "output_token": null
+      }, ...]
+
+    JSON shape for inputs[]:
+      [{
+        "name": "OUTSTANDING_BAL",
+        "source_type": "RUNTIME_INPUT",   # ISO_FIELD | RATE_FEED | POLICY_CONSTANT | FORMULA_TOKEN | RUNTIME_INPUT | DAY_COUNT
+        "iso_field_id": null,
+        "value": null,
+        "feed_code": null,
+        "convention": null,               # for DAY_COUNT: ACT_360 | ACT_365 | 30_360 | 30E_360 | ACT_ACT
+        "description": "Outstanding principal balance of the collateral record"
+      }, ...]
+    """
+    __tablename__ = "calculation_programs"
+
+    program_id = Column(String, primary_key=True, index=True)
+    program_code = Column(String, unique=True, nullable=False, index=True)   # e.g. CP-SF-001
+    business_name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # Classification
+    domain = Column(String, nullable=True, index=True)       # PAYMENTS | CREDIT_RISK | TREASURY | STRUCTURED_FINANCE | INVESTMENT_BANKING | RETAIL_BANKING | CORPORATE_BANKING
+    tier = Column(String, nullable=True)                     # T1 | T2 | T3
+    tags = Column(JSONB, nullable=True)
+
+    # Template vs user program
+    is_template = Column(Boolean, nullable=False, default=False, index=True)
+    locked_steps = Column(Boolean, nullable=False, default=False)
+
+    # Core logic
+    steps = Column(JSONB, nullable=False, default=list)
+    inputs = Column(JSONB, nullable=False, default=list)
+
+    # Product scoping
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
+
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+
+    # Audit
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)

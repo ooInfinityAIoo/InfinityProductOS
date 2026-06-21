@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import datetime
 import csv
 import io
@@ -342,3 +342,239 @@ async def upload_formula_library(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during file processing: {str(e)}")
 
     return {"successful_uploads": successful_uploads, "failed_entries": failed_entries}
+
+
+# ---------------------------------------------------------------------------
+# Calculation Program endpoints — new multi-step sequential program model
+# ---------------------------------------------------------------------------
+# WHY THESE ENDPOINTS EXIST:
+# The Calculation Program is the replacement for Python scripts, MS Access macros, and
+# User-Defined Tables. Analytics users configure programs via the UI; these endpoints
+# are the CRUD + execution surface. The /execute endpoint runs a single-record test so
+# users can trace step-by-step results like a debugger. The /batch endpoint runs the
+# program against N records (e.g. 50,000 collateral records) and returns aggregate totals.
+
+import time as _time
+from services.calculation_engine import execute_program, execute_program_batch
+
+
+@router.post("/programs", response_model=schemas.CalcProgramResponse, status_code=status.HTTP_201_CREATED,
+    summary="Create a Calculation Program",
+    description="Creates a new multi-step Calculation Program. Each step defines a named variable computed from a formula expression referencing inputs or prior step results.")
+def create_calc_program(
+    payload: schemas.CalcProgramCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges),
+):
+    now = datetime.datetime.utcnow().isoformat()
+    program_id = f"CP-{uuid.uuid4().hex[:8].upper()}"
+
+    db_program = models.CalculationProgram(
+        program_id=program_id,
+        program_code=payload.program_code,
+        business_name=payload.business_name,
+        description=payload.description,
+        domain=payload.domain,
+        tier=payload.tier,
+        tags=payload.tags,
+        is_template=payload.is_template,
+        locked_steps=payload.locked_steps,
+        steps=[s.dict() for s in payload.steps],
+        inputs=[i.dict() for i in payload.inputs],
+        application_package_id=payload.application_package_id,
+        product_id=payload.product_id,
+        subproduct_id=payload.subproduct_id,
+        status="DRAFT",
+        created_at=now,
+        created_by=current_user.user_id,
+    )
+    db.add(db_program)
+    db.commit()
+    db.refresh(db_program)
+    return db_program
+
+
+@router.get("/programs", response_model=schemas.CalcProgramListResponse,
+    summary="List Calculation Programs",
+    description="Returns all Calculation Programs, optionally filtered by domain, package, product, or template flag. Use is_template=true to browse the formula registry.")
+def list_calc_programs(
+    package_id: Optional[str] = None,
+    product_id: Optional[str] = None,
+    domain: Optional[str] = None,
+    is_template: Optional[bool] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    query = db.query(models.CalculationProgram)
+    if package_id:
+        query = query.filter(models.CalculationProgram.application_package_id == package_id)
+    if product_id:
+        query = query.filter(models.CalculationProgram.product_id == product_id)
+    if domain:
+        query = query.filter(models.CalculationProgram.domain == domain.upper())
+    if is_template is not None:
+        query = query.filter(models.CalculationProgram.is_template == is_template)
+    if search:
+        query = query.filter(
+            or_(
+                models.CalculationProgram.business_name.ilike(f"%{search}%"),
+                models.CalculationProgram.description.ilike(f"%{search}%"),
+                models.CalculationProgram.program_code.ilike(f"%{search}%"),
+            )
+        )
+    total = query.count()
+    programs = query.order_by(models.CalculationProgram.business_name).offset(skip).limit(limit).all()
+    return {"programs": programs, "total_count": total}
+
+
+@router.get("/programs/{program_id}", response_model=schemas.CalcProgramResponse,
+    summary="Get a Calculation Program")
+def get_calc_program(
+    program_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    program = db.query(models.CalculationProgram).filter(models.CalculationProgram.program_id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Calculation Program not found")
+    return program
+
+
+@router.patch("/programs/{program_id}", response_model=schemas.CalcProgramResponse,
+    summary="Update a Calculation Program",
+    description="Updates a Calculation Program. If locked_steps=true, the steps[] array cannot be modified (T3 template protection).")
+def update_calc_program(
+    program_id: str,
+    payload: schemas.CalcProgramCreate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges),
+):
+    program = db.query(models.CalculationProgram).filter(models.CalculationProgram.program_id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Calculation Program not found")
+
+    # T3 template protection — steps cannot be modified
+    if program.locked_steps:
+        raise HTTPException(status_code=403, detail="This program's steps are locked (T3 template). Clone it to create an editable copy.")
+
+    program.business_name = payload.business_name
+    program.description = payload.description
+    program.domain = payload.domain
+    program.tier = payload.tier
+    program.tags = payload.tags
+    program.steps = [s.dict() for s in payload.steps]
+    program.inputs = [i.dict() for i in payload.inputs]
+    program.product_id = payload.product_id
+    program.subproduct_id = payload.subproduct_id
+    program.updated_at = datetime.datetime.utcnow().isoformat()
+    program.updated_by = current_user.user_id
+
+    db.commit()
+    db.refresh(program)
+    return program
+
+
+@router.post("/programs/{program_id}/clone", response_model=schemas.CalcProgramResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Clone a Calculation Program",
+    description="Creates an editable copy of any program (including locked T3 templates). The clone is always non-template and non-locked.")
+def clone_calc_program(
+    program_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges),
+):
+    source = db.query(models.CalculationProgram).filter(models.CalculationProgram.program_id == program_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source program not found")
+
+    now = datetime.datetime.utcnow().isoformat()
+    clone = models.CalculationProgram(
+        program_id=f"CP-{uuid.uuid4().hex[:8].upper()}",
+        program_code=f"{source.program_code}-COPY-{uuid.uuid4().hex[:4].upper()}",
+        business_name=f"Copy of {source.business_name}",
+        description=source.description,
+        domain=source.domain,
+        tier=source.tier,
+        tags=source.tags,
+        is_template=False,   # clones are always user programs, never templates
+        locked_steps=False,  # clones are always editable
+        steps=source.steps,
+        inputs=source.inputs,
+        application_package_id=source.application_package_id,
+        product_id=source.product_id,
+        subproduct_id=source.subproduct_id,
+        status="DRAFT",
+        created_at=now,
+        created_by=current_user.user_id,
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+    return clone
+
+
+@router.post("/programs/{program_id}/execute", response_model=schemas.CalcProgramExecuteResponse,
+    summary="Test-Execute a Calculation Program",
+    description="Runs a single-record test execution. Returns per-step results so users can trace through the logic like a debugger. Equivalent to entering values into an Excel spreadsheet and seeing all intermediate cell values.")
+def execute_calc_program(
+    program_id: str,
+    payload: schemas.CalcProgramExecuteRequest,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    program = db.query(models.CalculationProgram).filter(models.CalculationProgram.program_id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Calculation Program not found")
+
+    t_start = _time.time()
+    step_results, outputs, error = execute_program(
+        steps=program.steps or [],
+        inputs=program.inputs or [],
+        runtime_values=payload.runtime_values,
+    )
+    elapsed_ms = (_time.time() - t_start) * 1000
+
+    # Convert Decimal results to float for JSON serialization
+    serialized_steps = [
+        {**s, "result": float(s["result"]) if s["result"] is not None else None}
+        for s in step_results
+    ]
+    serialized_outputs = {k: float(v) for k, v in outputs.items()}
+
+    return {
+        "program_id": program_id,
+        "status": "ERROR" if error and not outputs else ("PARTIAL_FAILURE" if error else "SUCCESS"),
+        "step_results": serialized_steps,
+        "outputs": serialized_outputs,
+        "error": error,
+        "execution_time_ms": round(elapsed_ms, 2),
+    }
+
+
+@router.post("/programs/{program_id}/batch", summary="Batch-Execute a Calculation Program",
+    description="Runs the Calculation Program against a list of records (e.g. 50,000 collateral records). Returns per-record outputs and portfolio-level totals. Phase 2 will move this to a Celery async job.")
+def batch_execute_calc_program(
+    program_id: str,
+    records: List[Dict[str, Any]],
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    if len(records) > 10000:
+        raise HTTPException(
+            status_code=400,
+            detail="Synchronous batch is limited to 10,000 records. For larger datasets, split into chunks or use the async batch endpoint (coming in Phase 2)."
+        )
+
+    program = db.query(models.CalculationProgram).filter(models.CalculationProgram.program_id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Calculation Program not found")
+
+    result = execute_program_batch(
+        steps=program.steps or [],
+        inputs=program.inputs or [],
+        records=records,
+    )
+    return result
