@@ -1664,3 +1664,130 @@ class CalcProgramExecuteResponse(BaseModel):
     outputs: Dict[str, Any]                 # only the steps marked is_output=true
     error: Optional[str] = None
     execution_time_ms: Optional[float] = None
+
+
+# ===========================================================================
+# MESSAGE QUEUE INFRASTRUCTURE SCHEMAS
+# ===========================================================================
+
+class ExternalQueueConnectionCreate(BaseModel):
+    """
+    WHY THIS EXISTS: Configuration for a physical connection to an external MQ system.
+    Provider-specific params stored as JSONB so the schema doesn't change when we add
+    a new MQ provider — only the adapter implementation needs updating.
+    """
+    connection_name: str
+    description: Optional[str] = None
+    provider: str  # IBM_MQ | TIBCO_EMS | ORACLE_AQ | KAFKA | SWIFT_ALLIANCE | RABBITMQ | ACTIVEMQ
+    connection_params: Dict[str, Any] = Field(default_factory=dict)
+    credential_ref: Optional[str] = None  # vault reference — never the actual secret
+    tls_enabled: bool = True
+    tls_config: Optional[Dict[str, Any]] = None
+    max_reconnect_attempts: int = 5
+    reconnect_interval_sec: int = 30
+    heartbeat_interval_sec: Optional[int] = None
+    package_id: Optional[str] = None
+
+class ExternalQueueConnectionResponse(ExternalQueueConnectionCreate):
+    connection_id: str
+    status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+    class Config:
+        from_attributes = True
+
+class ExternalQueueConnectionListResponse(BaseModel):
+    connections: List[ExternalQueueConnectionResponse]
+    total_count: int
+
+
+class MessageQueueCreate(BaseModel):
+    """
+    WHY THIS EXISTS: Logical queue definition scoped to Package/Product/SubProduct.
+    Entitlements use the industry-standard OR pattern: a user can access the queue if
+    they have any allowed_role_id OR if their user_id is in allowed_user_ids (for
+    temporary access overrides without permanent role elevation).
+    """
+    queue_name: str
+    queue_code: str
+    description: Optional[str] = None
+    queue_type: str  # MASTER | CHILD | DLQ | RESPONSE | ESCALATION
+    parent_queue_id: Optional[str] = None
+    external_connection_id: Optional[str] = None
+    physical_queue_name: Optional[str] = None
+    message_format: str = "ISO_20022"  # ISO_20022 | SWIFT_FIN | NACHA | CHIPS | JSON | XML | PROPRIETARY
+    exception_category: Optional[str] = None  # AML | OFAC | FUNDS | DUPLICATE | FORMAT | RATE | MANUAL
+    package_id: Optional[str] = None
+    product_id: Optional[str] = None
+    subproduct_id: Optional[str] = None
+    sla_minutes: Optional[int] = None
+    on_sla_breach_action: str = "ALERT"  # ESCALATE | ALERT | BOTH
+    escalation_queue_id: Optional[str] = None
+    allowed_role_ids: List[str] = Field(default_factory=list)
+    allowed_user_ids: List[str] = Field(default_factory=list)
+    administrator_role_ids: List[str] = Field(default_factory=list)
+    max_retry_count: int = 3
+    retry_interval_sec: int = 60
+
+class MessageQueueResponse(MessageQueueCreate):
+    queue_id: str
+    status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+    class Config:
+        from_attributes = True
+
+class MessageQueueListResponse(BaseModel):
+    queues: List[MessageQueueResponse]
+    total_count: int
+
+
+class QueueRoutingRuleCreate(BaseModel):
+    """
+    WHY THIS EXISTS: Maps external system response codes to workflow state transitions.
+    A pacs.002 ACSC → COMPLETE. A pacs.002 RJCT:AC01 → REPAIR queue.
+    Without these rules, all responses default to COMPLETE regardless of content —
+    AML hits and rejected payments would silently pass through.
+    """
+    queue_id: str  # the RESPONSE queue this rule monitors
+    rule_name: str
+    description: Optional[str] = None
+    match_field: str       # ISO 20022 field path, e.g. "TxSts" or "StsRsnInf.Rsn.Cd"
+    match_pattern: str     # e.g. "ACSC", "RJCT", "PDNG", "AM04"
+    match_type: str = "EXACT"  # EXACT | STARTSWITH | CONTAINS | REGEX
+    target_workflow_state: str  # COMPLETE | REPAIR | COMPLIANCE_HOLD | FUNDS_HOLD | AWAITING_RESPONSE | FAILED | ESCALATION
+    target_queue_id: Optional[str] = None
+    alert_queue_administrators: bool = False
+    alert_message: Optional[str] = None
+    priority: int = 100
+
+class QueueRoutingRuleResponse(QueueRoutingRuleCreate):
+    rule_id: str
+    status: str
+    created_at: str
+    updated_at: Optional[str] = None
+    created_by: str
+    class Config:
+        from_attributes = True
+
+class QueueRoutingRuleListResponse(BaseModel):
+    rules: List[QueueRoutingRuleResponse]
+    total_count: int
+
+
+class QueuePublishRequest(BaseModel):
+    """Request body for publishing a message to a queue via the workflow engine."""
+    queue_id: str
+    payload: Dict[str, Any]
+    correlation_id: Optional[str] = None  # links to workflow instance for response matching
+    message_format: Optional[str] = None  # override queue default format
+
+class QueuePublishResponse(BaseModel):
+    message_id: str
+    queue_id: str
+    correlation_id: str
+    status: str  # PUBLISHED | FAILED
+    timestamp: str
+    error: Optional[str] = None

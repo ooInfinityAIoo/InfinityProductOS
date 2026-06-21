@@ -409,6 +409,190 @@ class WorkflowExecutor:
                         self.execution_trace.append(f"[ERROR] Reconciliation execution failed: {str(e)}")
                         raise ValueError(f"Reconciliation Engine Failure: {str(e)}")
 
+                # -------------------------------------------------------
+                # Queue-driven payment step_types (Phase 2 — async MQ integration)
+                # -------------------------------------------------------
+
+                elif step_type == "PUBLISH_TO_QUEUE":
+                    # WHY THIS EXISTS:
+                    # Publishes a payment instruction (pacs.008 or proprietary format) to an
+                    # external MQ queue and suspends the workflow in AWAITING_EXTERNAL_RESPONSE.
+                    # The workflow resumes only when AWAIT_QUEUE_RESPONSE receives a matching
+                    # correlation_id on the response queue. This models the real async payment
+                    # settlement lifecycle — you send to SWIFT and wait hours or days.
+                    #
+                    # step config: {step_type: PUBLISH_TO_QUEUE, target_token: <queue_id>,
+                    #               message_format: ISO_20022, sending_bic: BOFAUS3NXXX}
+                    queue_id = target_token
+                    self.execution_trace.append(f"Executing step: PUBLISH_TO_QUEUE → queue '{queue_id}'")
+
+                    queue_obj = self.db.query(models.MessageQueue).filter(
+                        models.MessageQueue.queue_id == queue_id
+                    ).first()
+
+                    if not queue_obj:
+                        self.execution_trace.append(f"[ERROR] Queue '{queue_id}' not found in MessageQueue master.")
+                        raise ValueError(f"PUBLISH_TO_QUEUE: queue '{queue_id}' not configured.")
+
+                    correlation_id = context.get("__correlation_id__") or f"CORR-{uuid.uuid4().hex[:16].upper()}"
+                    context["__correlation_id__"] = correlation_id
+                    context["__awaiting_queue_id__"] = queue_id
+                    context["__publish_timestamp__"] = datetime.datetime.utcnow().isoformat()
+
+                    msg_format = step.get("message_format") or queue_obj.message_format or "JSON"
+
+                    if msg_format in ("ISO_20022", "SWIFT_FIN"):
+                        from services.swift_message_builder import build_pacs008
+                        sending_bic = step.get("sending_bic", "")
+                        message_body, biz_msg_id = build_pacs008(context, sending_bic, business_msg_id=correlation_id)
+                        publish_payload = {"xml": message_body, "format": msg_format}
+                    else:
+                        publish_payload = {k: v for k, v in context.items() if not k.startswith("__")}
+
+                    if queue_obj.external_connection_id:
+                        conn = self.db.query(models.ExternalQueueConnection).filter(
+                            models.ExternalQueueConnection.connection_id == queue_obj.external_connection_id
+                        ).first()
+                        if conn:
+                            from services.queue_adapter import get_adapter
+                            adapter = get_adapter(conn.provider, conn.connection_params, conn.credential_ref)
+                            try:
+                                adapter.connect()
+                                success, msg_id, err = adapter.publish(
+                                    physical_queue_name=queue_obj.physical_queue_name or queue_obj.queue_code,
+                                    payload=publish_payload,
+                                    correlation_id=correlation_id,
+                                    message_format=msg_format,
+                                )
+                                adapter.disconnect()
+                                if success:
+                                    context["__published_message_id__"] = msg_id
+                                    self.execution_trace.append(
+                                        f"✓ Published to queue '{queue_obj.queue_name}'. "
+                                        f"MessageID={msg_id} CorrelationID={correlation_id}"
+                                    )
+                                else:
+                                    self.execution_trace.append(f"[ERROR] Publish failed: {err}")
+                                    raise ValueError(f"PUBLISH_TO_QUEUE failed: {err}")
+                            except Exception as exc:
+                                self.execution_trace.append(f"[ERROR] Queue adapter error: {exc}")
+                                raise
+                        else:
+                            self.execution_trace.append(
+                                f"[WARN] Queue '{queue_id}' has no external connection configured. "
+                                f"Message logged to trace only (dev mode)."
+                            )
+                    else:
+                        self.execution_trace.append(
+                            f"[DEV] Queue '{queue_id}' has no external connection — "
+                            f"message not sent externally. CorrelationID={correlation_id}"
+                        )
+
+                elif step_type == "AWAIT_QUEUE_RESPONSE":
+                    # WHY THIS EXISTS:
+                    # Suspends the workflow and dispatches a Celery task to listen on the
+                    # RESPONSE queue for a message matching __correlation_id__. When the
+                    # Celery task receives the response, it calls back to resume this workflow.
+                    #
+                    # For local dev (no Celery), runs synchronously with a short timeout.
+                    # step config: {step_type: AWAIT_QUEUE_RESPONSE, target_token: <response_queue_id>}
+                    response_queue_id = target_token or context.get("__awaiting_queue_id__")
+                    correlation_id = context.get("__correlation_id__", "")
+                    self.execution_trace.append(
+                        f"Executing step: AWAIT_QUEUE_RESPONSE on queue '{response_queue_id}' "
+                        f"CorrelationID={correlation_id}"
+                    )
+
+                    q = self.db.query(models.MessageQueue).filter(
+                        models.MessageQueue.queue_id == response_queue_id
+                    ).first()
+                    sla_minutes = (q.sla_minutes or 60) if q else 60
+
+                    from services.queue_listener import listen_for_queue_response
+                    listener_result = listen_for_queue_response(
+                        workflow_instance_id=context.get("__workflow_instance_id__", "UNKNOWN"),
+                        queue_id=response_queue_id,
+                        correlation_id=correlation_id,
+                        sla_minutes=sla_minutes,
+                    )
+
+                    context["__queue_listener_result__"] = listener_result
+                    self.execution_trace.append(
+                        f"Queue listener dispatched. Status={listener_result.get('status')}"
+                    )
+
+                    if listener_result.get("status") == "DISPATCHED":
+                        # Celery task running — suspend workflow, resume when task completes
+                        context["__workflow_suspended__"] = True
+                        context["__suspension_reason__"] = "AWAITING_EXTERNAL_RESPONSE"
+                        self.execution_trace.append(
+                            "Workflow suspended — awaiting external queue response. "
+                            "Will resume automatically when Celery listener receives pacs.002."
+                        )
+
+                elif step_type == "ROUTE_ON_RESPONSE":
+                    # WHY THIS EXISTS:
+                    # Evaluates the parsed pacs.002 response (from AWAIT_QUEUE_RESPONSE) against
+                    # QueueRoutingRules and transitions the workflow to the correct state:
+                    # COMPLETE, REPAIR, COMPLIANCE_HOLD, FUNDS_HOLD, ESCALATION, etc.
+                    # The matched rule also specifies which exception child queue to route to.
+                    self.execution_trace.append("Executing step: ROUTE_ON_RESPONSE")
+
+                    listener_result = context.get("__queue_listener_result__", {})
+                    parsed_response = listener_result.get("parsed_response", {})
+                    matched_rule = listener_result.get("matched_rule")
+
+                    if not parsed_response and not matched_rule:
+                        self.execution_trace.append("[WARN] No parsed queue response in context. Defaulting to COMPLETE.")
+                        context["__workflow_next_state__"] = "COMPLETE"
+                    else:
+                        target_state = (matched_rule or {}).get("target_workflow_state", "COMPLETE")
+                        context["__workflow_next_state__"] = target_state
+
+                        if matched_rule:
+                            self.execution_trace.append(
+                                f"✓ Routing rule matched: '{matched_rule.get('rule_name')}' → "
+                                f"state={target_state} queue={matched_rule.get('target_queue_id', 'N/A')}"
+                            )
+                            if matched_rule.get("target_queue_id"):
+                                context["__exception_queue_id__"] = matched_rule["target_queue_id"]
+                        else:
+                            self.execution_trace.append(
+                                f"[WARN] No routing rule matched response "
+                                f"'{parsed_response.get('composite_status', 'UNKNOWN')}'. "
+                                f"Defaulting to COMPLETE."
+                            )
+
+                elif step_type == "QUEUE_TIMEOUT_ESCALATE":
+                    # WHY THIS EXISTS:
+                    # Explicit SLA breach handler node. When AWAIT_QUEUE_RESPONSE returns
+                    # SLA_BREACH status, this step routes the workflow to the configured
+                    # escalation queue and notifies Queue Administrators. Can also be placed
+                    # in a workflow timeout path to handle any type of SLA breach.
+                    queue_id = target_token or context.get("__awaiting_queue_id__", "")
+                    self.execution_trace.append(f"Executing step: QUEUE_TIMEOUT_ESCALATE for queue '{queue_id}'")
+
+                    q = self.db.query(models.MessageQueue).filter(
+                        models.MessageQueue.queue_id == queue_id
+                    ).first()
+
+                    context["__workflow_next_state__"] = "ESCALATION"
+
+                    if q:
+                        if q.escalation_queue_id:
+                            context["__exception_queue_id__"] = q.escalation_queue_id
+                        breach_action = q.on_sla_breach_action or "ALERT"
+                        self.execution_trace.append(
+                            f"SLA breach escalation triggered. Action={breach_action}. "
+                            f"Queue administrators for roles {q.administrator_role_ids} must investigate."
+                        )
+                    else:
+                        self.execution_trace.append(f"[WARN] Queue '{queue_id}' not found for escalation config.")
+
+                # -------------------------------------------------------
+                # end queue step_types
+                # -------------------------------------------------------
+
         # --- Final Layer 6 Governance Checks for Financial Nodes ---
         # After all actions, apply hardcoded governance guardrails.
         if node.node_code in ["POST_LEDGER", "SETTLE"]:

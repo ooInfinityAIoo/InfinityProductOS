@@ -1468,5 +1468,228 @@ class CalculationProgram(Base):
     updated_by = Column(String, nullable=True)
 
 
+# ===========================================================================
+# MESSAGE QUEUE INFRASTRUCTURE
+# ===========================================================================
+# WHY THIS EXISTS:
+# External message queues (IBM MQ, TIBCO EMS, Oracle AQ, Kafka, SWIFT Alliance)
+# are the backbone of real payment processing. The Workflow Engine does not decide
+# when a payment is complete — the queue acknowledgement does. A pacs.002
+# ACSC response from SWIFT moves the workflow to SETTLED. A RJCT code routes it
+# to a specific exception child queue for repair or compliance investigation.
+#
+# Three tables form the Queue Infrastructure master:
+#   1. ExternalQueueConnection — physical connection to an MQ system
+#   2. MessageQueue            — logical queue definition (MASTER | CHILD | DLQ | RESPONSE)
+#   3. QueueRoutingRule        — response code → workflow state transition mapping
+#
+# These tables are referenced by the Workflow Engine's PUBLISH_TO_QUEUE,
+# AWAIT_QUEUE_RESPONSE, ROUTE_ON_RESPONSE, and QUEUE_TIMEOUT_ESCALATE step_types.
+
+class ExternalQueueConnection(Base):
+    """
+    WHY THIS EXISTS:
+    Physical connection configuration for an external MQ system. Banks connect to
+    IBM MQ for SWIFT/CHIPS, TIBCO EMS for capital markets, Oracle AQ for FLEXCUBE
+    integration, Kafka for real-time event streaming, or SWIFT Alliance Gateway for
+    cross-border payments. Each Package can have multiple connections (e.g. one IBM MQ
+    for SWIFT, one Kafka for internal event bus).
+
+    Credentials are stored as vault references (ADR #2) — never the actual secret.
+    The adapter layer reads the vault ref at runtime and fetches the real credential.
+
+    WHAT BREAKS IF REMOVED: PUBLISH_TO_QUEUE and AWAIT_QUEUE_RESPONSE workflow
+    step_types cannot resolve which physical system to send to. All queue-driven
+    payment workflows fall back to synchronous API_CALL only.
+    """
+    __tablename__ = "external_queue_connections"
+
+    connection_id = Column(String, primary_key=True, index=True)
+    connection_name = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # MQ provider — determines which adapter class to instantiate at runtime
+    provider = Column(String, nullable=False, index=True)
+    # IBM_MQ | TIBCO_EMS | ORACLE_AQ | KAFKA | SWIFT_ALLIANCE | RABBITMQ | ACTIVEMQ
+
+    # Connection parameters — provider-specific, stored as JSONB for flexibility
+    # IBM MQ:   {host, port, channel, queue_manager, transport_type}
+    # Kafka:    {bootstrap_servers, security_protocol, group_id}
+    # TIBCO:    {provider_url, connection_factory}
+    # Oracle AQ:{dsn, schema}
+    # SWIFT:    {swift_bn, service_name, requestor_dn, responder_dn}
+    connection_params = Column(JSONB, nullable=False, default=dict)
+
+    # Credential vault reference — ADR #2: never store actual secrets in the DB
+    credential_ref = Column(String, nullable=True)
+
+    # TLS / certificate configuration
+    tls_enabled = Column(Boolean, nullable=False, default=True)
+    tls_config = Column(JSONB, nullable=True)  # {cert_path_ref, key_path_ref, ca_cert_ref}
+
+    # Reconnect / reliability settings
+    max_reconnect_attempts = Column(Integer, nullable=False, default=5)
+    reconnect_interval_sec = Column(Integer, nullable=False, default=30)
+    heartbeat_interval_sec = Column(Integer, nullable=True)
+
+    # Scoping — a connection belongs to a package
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+    # DRAFT | ACTIVE | SUSPENDED | ERROR
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
+class MessageQueue(Base):
+    """
+    WHY THIS EXISTS:
+    Logical queue definitions scoped to Package / Product / Sub-Product. Every payment
+    product needs at minimum: an INBOUND queue (incoming instructions), an OUTBOUND
+    queue (instructions to clearing), a RESPONSE queue (settlement confirmations), and
+    a DEAD_LETTER queue (unprocessable messages). Child queues handle specific exception
+    categories (AML, OFAC, insufficient funds, duplicate detection).
+
+    Entitlements on each queue are defined at two levels (industry standard pattern):
+      1. Role-based:  roles that can see/process items in this queue
+      2. User-based:  individual user IDs for temporary access overrides (weekend cover,
+                      staff absence) — the OR condition means a user lacking the role
+                      can still access if their user_id is explicitly listed
+
+    SLA timers: each queue has a breach threshold. Breaching triggers on_sla_breach_action
+    (ESCALATE to escalation queue, ALERT to Queue Administrator, or BOTH).
+
+    WHAT BREAKS IF REMOVED: ROUTE_ON_RESPONSE cannot direct exceptions to the right
+    child queue. Entitlement enforcement on queue access has no configuration to read.
+    """
+    __tablename__ = "message_queues"
+
+    queue_id = Column(String, primary_key=True, index=True)
+    queue_name = Column(String, nullable=False, index=True)
+    queue_code = Column(String, nullable=False, unique=True, index=True)
+    # e.g. SWIFT_INBOUND, AML_HOLDS, FUNDS_INSUFF, OFAC_HITS, DLQ_SWIFT
+
+    description = Column(Text, nullable=True)
+
+    queue_type = Column(String, nullable=False, index=True)
+    # MASTER | CHILD | DLQ | RESPONSE | ESCALATION
+
+    # Hierarchy — child queues reference their master queue
+    parent_queue_id = Column(String, ForeignKey("message_queues.queue_id"), nullable=True, index=True)
+
+    # Physical connection
+    external_connection_id = Column(String, ForeignKey("external_queue_connections.connection_id"), nullable=True, index=True)
+
+    # Physical queue name on the external MQ system (may differ from our logical name)
+    # IBM MQ: actual queue name on queue manager; Kafka: topic name
+    physical_queue_name = Column(String, nullable=True)
+
+    # Message format — drives serialiser/deserialiser selection in the adapter
+    message_format = Column(String, nullable=False, default="ISO_20022")
+    # ISO_20022 | SWIFT_FIN | NACHA | CHIPS | JSON | XML | PROPRIETARY
+
+    # Exception category — drives ROUTE_ON_RESPONSE routing logic
+    exception_category = Column(String, nullable=True)
+    # AML | OFAC | FUNDS | DUPLICATE | FORMAT | RATE | MANUAL | ESCALATION
+
+    # Product scoping
+    package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id"), nullable=True, index=True)
+    subproduct_id = Column(String, ForeignKey("subproduct_master.subproduct_id"), nullable=True, index=True)
+
+    # SLA configuration
+    sla_minutes = Column(Integer, nullable=True)
+    # Minutes before a message sitting in this queue triggers SLA breach action
+    on_sla_breach_action = Column(String, nullable=False, default="ALERT")
+    # ESCALATE | ALERT | BOTH
+    escalation_queue_id = Column(String, ForeignKey("message_queues.queue_id"), nullable=True)
+
+    # Entitlements — industry standard: role-based OR user-based (OR condition)
+    # A user with any of these role_ids can access this queue
+    allowed_role_ids = Column(JSONB, nullable=False, default=list)
+    # Explicit user_id overrides — for temporary access without role elevation
+    allowed_user_ids = Column(JSONB, nullable=False, default=list)
+    # Queue administrators — can perform intra-queue transfers and approve queue actions
+    administrator_role_ids = Column(JSONB, nullable=False, default=list)
+
+    # Retry / dead letter config
+    max_retry_count = Column(Integer, nullable=False, default=3)
+    retry_interval_sec = Column(Integer, nullable=False, default=60)
+    # After max_retry_count failures, message moves to DLQ
+
+    status = Column(String, nullable=False, default="DRAFT", index=True)
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
+class QueueRoutingRule(Base):
+    """
+    WHY THIS EXISTS:
+    Maps external system response codes to workflow state transitions and exception
+    queue routing. When a pacs.002 message arrives on the RESPONSE queue, the
+    ROUTE_ON_RESPONSE workflow step_type evaluates these rules in priority order to
+    determine next action.
+
+    Examples:
+      pacs.002 TxSts=ACSC → workflow COMPLETE (Accepted Settlement Completed)
+      pacs.002 TxSts=RJCT + StsRsnInf=AC01 → REPAIR queue (invalid account)
+      pacs.002 TxSts=RJCT + StsRsnInf=AM04 → FUNDS queue (insufficient funds)
+      pacs.002 TxSts=PDNG → workflow stays AWAITING_RESPONSE, SLA timer reset
+      No response in sla_minutes → ESCALATION queue
+
+    match_field: which field in the incoming message to evaluate
+    match_pattern: value or pattern to match against
+    match_type: EXACT | STARTSWITH | CONTAINS | REGEX
+
+    WHAT BREAKS IF REMOVED: All queue responses default to COMPLETE regardless of
+    content. AML hits, rejected payments, and insufficient funds are silently ignored.
+    """
+    __tablename__ = "queue_routing_rules"
+
+    rule_id = Column(String, primary_key=True, index=True)
+    queue_id = Column(String, ForeignKey("message_queues.queue_id"), nullable=False, index=True)
+    # The RESPONSE queue this rule applies to
+
+    rule_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Message field to evaluate (ISO 20022 path or proprietary key)
+    match_field = Column(String, nullable=False)
+    # e.g. "TxSts", "StsRsnInf.Rsn.Cd", "status_code"
+
+    match_pattern = Column(String, nullable=False)
+    # e.g. "ACSC", "RJCT:AC01", "PDNG", ".*SANCTION.*"
+
+    match_type = Column(String, nullable=False, default="EXACT")
+    # EXACT | STARTSWITH | CONTAINS | REGEX
+
+    # What happens when this rule matches
+    target_workflow_state = Column(String, nullable=False)
+    # COMPLETE | REPAIR | COMPLIANCE_HOLD | FUNDS_HOLD | AWAITING_RESPONSE | FAILED | ESCALATION
+
+    target_queue_id = Column(String, ForeignKey("message_queues.queue_id"), nullable=True)
+    # If routing to an exception child queue, which one
+
+    # Alert configuration on match
+    alert_queue_administrators = Column(Boolean, nullable=False, default=False)
+    alert_message = Column(String, nullable=True)
+
+    # Priority — rules evaluated in ascending priority order; first match wins
+    priority = Column(Integer, nullable=False, default=100)
+
+    status = Column(String, nullable=False, default="ACTIVE", index=True)
+
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+    created_by = Column(String, nullable=False, default="SYSTEM")
+    updated_by = Column(String, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
