@@ -1897,5 +1897,39 @@ class QueueRoutingRule(Base):
     updated_by = Column(String, nullable=True)
 
 
+class SanctionsList(Base):
+    """
+    WHY THIS TABLE EXISTS (Finding C1):
+    Stores named sanctions/screening lists (e.g. OFAC_SDN, UN_CONSOLIDATED, EU_FSF) as
+    Logic-as-Data (ADR #3). A list has a token (token_code) used by Business Rules
+    (operator IN_SANCTION_LIST / NOT_IN_SANCTION_LIST, field 'list'), a friendly
+    list_name, and a JSON array of entries. Each entry is a dict so we can carry name
+    aliases / BICs / programs / dates of designation without schema churn:
+        {"primary_name": "ROSBANK", "aliases": ["ROSBANK PJSC"],
+         "bic": "ROSBRUMM", "program": "RUSSIA-EO14024", "dod": "2022-04-06"}
+    The SanctionsService matches case-insensitive on primary_name, aliases, and bic.
+
+    WHAT BREAKS IF REMOVED:
+    The Business Rules engine's sanctions screening reverts to the previous
+    NotImplementedError ("Manual screening required") — OFAC rule cannot fire,
+    workflow cannot block sanctioned beneficiaries automatically.
+
+    For production, swap the static entries for an upstream feed (OFAC daily delta,
+    UN consolidated XML); the table shape stays the same, the service replaces the
+    list-resolution step with a feed-cache lookup.
+    """
+    __tablename__ = "sanctions_lists"
+
+    list_id = Column(String, primary_key=True, index=True)
+    # Token used by rules to reference this list (e.g. "OFAC_SDN")
+    token_code = Column(String, nullable=False, unique=True, index=True)
+    list_name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    # JSON array of entry dicts (see header for shape)
+    entries = Column(JSONB, nullable=False, default=list)
+    source = Column(String, nullable=True)  # "DEV_STATIC" | "OFAC_FEED" | etc.
+    updated_at = Column(String, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)

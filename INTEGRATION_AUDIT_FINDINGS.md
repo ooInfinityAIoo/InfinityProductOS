@@ -51,9 +51,33 @@ document gates. Regression tests: `test_business_rule_engine_adapter.py`,
 `test_calculation_engine_params.py`.
 
 **Residual sub-findings (still open):**
-- **C1 (Major):** Sanctions-list screening (`NOT_IN_SANCTION_LIST` against OFAC_SDN) is not
-  implemented and no SDN list data is loaded — the OFAC rule logs an honest "manual screening
-  required" instead of actually screening. Needs a sanctions-screening capability + list data.
+- **C1 (Major) — RESOLVED.** Sanctions-list screening is now wired:
+    - `models.SanctionsList` — DB-backed named lists (token_code, entries[]).
+    - `services/sanctions_service.py` — `SanctionsService.screen_against_list(candidate, list_token)`
+      with case-insensitive substring matching on primary_name + aliases, exact match on BIC.
+    - `BusinessRuleEngine` evaluates `IN_SANCTION_LIST` / `NOT_IN_SANCTION_LIST` against the
+      service, honors `logical_operator: "OR"` for combined name/BIC checks, and fails CLOSED
+      on unknown lists (raises instead of silently passing).
+    - `seed_sanctions_lists.py` seeds a small DEV `OFAC_SDN` subset (ROSBANK, SOVCOMBANK, VTB,
+      BANK MELLI IRAN, plus a test canary). Swappable for an OFAC daily-feed loader later.
+    - OFAC rule's authored shape corrected (`NOT_IN_SANCTION_LIST` AND → `IN_SANCTION_LIST` OR)
+      both in seed + DB.
+  Verified end-to-end on `WF-ECC2B272`: sanctioned beneficiary ("Acme c/o ROSBANK Treasury")
+  produces trace `Sanctions HIT — field 'Cdtr.Nm' matched OFAC SDN: name matched 'ROSBANK'`,
+  records `BLOCK_PAYMENT` + `EVT_OFAC_HIT_DETECTED`; clean beneficiary proceeds with no hit.
+  6 new tests in `services/test_sanctions_screening.py` (incl. AND-vs-OR, unknown-list-fails-closed,
+  missing-service-fails-closed). All 16 backend tests pass.
+
+  **Known residual (separate, smaller item):** the workflow executor still walks past a node
+  whose rules recorded `BLOCK_PAYMENT` — the BLOCK is recorded for audit but does not terminate
+  the workflow as REJECTED. Audit/compliance signal is correct; the lifecycle gate is the next
+  layer of work (executor change to halt on BLOCK actions). Tracked as **C3** below.
+
+- **C3 (Minor, lifecycle gating):** `BLOCK_PAYMENT` action is recorded by the rule engine but
+  the executor doesn't halt on it. A blocked payment currently completes through the DAG with
+  the block visible only in `_review_flags` / `_emitted_events`. Executor enhancement: after
+  rule evaluation at a node, if `_review_flags` includes a BLOCK or context contains a "blocked"
+  marker, terminate the workflow with `status=REJECTED` instead of traversing the next edge.
 - **C2 (Major) — RESOLVED.** SETTLE / POST_LEDGER nodes used `with db.begin():`, but the
   executor commits earlier in the run and SA 2.0 autobegins, so reaching settlement raised
   "A transaction is already begun on this Session." Fixed in `workflow_executor.py`: open a

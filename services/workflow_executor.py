@@ -43,6 +43,12 @@ class WorkflowExecutor:
         
         # Initialize the data masking service in alignment with architecture Layer 6
         self.masking_service = DataMaskingService()
+
+        # Sanctions screening capability (Finding C1): one service instance per executor,
+        # injected into every BusinessRuleEngine constructed during this run so IN_SANCTION_LIST
+        # / NOT_IN_SANCTION_LIST conditions can actually evaluate against named DB-backed lists.
+        from services.sanctions_service import SanctionsService
+        self.sanctions_service = SanctionsService(db)
         
         # Load centralized asset cache for O(1) in-memory lookups
         cache = AssetCache(db)
@@ -162,7 +168,8 @@ class WorkflowExecutor:
                     self.execution_trace.append(f"[WARN] Edge condition rule '{rule_token}' not found. Path disabled.")
                     return False
                 
-                bre = BusinessRuleEngine(rule_set_model.definition, calculation_engine=None)
+                bre = BusinessRuleEngine(rule_set_model.definition, calculation_engine=None,
+                                         sanctions_service=self.sanctions_service)
                 rule_passed, _, _ = bre.execute(runtime_context=context)
                 return rule_passed
             else: # Default to simple legacy condition for backward compatibility
@@ -279,7 +286,8 @@ class WorkflowExecutor:
                     rule_set_model = self.rule_sets_by_token_code.get(rule_token)
                     if rule_set_model:
                         # For simple conditional checks, we don't need to pass a full calc engine
-                        bre = BusinessRuleEngine(rule_set_model.definition, calculation_engine=None)
+                        bre = BusinessRuleEngine(rule_set_model.definition, calculation_engine=None,
+                                                 sanctions_service=self.sanctions_service)
                         rule_passed, _, rule_logs = bre.execute(runtime_context=context)
                         self.execution_trace.extend(rule_logs)
                         if not rule_passed:
@@ -306,7 +314,8 @@ class WorkflowExecutor:
                     
                     # The BRE needs the CE to execute calculation actions
                     calc_engine_for_bre = CalculationEngine(formula_library=self.formulas_by_token_code)
-                    bre = BusinessRuleEngine(rule_set_model.definition, calc_engine_for_bre)
+                    bre = BusinessRuleEngine(rule_set_model.definition, calc_engine_for_bre,
+                                             sanctions_service=self.sanctions_service)
                     _, context, logs = bre.execute(runtime_context=context)
                     self.execution_trace.extend(logs)
 

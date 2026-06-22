@@ -179,11 +179,14 @@ rules = [
         "token": "BRE-XBDR-OFAC-SCRN-V1",
         "desc": "Screens beneficiary name and bank BIC against OFAC SDN list. Blocks payment if match found.",
         "definition": {
+            # Semantics: when a HIT exists the rule FIRES (BLOCK_PAYMENT). Combine with OR —
+            # a match on EITHER name OR BIC is enough to block. AND would only block when
+            # the beneficiary AND its bank are both sanctioned, which is wrong for screening.
             "conditions": [
-                {"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.Cdtr.Nm",        "operator": "NOT_IN_SANCTION_LIST", "list": "OFAC_SDN"},
-                {"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAgt.BICFI",  "operator": "NOT_IN_SANCTION_LIST", "list": "OFAC_SDN"}
+                {"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.Cdtr.Nm",        "operator": "IN_SANCTION_LIST", "list": "OFAC_SDN"},
+                {"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAgt.BICFI",  "operator": "IN_SANCTION_LIST", "list": "OFAC_SDN"}
             ],
-            "logical_operator": "AND",
+            "logical_operator": "OR",
             "actions": [
                 {"type": "BLOCK_PAYMENT", "message": "Beneficiary or bank matched OFAC SDN list. Payment blocked pending compliance review."},
                 {"type": "EMIT_EVENT",    "event_code": "EVT_OFAC_HIT_DETECTED"}

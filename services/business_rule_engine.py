@@ -40,10 +40,22 @@ class BusinessRuleEngine:
     _normalize_condition / _normalize_action translate the studio shape into the
     engine shape at evaluation time, so rules authored in the studio actually fire.
     """
-    def __init__(self, rule_set_definition: Dict[str, Any], calculation_engine: Any):
+    def __init__(self, rule_set_definition: Dict[str, Any], calculation_engine: Any,
+                 sanctions_service: Any = None):
+        """
+        sanctions_service (optional): an object with screen_against_list(candidate, list_token)
+        returning {"matched": bool, "list_exists": bool, "entry": dict|None, "reason": str|None}.
+        When provided, IN_SANCTION_LIST / NOT_IN_SANCTION_LIST conditions are evaluated against
+        a real list (Finding C1). When absent, the engine falls back to the legacy honest
+        NotImplementedError so the trace shows the gap, not a silent pass.
+        """
         self.name = rule_set_definition.get("business_name", "Unnamed Rule Set")
         self.rules = rule_set_definition.get("rules", [])
         self.calculation_engine = calculation_engine
+        self.sanctions_service = sanctions_service
+        # Trace of the latest evaluation pass (cleared per execute() call) — surfaces WHICH
+        # entry matched so the workflow trace is auditable.
+        self._screening_trace: List[str] = []
 
     def _normalize_condition(self, condition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -58,6 +70,13 @@ class BusinessRuleEngine:
         """
         # Already in engine shape — pass through untouched.
         if "left_hand_side" in condition or "right_hand_side" in condition:
+            return condition
+
+        # Sanctions-screening conditions have their own authoring shape
+        # ({field, operator, list}) which _evaluate_condition handles directly. Do
+        # NOT translate them into LHS/RHS — that would clobber the 'list' attribute.
+        raw_op_check = (condition.get("operator") or "").upper()
+        if raw_op_check in ("IN_SANCTION_LIST", "NOT_IN_SANCTION_LIST"):
             return condition
 
         # Studio shape: {field, operator, value}. Build operands the engine understands.
@@ -133,18 +152,43 @@ class BusinessRuleEngine:
         """
         op = condition.get("operator")
 
-        # Sanctions/list-screening operators (NOT_IN_SANCTION_LIST, IN_SANCTION_LIST) are a
-        # distinct capability: they screen a string name/BIC against a named external list
-        # (e.g. OFAC_SDN). The numeric comparison engine does not implement them and no list
-        # data is loaded. Raise an HONEST, specific error (instead of the cryptic "Operand
-        # has no source fields") so the workflow trace makes the gap obvious and a real
-        # sanctions-screening integration can be slotted in later. Tracked as Finding C1.
+        # Sanctions / list-screening operators (Finding C1):
+        # Shape:  { field: "<ISO field path>", operator: "IN_SANCTION_LIST"|"NOT_IN_SANCTION_LIST",
+        #           list: "OFAC_SDN" }
+        # The candidate value comes from context[field]; the list comes from the SanctionsService.
+        # If no service is wired (e.g. unit tests that don't supply one), fall back to the honest
+        # NotImplementedError so a missed wiring is visible in the trace.
         if op in ("NOT_IN_SANCTION_LIST", "IN_SANCTION_LIST"):
-            list_name = condition.get("list", "the configured sanctions list")
-            raise NotImplementedError(
-                f"Sanctions screening operator '{op}' against '{list_name}' is not implemented "
-                f"(no sanctions-list data loaded). Manual screening required."
-            )
+            list_token = condition.get("list", "")
+            field = condition.get("field")
+            candidate = context.get(field) if field else None
+
+            if self.sanctions_service is None:
+                raise NotImplementedError(
+                    f"Sanctions screening operator '{op}' against '{list_token or 'unknown list'}' "
+                    f"requires a SanctionsService — none was provided to BusinessRuleEngine."
+                )
+
+            screen = self.sanctions_service.screen_against_list(candidate, list_token)
+
+            # An unknown list token is a CONFIGURATION error — surface it loudly. Returning
+            # False here would silently let a sanctioned payment through; raising fails closed.
+            if not screen.get("list_exists"):
+                raise ValueError(
+                    f"Sanctions list '{list_token}' not found. "
+                    f"Cannot evaluate '{op}' for field '{field}'."
+                )
+
+            matched = bool(screen.get("matched"))
+            if matched:
+                # Audit detail: which entry, why. Read by execute() into the run log.
+                self._screening_trace.append(
+                    f"Sanctions HIT — field '{field}' (value: '{candidate}') matched "
+                    f"{screen.get('list_name') or list_token}: {screen.get('reason')}"
+                )
+
+            # IN_SANCTION_LIST → True when matched. NOT_IN_SANCTION_LIST → True when NOT matched.
+            return matched if op == "IN_SANCTION_LIST" else (not matched)
 
         lhs_val = self._resolve_operand(condition.get("left_hand_side", {}), context)
         rhs_val = self._resolve_operand(condition.get("right_hand_side", {}), context)
@@ -173,16 +217,35 @@ class BusinessRuleEngine:
         execution_logs = []
         any_rule_triggered = False
         sorted_rules = sorted(self.rules, key=lambda r: r.get('priority', 100))
+        # Per-execute() screening trace. Sanctions hits append to this from
+        # _evaluate_condition; flushed into execution_logs after each rule so the
+        # workflow trace records WHICH entry matched (Finding C1 audit requirement).
+        self._screening_trace = []
 
         for rule in sorted_rules:
+            screening_trace_before = len(self._screening_trace)
             try:
-                # All conditions in a rule must be true (AND logic).
-                # Normalize each condition first so studio-authored {field,operator,value}
-                # rules evaluate instead of raising (Finding D).
-                conditions_met = all(
-                    self._evaluate_condition(self._normalize_condition(cond), runtime_context)
-                    for cond in rule.get("conditions", [])
-                )
+                # Combine conditions via the rule's logical_operator (default AND).
+                # WHY this is configurable: sanctions-screening is OR (a hit on EITHER
+                # the name OR the BIC blocks); AML thresholds are AND (amount above
+                # cap AND cross-border AND high-risk-country). Normalize each condition
+                # first so studio-authored {field, operator, value} rules evaluate (Finding D).
+                logical_op = (rule.get("logical_operator") or "AND").upper()
+                conditions = rule.get("conditions", [])
+                # Force list materialization so _screening_trace appends survive even when
+                # short-circuiting (any/all stops on the first determining condition).
+                evaluated = [
+                    self._evaluate_condition(self._normalize_condition(c), runtime_context)
+                    for c in conditions
+                ]
+                if logical_op == "OR":
+                    conditions_met = bool(conditions) and any(evaluated)
+                else:
+                    conditions_met = bool(conditions) and all(evaluated)
+                # Surface any sanctions hits this rule produced — even if AND-logic stopped
+                # before the second condition fired — into the run log for audit.
+                for hit in self._screening_trace[screening_trace_before:]:
+                    execution_logs.append(f"  {hit}")
 
                 if conditions_met:
                     any_rule_triggered = True

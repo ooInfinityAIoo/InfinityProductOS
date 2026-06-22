@@ -32,9 +32,17 @@ run **in tandem** at runtime. 9 commits, all on `origin/main` (latest `3a1b7b2`)
 9. **Responsive header + filter bar** (Finding A2) — `MasterHeaderNav.tsx` and `CockpitLockBanner.tsx`
    now `flex-wrap` instead of clipping `EXIT PACKAGE` / dropdowns below ~1024px. Verified at
    768px (no horizontal overflow) and 1440px (unchanged).
+10. **Sanctions screening capability** (Finding C1) — new `models.SanctionsList`,
+    `services/sanctions_service.py`, `seed_sanctions_lists.py`. Engine now evaluates
+    `IN_SANCTION_LIST` / `NOT_IN_SANCTION_LIST` against named DB-backed lists, honors
+    `logical_operator: "OR"`, and fails CLOSED on unknown lists. OFAC rule semantics corrected
+    (NOT_IN_SANCTION_LIST AND → IN_SANCTION_LIST OR). Verified end-to-end on the golden path:
+    sanctioned beneficiary trips a recorded BLOCK + `EVT_OFAC_HIT_DETECTED`; clean payment is
+    unaffected. 6 new sanctions tests.
 
 Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculation_engine_params.py`,
-`services/test_workflow_executor_invariants.py` — 10/10 green. Frontend `tsc --noEmit` clean.
+`services/test_workflow_executor_invariants.py`, `services/test_sanctions_screening.py` — 16/16
+green. Frontend `tsc --noEmit` clean.
 
 ---
 
@@ -42,18 +50,19 @@ Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculati
 
 See `INTEGRATION_AUDIT_FINDINGS.md` for full detail.
 
-- **C1 (Major) — only real code item left.** Sanctions-list screening (`NOT_IN_SANCTION_LIST`
-  vs OFAC_SDN) is not implemented and no SDN data is loaded. The OFAC rule currently logs an
-  honest "manual screening required" instead of actually screening. Needs (a) a screening
-  capability — either a Python operator that joins beneficiary name/BIC against a sanctions
-  list, or an external API hook (ADR #8) — and (b) SDN reference data loaded (a static seeded
-  list is fine for dev). This is the next planned task.
+- **C3 (Minor — lifecycle gating, next planned task):** the OFAC rule now correctly records a
+  `BLOCK_PAYMENT` action and emits `EVT_OFAC_HIT_DETECTED`, but the workflow executor still
+  walks past the node — a "blocked" payment completes through the DAG with the block visible
+  only in `_review_flags` / `_emitted_events`. Executor enhancement needed: after rule
+  evaluation at a node, if the rule engine recorded a BLOCK action, terminate the workflow
+  with `status=REJECTED` instead of traversing the next edge. Audit/compliance signal is
+  already correct; this is the lifecycle gate on top.
 - **~35 RTP/FedNow workflow templates** carry `step_type` but `target_token: null` — genuinely
   unwired. Wiring node→rule/calc is a **domain decision** (which rule on which node), not a
   code fix. Consider a wiring UI in the Workflow Designer.
 
-(Previously listed: **A2** responsive overflow and **C2** settlement-node transaction handling —
-both RESOLVED in this batch. See "Landed & verified" above.)
+(Previously listed: **A2** responsive overflow, **C1** sanctions screening, **C2** settlement-node
+transaction handling — all RESOLVED in this batch. See "Landed & verified" above.)
 
 ## How to verify the in-tandem chain
 ```bash
