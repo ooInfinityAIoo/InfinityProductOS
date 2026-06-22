@@ -109,21 +109,45 @@ const mapInstanceToStations = (
     }
   }
 
+  // E4 commit 2/N — Detect parallel branches from node_type and parallel_group.
+  // Nodes with node_type === 'FORK' are branch-split points (is_fork = true).
+  // Nodes with node_type === 'JOIN' are branch-merge points (is_join = true).
+  // Nodes with a parallel_group field live on a branch track below the main line.
+  // Each unique parallel_group string gets its own numbered track (1, 2, …).
+  // Nodes without these fields go on the main track (branch_track = 0 / undefined).
+  const parallelGroupTrackMap = new Map<string, number>();
+  let nextTrackNum = 1;
+
   return workflowNodes.map((node, idx) => {
     let state: StepLifecycleState;
     if (idx < currentNodeIdx) {
-      // Nodes before the current node are always completed
       state = 'COMPLETED';
     } else if (idx === currentNodeIdx) {
-      // Current node's state reflects the instance's lifecycle
       state = currentState;
     } else {
-      // Nodes after the current node are pending
       state = 'PENDING';
     }
 
-    // Only the current node gets sub-text; others are silent
     const subText = idx === currentNodeIdx ? currentNodeSubText : undefined;
+
+    // Parallel branch detection
+    const nodeType: string = node.node_type || 'STANDARD';
+    const parallelGroup: string | undefined = node.parallel_group;
+
+    let branch_track: number | undefined;
+    let is_fork = false;
+    let is_join = false;
+
+    if (nodeType === 'FORK') {
+      is_fork = true;
+    } else if (nodeType === 'JOIN') {
+      is_join = true;
+    } else if (parallelGroup) {
+      if (!parallelGroupTrackMap.has(parallelGroup)) {
+        parallelGroupTrackMap.set(parallelGroup, nextTrackNum++);
+      }
+      branch_track = parallelGroupTrackMap.get(parallelGroup);
+    }
 
     return {
       node_id: node.node_id,
@@ -131,6 +155,9 @@ const mapInstanceToStations = (
       node_title: node.node_title,
       state,
       sub_text: subText,
+      branch_track,
+      is_fork,
+      is_join,
     };
   });
 };
@@ -530,10 +557,10 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
         {/* Info banner — E3 commit 2/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E3 commit 2/N:</span> Reversal Drawer UI wired.
-          Operators can reverse (rollback) completed steps with saga compensation.
-          Full suite: view (E1) + navigate (E2 commit 2) + act (E2 commit 1) +
-          diagnose failures (E2 commit 3) + reverse (E3 commit 2).
+          <span className="font-bold">E4 commit 2/N:</span> Parallel branch visualization.
+          Workflow nodes with node_type=FORK/JOIN and a parallel_group field render as
+          secondary dashed tracks below the main line — showing parallel steps (e.g.
+          Sanctions check + Balance inquiry) in a single glance without hiding any steps.
         </div>
       </div>
     </div>

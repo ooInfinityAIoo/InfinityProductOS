@@ -5,10 +5,12 @@
 // 2 seconds and knows where a transaction is, what's blocking it, and what's
 // next.
 //
-// This component is intentionally pure presentational: it takes a list of
-// stations + their states + optional live sub-text, and returns an SVG. No data
-// fetching, no business logic. Live wiring to GET /workflows/instances/{id}
-// lands in E1 commit 4/N; live sub-text from the audit columns lands in 5/N.
+// E4 commit 2/N — Parallel branch rendering:
+// Workflow steps like "Sanctions check" and "Balance inquiry" can run in parallel.
+// The tracker renders these as secondary horizontal tracks below the main line,
+// connected by vertical drop lines at the FORK and JOIN stations. All tracks are
+// always visible — no collapsing — so the operator sees the full end-to-end picture
+// at a glance, including what ran in parallel and whether it succeeded.
 //
 // COLOR/ICON LANGUAGE (locked in design doc §2.1):
 //   color encodes urgency · icon encodes nature · sub-text encodes why
@@ -16,8 +18,8 @@
 //   amber = in motion (in progress, paused, retrying) · green = completed
 //
 // WHAT BREAKS IF REMOVED: The Transaction Workflow Screen has no visual canvas
-// to render — the placeholder stays forever. Every downstream E1 commit
-// (4/5/6) depends on this component existing.
+// to render — the placeholder stays forever. Every downstream commit depends on
+// this component existing.
 
 import React from 'react';
 
@@ -46,6 +48,13 @@ export interface TrackerStation {
   state: StepLifecycleState;
   /** Optional live sub-text below the station label, e.g. "retry 2/3 · next in 28s". */
   sub_text?: string;
+  // E4 commit 2/N — Parallel branch support.
+  // branch_track: undefined/0 = main line, 1+ = parallel track below the main line.
+  // is_fork: this station spawns parallel branches (vertical drop lines go down from here).
+  // is_join: this station merges all branches (vertical lines come up to here).
+  branch_track?: number;
+  is_fork?: boolean;
+  is_join?: boolean;
 }
 
 interface MetroTrackerProps {
@@ -57,11 +66,6 @@ interface MetroTrackerProps {
 // State-driven styling. Centralised so the legend (rendered alongside the SVG)
 // is guaranteed to match the stations — if a colour changes here, the legend
 // updates automatically because both read from this map.
-//
-// Hex values come straight from the project's colour palette stops (Imagine
-// design system) — using mid-ramp hex inline so the component works
-// identically in light and dark mode without depending on CSS variables in
-// SVG fill attributes (which some renderers don't honour).
 const STATE_STYLES: Record<StepLifecycleState, {
   fill: string;
   stroke: string;
@@ -84,6 +88,78 @@ const STATE_STYLES: Record<StepLifecycleState, {
   SKIPPED:          { fill: '#F1EFE8', stroke: '#B4B2A9',                  glyph: '—', glyphFill: '#888780', label: 'Skipped' },
 };
 
+// Single station circle + label + sub-text, reused across main and branch tracks.
+const StationNode: React.FC<{
+  x: number;
+  y: number;
+  station: TrackerStation;
+}> = ({ x, y, station }) => {
+  const style = STATE_STYLES[station.state];
+  const radius = station.state === 'IN_PROGRESS' || station.state === 'RETRYING' ? 15 : 12;
+  const isError = ['FAILED_TECHNICAL', 'BLOCKED', 'REJECTED', 'AWAITING_REPAIR', 'RETRYING'].includes(station.state);
+
+  return (
+    <g>
+      {/* Outer pulsing ring — RETRYING only */}
+      {style.ring && (
+        <circle cx={x} cy={y} r={radius + 3} fill="none" stroke={style.ring} strokeWidth={1.5} strokeDasharray="3 2" />
+      )}
+      {/* Station body */}
+      <circle
+        cx={x}
+        cy={y}
+        r={radius}
+        fill={style.fill}
+        stroke={style.stroke}
+        strokeWidth={station.state === 'PENDING' ? 1.5 : 2}
+      />
+      {/* Glyph */}
+      {style.glyph && (
+        <text
+          x={x}
+          y={y + 4.5}
+          textAnchor="middle"
+          fontSize={radius >= 15 ? 12 : 11}
+          fill={style.glyphFill}
+          fontWeight={600}
+        >
+          {style.glyph}
+        </text>
+      )}
+      {/* Station title */}
+      <text
+        x={x}
+        y={y + radius + 13}
+        textAnchor="middle"
+        fontSize={9}
+        fill="#5F5E5A"
+        fontWeight={station.state === 'IN_PROGRESS' || station.state === 'RETRYING' ? 600 : 400}
+      >
+        {station.node_title}
+      </text>
+      {/* Live sub-text */}
+      {station.sub_text && (
+        <text
+          x={x}
+          y={y + radius + 24}
+          textAnchor="middle"
+          fontSize={8}
+          fill={isError ? '#A32D2D' : '#888780'}
+        >
+          {station.sub_text}
+        </text>
+      )}
+    </g>
+  );
+};
+
+// ── Layout constants ──────────────────────────────────────────────────────────
+const PADDING = 55;         // horizontal padding left and right of track
+const MAIN_Y = 55;          // Y of the main horizontal track
+const BRANCH_SPACING = 80;  // vertical gap between each parallel branch track
+const STATION_R_MAX = 18;   // largest station radius (for drop-line endpoint clearance)
+const LABEL_BELOW = 30;     // space below station for label + sub-text
+
 export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth = 680 }) => {
   if (stations.length === 0) {
     return (
@@ -93,27 +169,54 @@ export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth 
     );
   }
 
-  // Layout algorithm — evenly spaced stations along the horizontal track.
-  // Padding leaves room for the leftmost / rightmost station glyphs to render
-  // without clipping the SVG viewBox.
-  const padding = 60;
-  const trackY = 50;
-  const labelY = 80;
-  const subTextY = 94;
-  const viewHeight = subTextY + 30;
-  const innerWidth = viewWidth - padding * 2;
-  const xFor = (i: number) =>
-    stations.length === 1
-      ? viewWidth / 2
-      : padding + (i * innerWidth) / (stations.length - 1);
+  // ── Partition stations into main track vs. parallel branch tracks ────────
+  const mainStations = stations.filter(s => !s.branch_track || s.branch_track === 0);
+  const branchMap = new Map<number, TrackerStation[]>();
+  for (const s of stations) {
+    if (s.branch_track && s.branch_track > 0) {
+      const arr = branchMap.get(s.branch_track) ?? [];
+      arr.push(s);
+      branchMap.set(s.branch_track, arr);
+    }
+  }
+  const numBranchTracks = branchMap.size;
+  const sortedBranchTrackNums = [...branchMap.keys()].sort((a, b) => a - b);
 
-  // Build a unique-state set in insertion order so the legend only shows
-  // states that actually appear in THIS transaction — operators don't need
-  // to read the full 12-state legend on every screen.
+  // ── Main track x-positions ───────────────────────────────────────────────
+  const innerWidth = viewWidth - PADDING * 2;
+  const xForMain = (i: number) =>
+    mainStations.length === 1
+      ? viewWidth / 2
+      : PADDING + (i * innerWidth) / (mainStations.length - 1);
+
+  // ── Fork / Join x coordinates on the main track ─────────────────────────
+  const forkIdx = mainStations.findIndex(s => s.is_fork);
+  const joinIdx = mainStations.findIndex(s => s.is_join);
+  const forkX = forkIdx >= 0 ? xForMain(forkIdx) : PADDING;
+  const joinX = joinIdx >= 0 ? xForMain(joinIdx) : viewWidth - PADDING;
+
+  // ── Branch station x-positions (spread evenly between fork and join) ─────
+  // Each branch track has independent station count; we spread them across
+  // the fork→join horizontal span with 10% margin on each side.
+  const makeBranchXFn = (stationCount: number) => (i: number): number => {
+    if (stationCount === 1) return (forkX + joinX) / 2;
+    const span = joinX - forkX;
+    const innerSpan = span * 0.8;
+    const offsetX = forkX + span * 0.1;
+    return offsetX + (i * innerSpan) / (stationCount - 1);
+  };
+
+  // ── Compute SVG height ───────────────────────────────────────────────────
+  const viewHeight = MAIN_Y + LABEL_BELOW + numBranchTracks * BRANCH_SPACING + 30;
+
+  // ── Build unique-state legend (only states present in THIS transaction) ──
   const statesPresent: StepLifecycleState[] = [];
   for (const s of stations) {
     if (!statesPresent.includes(s.state)) statesPresent.push(s.state);
   }
+
+  // ── Track Y for each branch track (1-indexed) ───────────────────────────
+  const branchTrackY = (trackNum: number) => MAIN_Y + LABEL_BELOW + (trackNum - 1) * BRANCH_SPACING + 35;
 
   return (
     <div className="w-full">
@@ -125,86 +228,103 @@ export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth 
       >
         <title>Workflow progress tracker</title>
 
-        {/* Horizontal connecting line — neutral mid-gray, works in both modes. */}
+        {/* ── Main horizontal track line ─────────────────────────────────── */}
         <line
-          x1={padding}
-          y1={trackY}
-          x2={viewWidth - padding}
-          y2={trackY}
+          x1={PADDING}
+          y1={MAIN_Y}
+          x2={viewWidth - PADDING}
+          y2={MAIN_Y}
           stroke="#B4B2A9"
           strokeWidth={2}
         />
 
-        {stations.map((s, i) => {
-          const x = xFor(i);
-          const style = STATE_STYLES[s.state];
-          const radius = s.state === 'IN_PROGRESS' || s.state === 'RETRYING' ? 17 : 14;
+        {/* ── Parallel branch tracks (if any) ───────────────────────────── */}
+        {sortedBranchTrackNums.map((trackNum) => {
+          const branchStations = branchMap.get(trackNum)!;
+          const trackY = branchTrackY(trackNum);
+          const getX = makeBranchXFn(branchStations.length);
+
+          const firstX = getX(0);
+          const lastX = getX(branchStations.length - 1);
+
           return (
-            <g key={s.node_id}>
-              {/* Outer ring (RETRYING only) — visual cue that this station has live activity. */}
-              {style.ring && (
-                <circle cx={x} cy={trackY} r={radius + 3} fill="none" stroke={style.ring} strokeWidth={2} />
-              )}
-              {/* Station body */}
-              <circle
-                cx={x}
-                cy={trackY}
-                r={radius}
-                fill={style.fill}
-                stroke={style.stroke}
-                strokeWidth={s.state === 'PENDING' ? 1.5 : 2}
+            <g key={`branch-${trackNum}`}>
+              {/* Branch horizontal line */}
+              <line
+                x1={firstX}
+                y1={trackY}
+                x2={lastX}
+                y2={trackY}
+                stroke="#C8C5BE"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
               />
-              {/* Glyph (check / cross / refresh / etc) */}
-              {style.glyph && (
-                <text
-                  x={x}
-                  y={trackY + 5}
-                  textAnchor="middle"
-                  fontSize={radius >= 17 ? 14 : 13}
-                  fill={style.glyphFill}
-                  fontWeight={500}
-                  style={{
-                    // Strikethrough for SKIPPED renders the "—" with a line through
-                    textDecoration: s.state === 'SKIPPED' ? 'line-through' : 'none',
-                  }}
-                >
-                  {style.glyph}
-                </text>
+
+              {/* Drop line from fork station down to branch line start */}
+              {forkIdx >= 0 && (
+                <line
+                  x1={forkX}
+                  y1={MAIN_Y + STATION_R_MAX}
+                  x2={firstX}
+                  y2={trackY}
+                  stroke="#C8C5BE"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                />
               )}
-              {/* Station title (always shown) */}
+
+              {/* Merge line from branch line end up to join station */}
+              {joinIdx >= 0 && (
+                <line
+                  x1={lastX}
+                  y1={trackY}
+                  x2={joinX}
+                  y2={MAIN_Y + STATION_R_MAX}
+                  stroke="#C8C5BE"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                />
+              )}
+
+              {/* Branch label — shows which parallel group this is */}
               <text
-                x={x}
-                y={labelY}
-                textAnchor="middle"
-                fontSize={10}
-                fill="#5F5E5A"
-                fontWeight={s.state === 'IN_PROGRESS' || s.state === 'RETRYING' ? 500 : 400}
+                x={forkX + 6}
+                y={trackY - 6}
+                fontSize={8}
+                fill="#9C9A95"
+                fontStyle="italic"
               >
-                {`${s.sequence_number}. ${s.node_title}`}
+                parallel {trackNum}
               </text>
-              {/* Live sub-text (optional) — explains WHY this station is in its current state. */}
-              {s.sub_text && (
-                <text
-                  x={x}
-                  y={subTextY}
-                  textAnchor="middle"
-                  fontSize={9}
-                  fill={
-                    s.state === 'FAILED_TECHNICAL' ||
-                    s.state === 'BLOCKED' ||
-                    s.state === 'REJECTED' ||
-                    s.state === 'AWAITING_REPAIR' ||
-                    s.state === 'RETRYING'
-                      ? '#A32D2D'
-                      : '#888780'
-                  }
-                >
-                  {s.sub_text}
-                </text>
-              )}
+
+              {/* Branch stations */}
+              {branchStations.map((s, i) => (
+                <StationNode key={s.node_id} x={getX(i)} y={trackY} station={s} />
+              ))}
             </g>
           );
         })}
+
+        {/* ── Main track stations ────────────────────────────────────────── */}
+        {mainStations.map((s, i) => (
+          <StationNode key={s.node_id} x={xForMain(i)} y={MAIN_Y} station={s} />
+        ))}
+
+        {/* ── FORK marker — double vertical bar at the fork station ──────── */}
+        {forkIdx >= 0 && numBranchTracks > 0 && (
+          <g>
+            <text x={forkX} y={MAIN_Y - 22} textAnchor="middle" fontSize={8} fill="#9C9A95" fontStyle="italic">
+              FORK
+            </text>
+          </g>
+        )}
+
+        {/* ── JOIN marker ────────────────────────────────────────────────── */}
+        {joinIdx >= 0 && numBranchTracks > 0 && (
+          <text x={joinX} y={MAIN_Y - 22} textAnchor="middle" fontSize={8} fill="#9C9A95" fontStyle="italic">
+            JOIN
+          </text>
+        )}
       </svg>
 
       {/* Legend — only the states that appear in this transaction, not the full palette.
@@ -232,6 +352,13 @@ export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth 
             </div>
           );
         })}
+        {/* Parallel track indicator in legend */}
+        {numBranchTracks > 0 && (
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 italic">
+            <span style={{ width: 16, height: 0, borderTop: '1.5px dashed #C8C5BE', display: 'inline-block' }} />
+            parallel branch
+          </div>
+        )}
       </div>
     </div>
   );
