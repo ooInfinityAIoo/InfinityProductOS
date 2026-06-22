@@ -306,6 +306,41 @@ class WorkflowNode(Base):
         index=True,
     )
 
+    # --- E0 (Transaction Workflow Screen) — Failure handling per node ---
+    # WHY THESE COLUMNS EXIST:
+    # The Transaction Workflow Screen must show — live — when a step is RETRYING,
+    # AWAITING_REPAIR, FAILED_TECHNICAL, or CANCELLED. The Designer authors what
+    # the engine should DO on failure (retry? push to a repair queue? fail hard?).
+    # Without these columns the runtime UI cannot distinguish "tried once and gave
+    # up" from "trying again in 28 seconds" — both look the same to the operator.
+    # See TRANSACTION_SCREEN_DESIGN.md §7.
+    # on_failure: RETRY | REPAIR_QUEUE | FAIL_FAST | COMPENSATE_AND_HALT
+    # retry_config: {max_attempts:int, backoff_strategy:LINEAR|EXPONENTIAL, backoff_seconds:int}
+    # repair_queue_name: FK-ish reference to Queue Infrastructure entry, required when
+    #   on_failure = REPAIR_QUEUE.
+    # cancellable: can a Business Rule with action_type=CANCEL_TRANSACTION fire at this node?
+    # skippable: can ops staff manually Skip this step from the issue-detail panel?
+    on_failure = Column(String, nullable=False, default="RETRY")
+    retry_config = Column(JSONB, nullable=True)
+    repair_queue_name = Column(String, nullable=True)
+    cancellable = Column(Boolean, nullable=False, default=True)
+    skippable = Column(Boolean, nullable=False, default=False)
+
+    # --- E0 — Reversal authoring per node ---
+    # WHY THESE COLUMNS EXIST:
+    # Reversal is saga-style compensation, not a generic "undo". Each node teaches
+    # the system how to undo itself: which DB fields to restore from a pre-step
+    # snapshot, which compensating API to call, which compensating event to emit.
+    # reversibility decides whether the operator may even attempt rollback.
+    # reversal_rules carries condition-based gates evaluated at click time (e.g.
+    # "reversible only within 10 min of settlement"). See design doc §5.
+    # reversibility: REVERSIBLE | REVERSIBLE_WITH_APPROVAL | IRREVERSIBLE | CONDITIONALLY_REVERSIBLE
+    # reversal_recipe: {db_reversal:{...}, api_reversal:{api_id}, event_reversal:{event_code}}
+    # reversal_rules: list of conditions evaluated at the moment Rollback is clicked
+    reversibility = Column(String, nullable=False, default="REVERSIBLE")
+    reversal_recipe = Column(JSONB, nullable=True)
+    reversal_rules = Column(JSONB, nullable=True)
+
     # Metadata
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
@@ -452,9 +487,35 @@ class WorkflowExecutionInstance(Base):
     parent_instance_id = Column(String, ForeignKey("workflow_execution_instances.instance_id"), nullable=True, index=True) # Enables nested Sub-Workflows
     master_transaction_id = Column(String, nullable=True, index=True) # Ties infinite nested loops back to one origin
     current_node_id = Column(String, nullable=False)
-    status = Column(String, nullable=False, default="PAUSED", index=True) # PAUSED, COMPLETED, FAILED
+    # status — full lifecycle palette (TRANSACTION_SCREEN_DESIGN.md §2.1):
+    #   RUNNING · PAUSED · COMPLETED · REJECTED · BLOCKED · CANCELLED ·
+    #   RETRYING · AWAITING_REPAIR · FAILED_TECHNICAL ·
+    #   REVERSED · REVERSING · REVERSAL_FAILED
+    # Legacy values RUNNING/PAUSED/COMPLETED/FAILED/REJECTED/BLOCKED already in use.
+    # New values introduced by E0 are nullable additions — existing rows keep their value.
+    status = Column(String, nullable=False, default="PAUSED", index=True)
     current_context = Column(JSONB, nullable=False)
     execution_trace = Column(JSONB, nullable=True)
+
+    # --- E0 (Transaction Workflow Screen) — runtime lifecycle telemetry ---
+    # WHY THESE COLUMNS EXIST:
+    # The runtime UI needs to render WHY a transaction is in a particular state —
+    # not just THAT it is. retry_attempts_log feeds the "retry 2/3 · next in 28s"
+    # sub-text on the metro tracker. cancelled_by/reason_code/message answer
+    # "cancelled by rule X" vs "cancelled by operator Y". repair_queue_assigned
+    # drives the new Repair Queue view. template_version_pinned guarantees an
+    # in-flight transaction stays on the workflow version it started with even
+    # if the designer publishes a new version. reversal_request_id is the
+    # idempotency key for in-flight reversal compensation.
+    # See TRANSACTION_SCREEN_DESIGN.md §8.2.
+    retry_attempts_log = Column(JSONB, nullable=True)
+    repair_queue_assigned = Column(String, nullable=True, index=True)
+    cancelled_by = Column(String, nullable=True)  # 'rule' | 'operator' | 'system'
+    cancelled_reason_code = Column(String, nullable=True)
+    cancelled_message = Column(Text, nullable=True)
+    reversal_request_id = Column(String, nullable=True, index=True)
+    template_version_pinned = Column(Integer, nullable=True)
+
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
 
