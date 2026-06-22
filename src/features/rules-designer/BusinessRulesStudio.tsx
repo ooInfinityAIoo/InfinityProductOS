@@ -16,6 +16,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { ProductSubProductPicker } from '../../components/ProductSubProductPicker';
 import { IsoFieldSelector } from '../../components/IsoFieldSelector';
@@ -80,14 +81,11 @@ export const BusinessRulesStudio: React.FC = () => {
   const [actions, setActions] = useState<Action[]>([makeAction()]);
 
   // --- DYNAMIC API BINDINGS ---
-  
-  // Fetch Packages -> Products for the Cockpit Selector
-  const { data: packagesData } = useQuery({
-    queryKey: ['product-packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data
-  });
-  const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
-  const packageId = currentPackage?.package_id;
+
+  // Resolve the active package name (from the store) to its package_id.
+  // Shared hook — see src/hooks/useResolvedPackageId.ts (replaces the old inline
+  // packages query + name match that every studio used to duplicate).
+  const { packageId } = useResolvedPackageId();
 
   // 1. Fetch Existing Rule Sets
   const { data: rulesData, isLoading: isLoadingRules } = useQuery({

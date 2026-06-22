@@ -22,6 +22,7 @@ import React, { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { CockpitLockBanner } from '../../components/CockpitLockBanner';
 import { ProductSubProductPicker } from '../../components/ProductSubProductPicker';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
@@ -449,13 +450,9 @@ export const CalculationEngineStudio: React.FC = () => {
   const [testLoading, setTestLoading] = useState(false);
 
   // --- Package resolution ---
-  const { data: packagesData } = useQuery({
-    queryKey: ['packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data,
-    enabled: !!activeProductContext,
-  });
-  const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
-  const packageId = currentPackage?.package_id ?? null;
+  // Shared hook — see src/hooks/useResolvedPackageId.ts. currentPackage is still
+  // needed below to derive the domain from business_domain.
+  const { currentPackage, packageId } = useResolvedPackageId();
 
   // WHY: Domain is derived from the Package's business_domain — never chosen by the user.
   // A Payments ops user must never see CLO waterfall formulas. A Structured Finance analyst

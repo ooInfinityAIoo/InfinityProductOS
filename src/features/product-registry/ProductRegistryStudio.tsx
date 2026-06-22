@@ -13,6 +13,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 
 const PRODUCT_TYPES = [
   { value: 'PAYMENTS',       label: 'Payments',        color: 'indigo' },
@@ -71,12 +72,8 @@ export const ProductRegistryStudio: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('');
 
   // --- data ---
-  const { data: packagesData } = useQuery({
-    queryKey: ['packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data,
-  });
-  const packages = packagesData?.packages ?? [];
-  const activePackage = packages.find((p: any) => p.package_name === activeProductContext);
+  // Shared hook — resolves active package name → id. See src/hooks/useResolvedPackageId.ts.
+  const { packages, currentPackage: activePackage } = useResolvedPackageId();
 
   const { data, isLoading } = useQuery({
     queryKey: ['products', activePackage?.package_id, filterType, filterStatus],

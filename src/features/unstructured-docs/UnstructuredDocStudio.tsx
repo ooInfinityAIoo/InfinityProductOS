@@ -23,6 +23,8 @@ import React, { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
+import { metaLookup } from '../../utils/metaLookup';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 type LifecycleStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'LIVE' | 'ARCHIVED';
@@ -72,14 +74,8 @@ export const UnstructuredDocStudio: React.FC = () => {
   // but the unstructured-docs API filters on package_id (PKG-XXXX). Passing the
   // name as package_id silently matched zero rows — the studio always showed
   // "No extraction blueprints yet". Resolve name → id via the packages master.
-  const { data: packagesData } = useQuery({
-    queryKey: ['packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data,
-    enabled: !!activeProductContext,
-  });
-  const resolvedPackageId = packagesData?.packages?.find(
-    (p: any) => p.package_name === activeProductContext
-  )?.package_id ?? null;
+  // Shared hook — resolves active package name → id. See src/hooks/useResolvedPackageId.ts.
+  const { packageId: resolvedPackageId } = useResolvedPackageId();
 
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -382,8 +378,8 @@ export const UnstructuredDocStudio: React.FC = () => {
           <span className="text-slate-300">|</span>
           <h2 className="text-sm font-extrabold text-slate-800">{isEditing ? (editData?.blueprint_name ?? 'Loading...') : 'New Blueprint'}</h2>
           {isEditing && editData && (
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUS_META[currentStatus].color}`}>
-              {STATUS_META[currentStatus].label}
+            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${metaLookup(STATUS_META, currentStatus, { color: 'bg-slate-100 text-slate-500', label: String(currentStatus ?? '—') }).color}`}>
+              {metaLookup(STATUS_META, currentStatus, { color: 'bg-slate-100 text-slate-500', label: String(currentStatus ?? '—') }).label}
             </span>
           )}
         </div>

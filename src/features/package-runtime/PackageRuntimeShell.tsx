@@ -16,6 +16,7 @@
 
 import React, { useState } from 'react';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { PackageSidebarNav } from './PackageSidebarNav';
 import { RuntimeScreenRenderer } from './RuntimeScreenRenderer';
 import { RuntimeTransactionShell } from './RuntimeTransactionShell';
@@ -46,16 +47,9 @@ export const PackageRuntimeShell: React.FC = () => {
     enabled: !!selectedScreen?.screen_id && contentMode === 'screen',
   });
 
-  // Resolve package_id — the store holds the package name, so we need to look up the ID
-  const { data: packageData } = useQuery({
-    queryKey: ['package-by-name', activeProductContext],
-    queryFn: async () => {
-      const res = await apiClient.get('/masters/packages');
-      const pkgs = res.data.packages ?? [];
-      return pkgs.find((p: any) => p.package_name === activeProductContext) ?? null;
-    },
-    enabled: !!activeProductContext,
-  });
+  // Resolve package_id — the store holds the package name, so we need to look up the ID.
+  // Shared hook — see src/hooks/useResolvedPackageId.ts.
+  const { currentPackage: packageData } = useResolvedPackageId();
 
   const packageId: string = packageData?.package_id ?? activeCoreProductId ?? '';
   const packageName: string = activeProductContext ?? 'Package';

@@ -16,6 +16,7 @@ import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -80,14 +81,8 @@ export const DocumentTemplateDesigner: React.FC = () => {
   // but the comm-templates API filters on package_id (PKG-XXXX). Passing the name
   // as package_id silently matched zero rows — the studio always showed "No templates yet".
   // We resolve name → id via the packages master, mirroring CalculationEngineStudio.
-  const { data: packagesData } = useQuery({
-    queryKey: ['packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data,
-    enabled: !!activeProductContext,
-  });
-  const resolvedPackageId = packagesData?.packages?.find(
-    (p: any) => p.package_name === activeProductContext
-  )?.package_id ?? null;
+  // Shared hook — resolves active package name → id. See src/hooks/useResolvedPackageId.ts.
+  const { packageId: resolvedPackageId } = useResolvedPackageId();
 
   // List / editor state
   const [view, setView] = useState<'list' | 'editor'>('list');

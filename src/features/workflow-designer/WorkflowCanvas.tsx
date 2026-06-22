@@ -22,6 +22,7 @@ import { apiClient } from '../../api/client';
 import { NodePropertiesDrawer } from './NodePropertiesDrawer';
 import { EdgePropertiesDrawer } from './EdgePropertiesDrawer';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { DecisionNode } from './DecisionNode';
 import { EventNode } from './EventNode';
 import { GatewayNode } from './GatewayNode';
@@ -225,12 +226,8 @@ const WorkflowCanvasInner: React.FC = () => {
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
   const diagramInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: packagesData } = useQuery({
-    queryKey: ['product-packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data
-  });
-  const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
-  const packageId = currentPackage?.package_id;
+  // Shared hook — resolves active package name → id. See src/hooks/useResolvedPackageId.ts.
+  const { packageId } = useResolvedPackageId();
 
   const { data: productsData } = useQuery({
     queryKey: ['products', packageId],

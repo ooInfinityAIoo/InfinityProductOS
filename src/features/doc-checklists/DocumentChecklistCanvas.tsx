@@ -20,6 +20,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { usePlatformStore } from '../../store/usePlatformStore';
+import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
 
 type LifecycleStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'LIVE' | 'ARCHIVED';
@@ -49,14 +50,8 @@ export const DocumentChecklistCanvas: React.FC = () => {
   // but the doc-checklists API filters on package_id (PKG-XXXX). Passing the name
   // as package_id silently matched zero rows — the studio always showed
   // "No checklists yet". Resolve name → id via the packages master.
-  const { data: packagesData } = useQuery({
-    queryKey: ['packages'],
-    queryFn: async () => (await apiClient.get('/masters/packages')).data,
-    enabled: !!activeProductContext,
-  });
-  const resolvedPackageId = packagesData?.packages?.find(
-    (p: any) => p.package_name === activeProductContext
-  )?.package_id ?? null;
+  // Shared hook — resolves active package name → id. See src/hooks/useResolvedPackageId.ts.
+  const { packageId: resolvedPackageId } = useResolvedPackageId();
 
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
