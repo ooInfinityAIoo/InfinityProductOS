@@ -1017,6 +1017,59 @@ class WorkflowExecutor:
                             "blocked_at_node": node.node_title,
                         }
 
+                    # --- LAYER 4: CANCEL_TRANSACTION HALT (E0 commit 3/N — TRANSACTION_SCREEN_DESIGN.md §7.2) ---
+                    # Mirror of the BLOCK halt above, with deliberately distinct semantics:
+                    # BLOCK_PAYMENT / REJECT_STEP  -> status=REJECTED, red on tracker, system-driven.
+                    # CANCEL_TRANSACTION           -> status=CANCELLED, purple on tracker, policy-driven.
+                    # Both are terminal at this node; the difference is the audit reason and the
+                    # color the operator sees. _cancelled / _cancel_reason_code / _cancel_message
+                    # are set by the rule engine's CANCEL_TRANSACTION handler (commit 2/N);
+                    # _cancellations[] holds every cancellation attempt (multiple rules can cancel,
+                    # first wins for the surfaced reason but all are persisted for audit).
+                    if current_context.get("_cancelled"):
+                        cancel_records = current_context.get("_cancellations", []) or []
+                        primary_reason_code = current_context.get("_cancel_reason_code") or "RULE_CANCEL"
+                        primary_message = (
+                            current_context.get("_cancel_message")
+                            or "Transaction cancelled by business rule."
+                        )
+                        self.execution_trace.append(
+                            f"[CANCELLED] Transaction cancelled at node '{node.node_title}' — "
+                            f"[{primary_reason_code}] {primary_message} "
+                            f"({len(cancel_records)} cancellation action(s) recorded)."
+                        )
+                        import datetime
+                        instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+                        instance = models.WorkflowExecutionInstance(
+                            instance_id=instance_id,
+                            workflow_id=self.workflow.workflow_id,
+                            current_node_id=node.node_id,
+                            status="CANCELLED",
+                            current_context=current_context,
+                            execution_trace=self.execution_trace,
+                            # E0 commit 1/N columns — audit who/why for the cancellation
+                            cancelled_by="rule",
+                            cancelled_reason_code=primary_reason_code,
+                            cancelled_message=primary_message,
+                            created_at=datetime.datetime.utcnow().isoformat(),
+                        )
+                        self.db.add(instance)
+                        self.db.commit()
+                        return {
+                            "status": "CANCELLED",
+                            "workflow_id": self.workflow.workflow_id,
+                            "instance_id": instance_id,
+                            "final_context": self.masking_service.mask_pii_data(
+                                current_context, self.pii_field_properties
+                            ),
+                            "trace": self.execution_trace,
+                            "cancellations": cancel_records,
+                            "cancelled_at_node": node.node_title,
+                            "cancelled_by": "rule",
+                            "cancelled_reason_code": primary_reason_code,
+                            "cancelled_message": primary_message,
+                        }
+
                     # --- LAYER 4: RECURSIVE SUB-WORKFLOW PAUSE BUBBLING ---
                     if "__sub_workflow_paused__" in current_context:
                         sub_result = current_context.pop("__sub_workflow_paused__")
