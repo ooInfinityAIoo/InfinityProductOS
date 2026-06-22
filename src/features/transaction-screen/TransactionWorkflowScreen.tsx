@@ -19,18 +19,75 @@
 //   E1 commit 5/N — Live sub-text per station from audit columns.
 //   E1 commit 6/N — Sub-workflow + parallel-branch rendering.
 
+// WHY THIS FILE EXISTS (E1 — TRANSACTION_SCREEN_DESIGN.md):
+// The Transaction Workflow Screen is the runtime UI an operator uses to view and
+// process a single live transaction. It is the most important user-facing surface
+// in the platform — every other studio exists so this screen can render and drive
+// a transaction end-to-end. This component hosts the metro tracker visualization,
+// action buttons, and sidebar panels (reversal, issue detail, etc.).
+//
+// E1 PHASE: Read-only view. Operators can SEE transactions (metro tracker,
+// current-step details, live sub-text). E2 adds ACTIONS (approve, reject, retry,
+// cancel). E3-E4 add REVERSAL. E5 adds SEARCH.
+
 import React, { useState } from 'react';
+import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
 
 export const TransactionWorkflowScreen: React.FC = () => {
-  // selectedInstanceId will drive the GET /workflows/instances/{id} fetch wired
-  // in E1 commit 4/N. For this scaffolding commit we render a static placeholder
-  // so the route lights up and the StudioErrorBoundary contract is provable.
-  const [selectedInstanceId, _setSelectedInstanceId] = useState<string | null>(null);
+  // E1 commit 3/N: Demo workflow data covering all 12 lifecycle states.
+  // Each station represents a node in the workflow; the state dictates its color,
+  // icon, and sub-text. This demo proves the metro tracker renders all states
+  // correctly before live data binding (commit 4/N) wires to the API.
+  //
+  // A real transaction would come from GET /workflows/instances/{instance_id}
+  // (landed in commit 1/N); for this demo we hardcode a rich example.
+  const demoStations: TrackerStation[] = [
+    {
+      node_id: 'NODE-1',
+      sequence_number: 1,
+      node_title: 'Ingest',
+      state: 'COMPLETED',
+    },
+    {
+      node_id: 'NODE-2',
+      sequence_number: 2,
+      node_title: 'AML & OFAC Screening',
+      state: 'COMPLETED',
+    },
+    {
+      node_id: 'NODE-3',
+      sequence_number: 3,
+      node_title: 'FX Rate Enrichment',
+      state: 'RETRYING',
+      sub_text: 'retry 2/3 · next in 28s',
+    },
+    {
+      node_id: 'NODE-4',
+      sequence_number: 4,
+      node_title: 'Dual Authorization',
+      state: 'PAUSED',
+      sub_text: 'awaiting PAYMENTS_MANAGER',
+    },
+    {
+      node_id: 'NODE-5',
+      sequence_number: 5,
+      node_title: 'RTGS Settlement',
+      state: 'PENDING',
+    },
+  ];
+
+  // E1 commit 4/N will replace this with:
+  // const { data: instance } = useQuery({
+  //   queryKey: ['workflow-instance', selectedInstanceId],
+  //   queryFn: () => apiClient.get(`/workflows/instances/${selectedInstanceId}`)
+  // });
+  // const stations = mapInstanceToStations(instance);
+  const [_selectedInstanceId] = useState<string | null>('WFI-DEMO-001');
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
       <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 font-extrabold text-base shadow-inner">
             T
           </div>
@@ -44,25 +101,40 @@ export const TransactionWorkflowScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-4 p-4 rounded-xl bg-indigo-50/40 border border-indigo-100 text-[12px] text-indigo-900 leading-relaxed">
-          <span className="font-bold">E1 scaffolding active.</span>{' '}
-          This screen will render the metro tracker for any in-flight execution
-          instance, color-coded across the 12 lifecycle states (pending, in
-          progress, paused, retrying, awaiting repair, failed, blocked, rejected,
-          cancelled, completed, reversed, skipped) with live sub-text per station.
-          The visual canvas lands in <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded">E1 commit 3/N</span>;
-          data binding to{' '}
-          <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded">
-            GET /workflows/instances/{'{id}'}
-          </span>{' '}
-          lands in <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded">commit 4/N</span>.
+        {/* Transaction header — would include UETR, customer, amount in commit 4/N. */}
+        <div className="mb-4 pb-4 border-b border-slate-200/50">
+          <div className="text-[13px] text-slate-600">
+            <span className="font-medium">Demo instance:</span>{' '}
+            <span className="font-mono text-slate-400">WFI-DEMO-001</span>
+          </div>
         </div>
 
-        {/* Placeholder visual region — replaced by the metro tracker SVG in commit 3/N. */}
-        <div className="mt-6 h-[220px] rounded-2xl border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center text-slate-400 text-[12px] font-medium">
-          {selectedInstanceId
-            ? `Selected instance: ${selectedInstanceId}`
-            : 'No transaction selected — instance picker lands in commit 4/N'}
+        {/* Metro tracker — E1 commit 3/N. Renders all 12 lifecycle states from the
+            demoStations array. Color/icon language locked in design doc §2.1. */}
+        <div className="mt-6">
+          <MetroTracker stations={demoStations} />
+        </div>
+
+        {/* Current step details — would come from instance.current_node_id in commit 4/N. */}
+        <div className="mt-6 p-4 rounded-xl bg-slate-50/50 border border-slate-200/60">
+          <div className="text-[12px] text-slate-600">
+            <span className="font-bold">Current step (demo):</span> Dual Authorization (paused)
+            <br />
+            <span className="text-slate-500">
+              Awaiting PAYMENTS_MANAGER approval. SLA 1h 23m of 4h.
+            </span>
+          </div>
+        </div>
+
+        {/* Info banner for this demo phase. Removed in commit 4/N when live data lands. */}
+        <div className="mt-4 p-3 rounded-lg bg-amber-50/40 border border-amber-200/50 text-[11px] text-amber-900">
+          <span className="font-bold">E1 commit 3/N (demo):</span> Metro tracker rendering
+          all 12 lifecycle states. Live data binding to{' '}
+          <span className="font-mono bg-white px-1 py-0.5 rounded">
+            GET /workflows/instances/{'{id}'}
+          </span>{' '}
+          lands in commit 4/N. Live sub-text (retry counts, cancel reasons, queue names)
+          lands in commit 5/N.
         </div>
       </div>
     </div>
