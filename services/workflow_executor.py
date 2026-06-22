@@ -4,6 +4,10 @@ import models
 import json
 import asyncio
 import os
+import uuid  # module-level: the executor uses uuid.uuid4() in several places.
+            # Local `import uuid` inside a method makes uuid a function-local for that
+            # ENTIRE method (Python binds at compile time), so earlier uuid.uuid4()
+            # calls in the same method raised "cannot access local variable 'uuid'".
 from services.calculation_engine import CalculationEngine
 from services.business_rule_engine import BusinessRuleEngine
 from services.data_masking import DataMaskingService
@@ -424,7 +428,9 @@ class WorkflowExecutor:
                     self.execution_trace.append(f"Executing step: VALIDATE using rule '{target_token}'")
                     rule = self.rules_by_id.get(target_token)
                     if rule:
-                        from services.business_rule_engine import BusinessRuleEngine
+                        # Uses the module-level BusinessRuleEngine import. A local
+                        # import here previously shadowed it, making BusinessRuleEngine
+                        # a function-local and breaking the BUSINESS_RULE step at line ~246.
                         bre = BusinessRuleEngine()
                         result = bre.evaluate(rule, context)
                         context.update(result.get("output_fields", {}))
@@ -442,7 +448,9 @@ class WorkflowExecutor:
                     self.execution_trace.append(f"Executing step: COMPLIANCE_SCREEN using rule '{target_token}'")
                     rule = self.rules_by_id.get(target_token)
                     if rule:
-                        from services.business_rule_engine import BusinessRuleEngine
+                        # Uses the module-level BusinessRuleEngine import. A local
+                        # import here previously shadowed it, making BusinessRuleEngine
+                        # a function-local and breaking the BUSINESS_RULE step at line ~246.
                         bre = BusinessRuleEngine()
                         result = bre.evaluate(rule, context)
                         context["compliance_screen_result"] = result
@@ -461,7 +469,9 @@ class WorkflowExecutor:
                     self.execution_trace.append(f"Executing step: LIMIT_CHECK using rule '{target_token}'")
                     rule = self.rules_by_id.get(target_token)
                     if rule:
-                        from services.business_rule_engine import BusinessRuleEngine
+                        # Uses the module-level BusinessRuleEngine import. A local
+                        # import here previously shadowed it, making BusinessRuleEngine
+                        # a function-local and breaking the BUSINESS_RULE step at line ~246.
                         bre = BusinessRuleEngine()
                         result = bre.evaluate(rule, context)
                         context["limit_check_result"] = result
@@ -836,9 +846,8 @@ class WorkflowExecutor:
                                 missing_docs.append(doc_req.get("document_name"))
                     if missing_docs:
                         self.execution_trace.append(f"Pausing execution at node '{node.node_title}'. Missing required documents: {missing_docs}")
-                        import uuid
                         import datetime
-                        
+
                         instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
                         instance = models.WorkflowExecutionInstance(
                             instance_id=instance_id,
@@ -859,9 +868,8 @@ class WorkflowExecutor:
                         self.execution_trace.append(f"Human approval confirmed for node '{node.node_title}'. Proceeding.")
                     else:
                         self.execution_trace.append(f"Pausing execution at node '{node.node_title}' for human approval.")
-                        import uuid
                         import datetime
-                        
+
                         instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
                         instance = models.WorkflowExecutionInstance(
                             instance_id=instance_id,
@@ -885,9 +893,8 @@ class WorkflowExecutor:
                     if "__sub_workflow_paused__" in current_context:
                         sub_result = current_context.pop("__sub_workflow_paused__")
                         self.execution_trace.append(f"Pausing execution at parent node '{node.node_title}' due to paused nested sub-workflow.")
-                        import uuid
                         import datetime
-                        
+
                         instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
                         
                         # Tie the child instance to this parent instance in the database
