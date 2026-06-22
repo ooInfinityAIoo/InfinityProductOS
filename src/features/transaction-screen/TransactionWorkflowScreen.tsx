@@ -30,7 +30,7 @@
 // current-step details, live sub-text). E2 adds ACTIONS (approve, reject, retry,
 // cancel). E3-E4 add REVERSAL. E5 adds SEARCH.
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
@@ -186,21 +186,39 @@ const mapInstanceToStations = (
 };
 
 export const TransactionWorkflowScreen: React.FC = () => {
-  // E2 commit 1/N: Action buttons + operator workflows. Operators can approve, reject,
-  // retry, or cancel a transaction from this screen. Each action mutates the instance
-  // state via POST /workflows/{id}/resume or specialized action endpoints.
-  //
-  // E2 commit 2/N: Instance picker + navigation. Operators can search for and navigate
-  // between transactions. InstancePicker fetches recent/filtered instances from
-  // GET /workflows/instances/list and allows selecting one to view.
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('WFI-ECC2B272');
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
   // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
   const [showSearch, setShowSearch]       = useState(false);
-  const [showBulkOps, setShowBulkOps]     = useState(false);
+  const [showBulkOps, setShowBulkOps]       = useState(false);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // E6 commit 3/N — ⌘K (Mac) / Ctrl+K (Windows) opens the search panel.
+  // WHY: operators processing high-volume runs need keyboard-speed navigation;
+  // clicking three nested UI elements to search is too slow when managing 100+
+  // transactions per shift. ⌘K is the platform-standard search shortcut.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowSearch(prev => {
+          const next = !prev;
+          if (next) { setShowInstancePicker(false); setShowBulkOps(false); }
+          return next;
+        });
+      }
+      // Escape closes all panels
+      if (e.key === 'Escape') {
+        setShowSearch(false);
+        setShowInstancePicker(false);
+        setShowBulkOps(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // E6 commit 1/N — auto-refresh for active (non-terminal) instances.
   // Terminal states (COMPLETED, REJECTED, CANCELLED, REVERSED, FAILED_TECHNICAL)
@@ -467,7 +485,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
                 showSearch ? 'bg-indigo-600 text-white border-indigo-600' : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
               }`}
             >
-              {showSearch ? '✕ Close' : '🔍 Search'}
+              {showSearch ? '✕ Close' : '🔍 Search  ⌘K'}
             </button>
             {/* E6 commit 2/N — Bulk operations */}
             <button
@@ -639,10 +657,11 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
         {/* Info banner — E3 commit 2/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E5 commit 2/N:</span> Full transaction search.
-          Click "Search" to find any transaction across millions of records — by ID prefix,
-          status (multi-select), date range, cancelled_by, repair queue, or workflow ID.
-          Paginated 20/page. Backend: GET /workflows/instances/search (Postgres-first, no ES needed for MVP).
+          <span className="font-bold">E6 complete (E0–E6):</span>{' '}
+          SLA badges (amber/red corner dot on metro tracker when SLA exceeded) ·
+          Auto-refresh every 10s for active instances ·
+          Bulk ops (approve/retry/cancel N transactions at once) ·
+          ⌘K keyboard shortcut opens search · Esc closes all panels.
         </div>
       </div>
     </div>
