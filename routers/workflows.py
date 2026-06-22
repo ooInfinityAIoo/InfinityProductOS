@@ -195,6 +195,74 @@ def apply_wiring(patches: List[Dict[str, Any]], db: Session = Depends(get_db), c
     return {"applied": applied}
 
 
+@router.get("/reversal-recovery-queue",
+    summary="Reversal Recovery Queue — Failed Reversals Awaiting Manual Intervention",
+    description="""
+    WHY THIS EXISTS:
+    When a reversal (saga compensation) partially fails — the compensating API times out,
+    the DB snapshot can't be restored, or the event broadcast fails — the transaction
+    lands in REVERSAL_FAILED status. This endpoint surfaces every such instance so ops
+    staff can see what failed, why, and take manual action (retry, force-reverse, escalate).
+
+    ReversionRecoveryQueue.tsx polls this to populate the ops dashboard. Without it
+    the dashboard shows an error and operators have no visibility into stuck reversals.
+
+    Returns: { items: [...], total: N }
+    Optional: assigned=true|false to filter by repair_queue_assigned presence.
+    """,
+    response_model=Dict[str, Any],
+    tags=["Workflow Instances"])
+def get_reversal_recovery_queue(
+    assigned: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    WHY THIS EXISTS: Powers the Reversal Recovery Queue ops dashboard.
+    Returns all WorkflowExecutionInstances in REVERSAL_FAILED status, optionally
+    filtered by whether they have a repair_queue_assigned value.
+
+    WHAT BREAKS IF REMOVED: ReversionRecoveryQueue.tsx gets 404 and ops staff
+    lose visibility into stuck failed reversals.
+    """
+    q = db.query(models.WorkflowExecutionInstance).filter(
+        models.WorkflowExecutionInstance.status == "REVERSAL_FAILED"
+    )
+    # Filter by assignment status when caller specifies
+    if assigned == "true":
+        q = q.filter(models.WorkflowExecutionInstance.repair_queue_assigned.isnot(None))
+    elif assigned == "false":
+        q = q.filter(models.WorkflowExecutionInstance.repair_queue_assigned.is_(None))
+
+    instances = q.order_by(models.WorkflowExecutionInstance.updated_at.desc()).all()
+
+    # Resolve node titles from workflow nodes table for richer UI display
+    node_ids = [inst.current_node_id for inst in instances if inst.current_node_id]
+    node_title_map: Dict[str, str] = {}
+    if node_ids:
+        nodes = db.query(models.WorkflowNode).filter(
+            models.WorkflowNode.node_id.in_(node_ids)
+        ).all()
+        node_title_map = {n.node_id: n.node_title for n in nodes}
+
+    items = []
+    for inst in instances:
+        # WHY queue_entry_id == instance_id: no separate reversal-queue table exists yet.
+        # Each REVERSAL_FAILED instance IS the queue entry. This keeps the frontend key
+        # stable and lets ops link directly to the metro tracker detail view.
+        items.append({
+            "queue_entry_id":  inst.instance_id,
+            "instance_id":     inst.instance_id,
+            "node_id":         inst.current_node_id,
+            "node_title":      node_title_map.get(inst.current_node_id, inst.current_node_id),
+            "landed_at":       inst.updated_at or inst.created_at,
+            "last_error":      inst.cancelled_message or "Reversal compensation failed — see execution trace.",
+            "assigned_to":     inst.repair_queue_assigned,
+        })
+
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/{workflow_id}", response_model=schemas.WorkflowConfigurationResponse, summary="Get a Specific Workflow Graph")
 def get_workflow(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
