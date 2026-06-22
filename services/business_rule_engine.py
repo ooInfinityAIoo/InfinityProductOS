@@ -23,6 +23,11 @@ _ACTION_TYPE_ALIASES = {
     "EXECUTE_CALCULATION": "EXECUTE_CALCULATION",
     "FLAG_FOR_REVIEW": "FLAG_FOR_REVIEW",
     "EMIT_EVENT": "EMIT_EVENT",
+    # E0 (TRANSACTION_SCREEN_DESIGN.md §7.2): distinct from BLOCK_PAYMENT / REJECT_STEP.
+    # BLOCK/REJECT mean "the system stopped this" (red on tracker); CANCEL_TRANSACTION
+    # means "a policy/rule chose to terminate this voluntarily" (purple on tracker).
+    # Same halt semantics in the executor, different audit reason and different UI color.
+    "CANCEL_TRANSACTION": "CANCEL_TRANSACTION",
 }
 
 
@@ -288,6 +293,30 @@ class BusinessRuleEngine:
                             runtime_context.setdefault("_blocks", []).append({"type": action_type, "message": message})
                             runtime_context["_blocked"] = True
                             execution_logs.append(f"  Action: {action_type} — {message}")
+                        elif action_type == "CANCEL_TRANSACTION":
+                            # Studio verb (E0 — TRANSACTION_SCREEN_DESIGN.md §7.2): policy-driven
+                            # voluntary cancellation. Distinct from BLOCK/REJECT — those are
+                            # validation/compliance failures (red on the tracker); cancellation
+                            # is a deliberate "stop this" decision (purple on the tracker).
+                            #
+                            # The signal is set on context here; the workflow executor watches
+                            # for _cancelled and persists a CANCELLED WorkflowExecutionInstance
+                            # (wired in E0 commit 3). reason_code + message ride through so the
+                            # operator sees WHY the rule cancelled, not just THAT it cancelled.
+                            #
+                            # If multiple rules fire CANCEL on the same context, the first one
+                            # to set _cancelled wins for the reason/code; the rest are appended
+                            # to _cancellations[] for audit.
+                            reason_code = action.get("reason_code") or "RULE_CANCEL"
+                            message = action.get("message") or "Transaction cancelled by business rule."
+                            runtime_context.setdefault("_cancellations", []).append(
+                                {"reason_code": reason_code, "message": message}
+                            )
+                            if not runtime_context.get("_cancelled"):
+                                runtime_context["_cancelled"] = True
+                                runtime_context["_cancel_reason_code"] = reason_code
+                                runtime_context["_cancel_message"] = message
+                            execution_logs.append(f"  Action: CANCEL_TRANSACTION — [{reason_code}] {message}")
                         else:
                             execution_logs.append(f"  [WARN] Unknown action type '{action_type}' — skipped.")
             except Exception as e:
