@@ -1,39 +1,33 @@
 # Session Handoff → Gemini
 
-**From:** Claude · **Date:** 2026-06-22 · **Branch:** `main` (pushed, in sync with origin) · **Latest commit:** `8817508`
+**From:** Claude · **Date:** 2026-06-22 · **Branch:** `main` (pushed, in sync with origin) · **Latest commit:** `84d6d15`
 
 ---
 
-## What this session did — End-to-end execution proof + Wiring Audit
+## What this session did — Wiring + Reversal Recovery Queue
 
-Goal: prove the entire platform works as one system (GUI + backend), not just individual studios in isolation. 4 commits landed.
+Two things completed this session (continuing E7):
 
 ### Commits this session
 
 | Commit | What |
 |---|---|
-| `bffa3e9` | **API name fallback + COMPLETED instance persistence** — dispatcher now resolves APIs by name if id lookup misses; executor persists a `WorkflowExecutionInstance` for COMPLETED workflows (was missing) and returns `instance_id`; resume path injects `__resume_instance_id__` to avoid creating duplicate records |
-| `7bbe1a2` | **▶ Run Transaction modal** (`RunTransactionModal.tsx`) — green "▶ Run" button in TWS header opens a modal with workflow picker, ISO 20022 fields (amount, currency, beneficiary BIC/name, FX rate, value date), executes via `POST /workflows/{id}/execute`, shows colour-coded trace, "View on Metro Tracker →" navigates to the new instance |
-| `8817508` | **🔗 Wiring Audit panel** (`WiringAuditPanel.tsx` + `GET /workflows/wiring-audit` + `PATCH /workflows/wiring-audit/apply`) — scans all workflow nodes for steps with an action type but no target; found 137 unwired steps across 24 RTP/FedNow workflows; inline dropdowns per step, "Apply Wiring" persists all at once |
-| `59182e8` | Test seed: 9 lifecycle-state TWS instances + default instance fix |
+| `e09da84` | **seed_wire_workflows.py** — keyword-based heuristic wired all 137 previously-unwired steps across 24 RTP/FedNow/SWIFT/SEPA/CHIPS/ACH workflows. `GET /workflows/wiring-audit` now returns `total_unwired: 0`. |
+| `84d6d15` | **GET /workflows/reversal-recovery-queue** — `ReversionRecoveryQueue.tsx` was calling this and getting 404. Endpoint now returns all `REVERSAL_FAILED` instances with `queue_entry_id`, `node_id`, `node_title`, `landed_at`, `last_error`, `assigned_to`. Supports `?assigned=true|false` filter. Currently returns `{ total: 0, items: [] }` (no REVERSAL_FAILED instances in DB yet — correct empty state). |
 
-### Live-tested end-to-end
-
-Executed `WF-ECC2B272` ($592,500 USD → BARCGB22) from the UI:
+### Previous session (still valid context)
+Executed `WF-ECC2B272` ($592,500 USD → BARCGB22) end-to-end from the UI:
 - NODE-01 MT103 Ingest → COMPLETED ✓
-- NODE-02 AML rule fired (high-value flag) → PAUSED ⏸ for operator approval
-- Instance `WFI-0354D159310E` loaded live on metro tracker with polling active
-- Action buttons (Approve / Reject / Cancel) ready
+- NODE-02 AML rule fired (high-value flag) → PAUSED ⏸ for 4-Eye approval
+- Instance `WFI-0354D159310E` loaded live on metro tracker
+- Full resume → SWIFT GPI + BOE RTGS API steps fire on approval
 
 ---
 
 ## What's next (E7 — priority order)
 
-### 1. Wire the 137 unwired steps (designer task, no code)
-Open Workflow Designer → click "🔗 Wiring Audit" → assign rule/formula/API targets to each step → "Apply Wiring". This unlocks 24 RTP/FedNow workflows for real execution. **No code needed — the UI does it.**
-
-### 2. Reversal Recovery Queue endpoint (backend, ~1 hour)
-The frontend component `ReversionRecoveryQueue.tsx` exists but `GET /workflows/reversal-recovery-queue` returns 404. One router function needed. Returns all instances where `reversal_request_id IS NOT NULL AND status != 'REVERSED'`.
+### 1. ✅ DONE — Wire 137 steps (`seed_wire_workflows.py`)
+### 2. ✅ DONE — Reversal Recovery Queue endpoint
 
 ### 3. Entitlements enforcement (bigger feature)
 Operators see only their team's transactions. Needs: `assigned_team` column on `WorkflowExecutionInstance`, middleware to filter by `X-User-Role`, UI filter chips in the TWS search.
