@@ -586,10 +586,13 @@ for r_id, r_name, r_cat, desc in recon_templates:
             target_dataset_name="External Statement / Scheme File",
             description=desc,
             status="ACTIVE",
+            # Shape MUST match schemas.MatchingRule: source_field/target_field/match_type
+            # (+ tolerance_value for TOLERANCE, fuzzy_score_cutoff for FUZZY). A {field,tolerance}
+            # shape fails Pydantic and 500s the whole template list endpoint.
             matching_rules=[
-                {"field": "AMOUNT", "match_type": "EXACT", "tolerance": 0},
-                {"field": "VALUE_DATE", "match_type": "EXACT", "tolerance": 0},
-                {"field": "REFERENCE", "match_type": "FUZZY", "tolerance": 0.8},
+                {"source_field": "AMOUNT", "target_field": "AMOUNT", "match_type": "EXACT"},
+                {"source_field": "VALUE_DATE", "target_field": "VALUE_DATE", "match_type": "EXACT"},
+                {"source_field": "REFERENCE", "target_field": "REFERENCE", "match_type": "FUZZY", "fuzzy_score_cutoff": 80},
             ],
             application_package_id=PKG_ID,
             product_id=PROD_ID,

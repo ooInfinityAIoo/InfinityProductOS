@@ -379,10 +379,14 @@ const WorkflowCanvasInner: React.FC = () => {
   }, [workflowDraft]);
 
   const handleSaveDraftToDB = async (currentNodes: Node[], currentEdges: Edge[]) => {
+    // Skip draft save if canvas is empty or no product selected — avoids 422 from missing required fields
+    if (!activeCoreProductId || currentNodes.length === 0) return;
     try {
       const payload = {
         workflow_name: `Draft - ${activeCoreProductId || 'Untitled'}`,
         domain_scope: activeProductContext || "CORE_BANKING",
+        // product_context is required by WorkflowConfigurationCreate schema
+        product_context: activeCoreProductId,
         nodes: currentNodes.map(n => ({
           sequence_number: sequenceMap[n.id] ? parseInt(String(sequenceMap[n.id]).replace(/[^0-9]/g, '')) || 1 : 1,
           node_title: n.data.title || "Workflow Step",
@@ -393,7 +397,7 @@ const WorkflowCanvasInner: React.FC = () => {
           target_node_id: e.target
         }))
       };
-      await apiClient.post('/workflows/', payload); // Simulate saving draft to DB using the same endpoint
+      await apiClient.post('/workflows/', payload);
       console.log('Draft saved successfully to DB');
     } catch (e) {
       console.error('Failed to save draft to DB', e);
@@ -450,13 +454,18 @@ const WorkflowCanvasInner: React.FC = () => {
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const updated = applyNodeChanges(changes, nodes);
     setNodes(updated);
-    saveDraft(updated, edges);
+    // Only persist to DB on structural changes — not position/select/dimension
+    // which fire on every mouse move and flood the API with 422s
+    const isStructural = changes.some(c => c.type === 'add' || c.type === 'remove');
+    if (isStructural) saveDraft(updated, edges);
   }, [nodes, edges, saveDraft]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const updated = applyEdgeChanges(changes, edges);
     setEdges(updated);
-    saveDraft(nodes, updated);
+    // Only persist on structural edge changes (add/remove), not selection
+    const isStructural = changes.some(c => c.type === 'add' || c.type === 'remove');
+    if (isStructural) saveDraft(nodes, updated);
   }, [nodes, edges, saveDraft]);
 
   // --- QUICK ADD HANDLER ---
@@ -883,14 +892,21 @@ const WorkflowCanvasInner: React.FC = () => {
     <div className="w-full flex flex-col gap-6 p-6">
       <InfinityAIHelper studioKey="workflow-designer" />
       {/* COCKPIT LOCK UI: Level 2 Core Product Selector */}
-      <div className="glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border border-rose-200/50 bg-rose-50/10">
+      <div className={`glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border ${activeCoreProductId ? 'border-green-200/50 bg-green-50/10' : 'border-rose-200/50 bg-rose-50/10'}`}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-rose-100/50 flex items-center justify-center text-rose-500 font-extrabold text-lg shadow-inner">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-lg shadow-inner ${activeCoreProductId ? 'bg-green-100/50 text-green-600' : 'bg-rose-100/50 text-rose-500'}`}>
+            {activeCoreProductId
+              ? <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
+              : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            }
           </div>
           <div>
-            <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight font-display">Two-Key Cockpit Lockdown</h2>
-            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Configuration is disabled until a Core Product (Level 2) is explicitly selected.</p>
+            <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight font-display">
+              {activeCoreProductId ? 'Two-Key Cockpit — Active' : 'Two-Key Cockpit Lockdown'}
+            </h2>
+            <p className="text-[10px] font-medium mt-0.5" style={{color: activeCoreProductId ? '#16a34a' : undefined}}>
+              {activeCoreProductId ? 'Configuration unlocked. All tools are enabled.' : 'Configuration is disabled until a Core Product (Level 2) is explicitly selected.'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">

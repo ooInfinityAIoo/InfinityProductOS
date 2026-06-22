@@ -76,6 +76,19 @@ export const DocumentTemplateDesigner: React.FC = () => {
   const queryClient = useQueryClient();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
+  // WHY THIS EXISTS: `activeProductContext` is the package NAME ("Payment Hub"),
+  // but the comm-templates API filters on package_id (PKG-XXXX). Passing the name
+  // as package_id silently matched zero rows — the studio always showed "No templates yet".
+  // We resolve name → id via the packages master, mirroring CalculationEngineStudio.
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+    enabled: !!activeProductContext,
+  });
+  const resolvedPackageId = packagesData?.packages?.find(
+    (p: any) => p.package_name === activeProductContext
+  )?.package_id ?? null;
+
   // List / editor state
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [typeFilter, setTypeFilter] = useState<TemplateType | 'ALL'>('ALL');
@@ -92,10 +105,10 @@ export const DocumentTemplateDesigner: React.FC = () => {
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: listData, isLoading } = useQuery({
-    queryKey: ['comm-templates', activeProductContext, typeFilter],
+    queryKey: ['comm-templates', resolvedPackageId, typeFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (activeProductContext) params.set('package_id', activeProductContext);
+      if (resolvedPackageId) params.set('package_id', resolvedPackageId);
       if (typeFilter !== 'ALL') params.set('template_type', typeFilter);
       return (await apiClient.get(`/comm-templates/?${params}`)).data;
     },
@@ -126,7 +139,7 @@ export const DocumentTemplateDesigner: React.FC = () => {
     mutationFn: async () => {
       const payload = {
         ...form,
-        application_package_id: activeProductContext || undefined,
+        application_package_id: resolvedPackageId || undefined,
         referenced_iso_fields: extractPlaceholders(form.body_content + ' ' + form.subject_line),
       };
       if (editingId) return (await apiClient.put(`/comm-templates/${editingId}`, payload)).data;

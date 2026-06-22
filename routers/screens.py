@@ -19,8 +19,23 @@ router = APIRouter(
 
 # --- Helper Function ---
 def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTemplateResponse:
-    """Helper to unpack the JSONB definition into the response model."""
-    definition_data = db_screen.definition or {}
+    """Helper to unpack the JSONB definition into the response model.
+
+    WHY THE SHAPE GUARD: Screens created through the Screen Designer store
+    `definition` as a dict: {components, action_buttons, value_list_groups}.
+    But some records (older seeds / external imports) stored the raw components
+    list directly. Calling .get() on a list raises AttributeError and 500s the
+    ENTIRE list endpoint — one malformed record blanks out the whole Screen
+    Library. We normalize both shapes here so the studio is resilient.
+    """
+    raw = db_screen.definition or {}
+    if isinstance(raw, list):
+        # Legacy/seed shape: definition IS the components array itself
+        definition_data = {"components": raw, "action_buttons": [], "value_list_groups": []}
+    elif isinstance(raw, dict):
+        definition_data = raw
+    else:
+        definition_data = {}
     return schemas.ScreenTemplateResponse(
         screen_id=db_screen.screen_id,
         screen_name=db_screen.screen_name,

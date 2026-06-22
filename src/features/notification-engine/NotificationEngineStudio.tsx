@@ -86,6 +86,19 @@ export const NotificationEngineStudio: React.FC = () => {
   const { activeProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
 
+  // WHY THIS EXISTS: `activeProductContext` is the package NAME ("Payment Hub"),
+  // but the notification-policies API filters on package_id (PKG-XXXX). Passing the
+  // name as package_id silently matched zero rows — the studio always showed
+  // "No policies yet". We resolve name → id via the packages master.
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+    enabled: !!activeProductContext,
+  });
+  const resolvedPackageId = packagesData?.packages?.find(
+    (p: any) => p.package_name === activeProductContext
+  )?.package_id ?? null;
+
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [header, setHeader] = useState({ policy_name: '', description: '' });
@@ -95,9 +108,9 @@ export const NotificationEngineStudio: React.FC = () => {
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: listData, isLoading } = useQuery({
-    queryKey: ['notification-policies', activeProductContext],
+    queryKey: ['notification-policies', resolvedPackageId],
     queryFn: async () => {
-      const params = activeProductContext ? `?package_id=${activeProductContext}` : '';
+      const params = resolvedPackageId ? `?package_id=${resolvedPackageId}` : '';
       return (await apiClient.get(`/notification-policies/${params}`)).data;
     },
     enabled: view === 'list',
@@ -110,9 +123,9 @@ export const NotificationEngineStudio: React.FC = () => {
   });
 
   const { data: templatesData } = useQuery({
-    queryKey: ['live-comm-templates', activeProductContext],
+    queryKey: ['live-comm-templates', resolvedPackageId],
     queryFn: async () => {
-      const params = activeProductContext ? `?package_id=${activeProductContext}` : '';
+      const params = resolvedPackageId ? `?package_id=${resolvedPackageId}` : '';
       return (await apiClient.get(`/notification-policies/comm-templates/live${params}`)).data;
     },
     enabled: view === 'editor',
@@ -124,7 +137,7 @@ export const NotificationEngineStudio: React.FC = () => {
   const createMutation = useMutation({
     mutationFn: async () => apiClient.post('/notification-policies/', {
       ...header,
-      application_package_id: activeProductContext || undefined,
+      application_package_id: resolvedPackageId || undefined,
       triggers: draftTriggers.filter(t => t.trigger_name.trim()),
     }),
     onSuccess: () => {
@@ -221,7 +234,10 @@ export const NotificationEngineStudio: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {policies.map((p: any) => {
-              const statusMeta = STATUS_META[p.status as LifecycleStatus];
+              // Defensive fallback: a record with an unknown status (e.g. a legacy
+              // 'ACTIVE' value not in the lifecycle) must not crash the whole studio.
+              const statusMeta = STATUS_META[p.status as LifecycleStatus]
+                ?? { color: 'bg-slate-100 text-slate-500', label: p.status || 'Unknown' };
               const hasSmsWait = p.sms_wait_count > 0;
               return (
                 <div key={p.policy_id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-glass hover:-translate-y-0.5 hover:border-violet-200 transition-all flex flex-col gap-3">
@@ -325,11 +341,15 @@ export const NotificationEngineStudio: React.FC = () => {
           <h2 className="text-sm font-extrabold text-slate-800">
             {isEditing ? policy?.policy_name ?? 'Loading...' : 'New Policy'}
           </h2>
-          {policy && (
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUS_META[policy.status as LifecycleStatus].color}`}>
-              {STATUS_META[policy.status as LifecycleStatus].label}
-            </span>
-          )}
+          {policy && (() => {
+            const m = STATUS_META[policy.status as LifecycleStatus]
+              ?? { color: 'bg-slate-100 text-slate-500', label: policy.status || 'Unknown' };
+            return (
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${m.color}`}>
+                {m.label}
+              </span>
+            );
+          })()}
         </div>
         <div className="flex gap-2">
           {!isEditing && (

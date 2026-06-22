@@ -768,12 +768,28 @@ class MatchType(str, Enum):
     AMOUNT_TOLERANCE = "AMOUNT_TOLERANCE"
 
 class ReconciliationCategory(str, Enum):
+    # WHY THESE EXIST: Each value is a distinct real-world banking reconciliation
+    # discipline. A too-narrow enum silently 500s the entire template list endpoint
+    # the moment a bank configures a category it doesn't contain (Pydantic rejects
+    # the ORM→response serialization for the whole list, not just the one row).
+    # Keep this list aligned with the categories the Reconciliation Engine actually
+    # supports rather than forcing real templates into ill-fitting buckets.
     NOSTRO_VOSTRO = "NOSTRO_VOSTRO"
     MIGRATION = "MIGRATION"
     FILE_TO_FILE = "FILE_TO_FILE"
     CONTROL_TOTALS = "CONTROL_TOTALS"
     DATA_COMPARE = "DATA_COMPARE"
     SYSTEM_TO_SYSTEM = "SYSTEM_TO_SYSTEM"
+    # Settlement / ledger reconciliations
+    NOSTRO_GL = "NOSTRO_GL"                  # Nostro balance vs General Ledger
+    PAYMENT_LEDGER = "PAYMENT_LEDGER"        # Statement (e.g. MT940) vs payment ledger
+    CARD_SETTLEMENT = "CARD_SETTLEMENT"      # Card settlement file vs scheme totals
+    # Markets / treasury reconciliations
+    TRADE_CONFIRM = "TRADE_CONFIRM"          # Trade confirmations vs internal blotter
+    CUSTODY = "CUSTODY"                      # Custody holdings vs CSD positions
+    # Finance reconciliations
+    FEE_RECONCILIATION = "FEE_RECONCILIATION"  # Correspondent fees vs invoices
+    INTEREST = "INTEREST"                    # Interest accruals vs core banking
 
 class MatchingRule(BaseModel):
     source_field: str = Field(..., description="Field from the source dataset.")
