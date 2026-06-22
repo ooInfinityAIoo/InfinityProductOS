@@ -38,6 +38,7 @@ import { InstancePicker } from './InstancePicker';
 import { StepIssuePanel } from './StepIssuePanel';
 import { ReversalDrawer } from './ReversalDrawer';
 import { TransactionSearch } from './TransactionSearch';
+import { BulkOperationsPanel } from './BulkOperationsPanel';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -196,7 +197,8 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
   // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch, setShowSearch]       = useState(false);
+  const [showBulkOps, setShowBulkOps]     = useState(false);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -420,6 +422,11 @@ export const TransactionWorkflowScreen: React.FC = () => {
         </div>
       )}
 
+      {/* E6 commit 2/N — Bulk operations panel */}
+      {showBulkOps && (
+        <BulkOperationsPanel onClose={() => setShowBulkOps(false)} />
+      )}
+
       {/* E5 commit 2/N — Full transaction search panel */}
       {showSearch && (
         <TransactionSearch
@@ -446,22 +453,30 @@ export const TransactionWorkflowScreen: React.FC = () => {
               </p>
             </div>
           </div>
-          {/* E2/E5 — Instance picker + full search */}
-          <div className="flex gap-2">
+          {/* E2/E5/E6 — Instance picker + full search + bulk ops */}
+          <div className="flex gap-2 flex-wrap justify-end">
             <button
-              onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); }}
+              onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); setShowBulkOps(false); }}
               className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
             >
               {showInstancePicker ? '✕' : '⊕ Recent'}
             </button>
-            {/* E5 commit 2/N — Full search button */}
             <button
-              onClick={() => { setShowSearch(!showSearch); setShowInstancePicker(false); }}
+              onClick={() => { setShowSearch(!showSearch); setShowInstancePicker(false); setShowBulkOps(false); }}
               className={`px-3 py-2 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${
                 showSearch ? 'bg-indigo-600 text-white border-indigo-600' : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
               }`}
             >
               {showSearch ? '✕ Close' : '🔍 Search'}
+            </button>
+            {/* E6 commit 2/N — Bulk operations */}
+            <button
+              onClick={() => { setShowBulkOps(!showBulkOps); setShowSearch(false); setShowInstancePicker(false); }}
+              className={`px-3 py-2 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                showBulkOps ? 'bg-slate-700 text-white border-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {showBulkOps ? '✕ Close' : '⚡ Bulk'}
             </button>
           </div>
         </div>
