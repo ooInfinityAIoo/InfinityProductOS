@@ -497,6 +497,54 @@ class WorkflowNodeCreate(BaseModel):
     party_to: Optional[str] = Field(None, description="Receiving party label, e.g. 'RTP'")
     participant_id: Optional[str] = Field(None, description="Swim-lane participant this node belongs to. NULL = no lane assigned.")
 
+    # --- E0 (TRANSACTION_SCREEN_DESIGN.md §7 + §5) — Failure handling per node ---
+    # WHY THESE FIELDS EXIST:
+    # The Workflow Designer authors these so the runtime engine knows what to do
+    # when a step fails (retry? push to repair queue? hard-fail?) and so the
+    # Transaction Workflow Screen can render the correct color + sub-text on the
+    # metro tracker (RETRYING amber+red ring, AWAITING_REPAIR red, etc.). Without
+    # surfacing them through the API the Designer cannot save them.
+    # All optional — nodes authored before E0 keep working unchanged (defaults
+    # are applied at the model layer: on_failure=RETRY, reversibility=REVERSIBLE,
+    # cancellable=True, skippable=False).
+    on_failure: Optional[str] = Field(
+        None,
+        description="Failure-handling policy: RETRY | REPAIR_QUEUE | FAIL_FAST | COMPENSATE_AND_HALT. Default RETRY.",
+    )
+    retry_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Retry policy when on_failure=RETRY: {max_attempts:int, backoff_strategy:LINEAR|EXPONENTIAL, backoff_seconds:int}.",
+    )
+    repair_queue_name: Optional[str] = Field(
+        None,
+        description="Repair queue this node routes to when on_failure=REPAIR_QUEUE (FK-ish to Queue Infrastructure).",
+    )
+    cancellable: Optional[bool] = Field(
+        None,
+        description="Can a Business Rule with action_type=CANCEL_TRANSACTION fire at this node? Default true.",
+    )
+    skippable: Optional[bool] = Field(
+        None,
+        description="Can ops staff manually Skip this step from the issue-detail panel? Default false.",
+    )
+
+    # --- E0 — Reversal authoring per node ---
+    # WHY: reversal is saga-style compensation, not generic undo. The Designer
+    # authors the verdict + recipe so the runtime can execute the right
+    # compensating actions when an operator clicks rollback. See design doc §5.
+    reversibility: Optional[str] = Field(
+        None,
+        description="REVERSIBLE | REVERSIBLE_WITH_APPROVAL | IRREVERSIBLE | CONDITIONALLY_REVERSIBLE. Default REVERSIBLE.",
+    )
+    reversal_recipe: Optional[Dict[str, Any]] = Field(
+        None,
+        description="How to undo this step: {db_reversal:{...}, api_reversal:{api_id}, event_reversal:{event_code}}.",
+    )
+    reversal_rules: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description="Conditions evaluated at rollback-click time, e.g. 'reversible only within 10 min of settlement'.",
+    )
+
     class Config:
         from_attributes = True
 
