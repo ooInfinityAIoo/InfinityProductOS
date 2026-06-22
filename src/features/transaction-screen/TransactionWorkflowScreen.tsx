@@ -37,6 +37,7 @@ import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker
 import { InstancePicker } from './InstancePicker';
 import { StepIssuePanel } from './StepIssuePanel';
 import { ReversalDrawer } from './ReversalDrawer';
+import { TransactionSearch } from './TransactionSearch';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -173,6 +174,8 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('WFI-ECC2B272');
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
+  // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
+  const [showSearch, setShowSearch] = useState(false);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -362,11 +365,11 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
-      {/* E2 commit 2/N — Instance picker collapsible panel */}
+      {/* E2 commit 2/N — Recent instances quick-picker */}
       {showInstancePicker && (
         <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-extrabold text-slate-800">Find a Transaction</h2>
+            <h2 className="text-sm font-extrabold text-slate-800">Recent Transactions</h2>
             <button
               onClick={() => setShowInstancePicker(false)}
               className="text-slate-500 hover:text-slate-700 text-lg leading-none"
@@ -384,6 +387,17 @@ export const TransactionWorkflowScreen: React.FC = () => {
         </div>
       )}
 
+      {/* E5 commit 2/N — Full transaction search panel */}
+      {showSearch && (
+        <TransactionSearch
+          onSelect={(id) => {
+            setSelectedInstanceId(id);
+            setShowSearch(false);
+          }}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
+
       <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -399,13 +413,24 @@ export const TransactionWorkflowScreen: React.FC = () => {
               </p>
             </div>
           </div>
-          {/* E2 commit 2/N — Instance selector button */}
-          <button
-            onClick={() => setShowInstancePicker(!showInstancePicker)}
-            className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
-          >
-            {showInstancePicker ? '✕ Close' : '⊕ Select Instance'}
-          </button>
+          {/* E2/E5 — Instance picker + full search */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); }}
+              className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
+            >
+              {showInstancePicker ? '✕' : '⊕ Recent'}
+            </button>
+            {/* E5 commit 2/N — Full search button */}
+            <button
+              onClick={() => { setShowSearch(!showSearch); setShowInstancePicker(false); }}
+              className={`px-3 py-2 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                showSearch ? 'bg-indigo-600 text-white border-indigo-600' : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
+              }`}
+            >
+              {showSearch ? '✕ Close' : '🔍 Search'}
+            </button>
+          </div>
         </div>
 
         {/* Transaction header — instance identity + status badge */}
@@ -557,10 +582,10 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
         {/* Info banner — E3 commit 2/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E4 commit 2/N:</span> Parallel branch visualization.
-          Workflow nodes with node_type=FORK/JOIN and a parallel_group field render as
-          secondary dashed tracks below the main line — showing parallel steps (e.g.
-          Sanctions check + Balance inquiry) in a single glance without hiding any steps.
+          <span className="font-bold">E5 commit 2/N:</span> Full transaction search.
+          Click "Search" to find any transaction across millions of records — by ID prefix,
+          status (multi-select), date range, cancelled_by, repair queue, or workflow ID.
+          Paginated 20/page. Backend: GET /workflows/instances/search (Postgres-first, no ES needed for MVP).
         </div>
       </div>
     </div>
