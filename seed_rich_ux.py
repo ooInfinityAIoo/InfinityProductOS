@@ -912,7 +912,9 @@ for cl_id, cl_name, wf_step, items in checklists:
             intended_workflow_step=wf_step,
             application_package_id=PKG_ID,
             version_number=1,
-            status="ACTIVE",
+            # Lifecycle status must be DRAFT|PENDING_APPROVAL|LIVE|ARCHIVED.
+            # 'ACTIVE' is not in the studio's STATUS_META and renders as Unknown.
+            status="LIVE",
             created_at=now,
         ))
         for i, (doc_name, is_mandatory, formats) in enumerate(items):

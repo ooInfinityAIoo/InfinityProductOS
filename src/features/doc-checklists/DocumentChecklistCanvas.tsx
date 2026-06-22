@@ -45,6 +45,19 @@ export const DocumentChecklistCanvas: React.FC = () => {
   const { activeProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
 
+  // WHY THIS EXISTS: `activeProductContext` is the package NAME ("Payment Hub"),
+  // but the doc-checklists API filters on package_id (PKG-XXXX). Passing the name
+  // as package_id silently matched zero rows — the studio always showed
+  // "No checklists yet". Resolve name → id via the packages master.
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+    enabled: !!activeProductContext,
+  });
+  const resolvedPackageId = packagesData?.packages?.find(
+    (p: any) => p.package_name === activeProductContext
+  )?.package_id ?? null;
+
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -58,9 +71,9 @@ export const DocumentChecklistCanvas: React.FC = () => {
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: listData, isLoading } = useQuery({
-    queryKey: ['doc-checklists', activeProductContext],
+    queryKey: ['doc-checklists', resolvedPackageId],
     queryFn: async () => {
-      const params = activeProductContext ? `?package_id=${activeProductContext}` : '';
+      const params = resolvedPackageId ? `?package_id=${resolvedPackageId}` : '';
       return (await apiClient.get(`/doc-checklists/${params}`)).data;
     },
     enabled: view === 'list',
@@ -76,7 +89,7 @@ export const DocumentChecklistCanvas: React.FC = () => {
   const createMutation = useMutation({
     mutationFn: async () => apiClient.post('/doc-checklists/', {
       ...header,
-      application_package_id: activeProductContext || undefined,
+      application_package_id: resolvedPackageId || undefined,
       items: draftItems.filter(i => i.document_name.trim()),
     }),
     onSuccess: () => {
@@ -179,7 +192,10 @@ export const DocumentChecklistCanvas: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {checklists.map((c: any) => {
-              const statusMeta = STATUS_META[c.status as LifecycleStatus];
+              // Defensive: a checklist with an unknown status (e.g. legacy 'ACTIVE')
+              // must not crash the whole studio.
+              const statusMeta = STATUS_META[c.status as LifecycleStatus]
+                ?? { color: 'bg-slate-100 text-slate-500', label: c.status || 'Unknown' };
               return (
                 <div key={c.checklist_id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-glass hover:-translate-y-0.5 hover:border-indigo-200 transition-all flex flex-col gap-3">
                   {/* Card header */}
@@ -289,11 +305,13 @@ export const DocumentChecklistCanvas: React.FC = () => {
           <h2 className="text-sm font-extrabold text-slate-800">
             {isEditing ? checklist?.checklist_name ?? 'Loading...' : 'New Checklist'}
           </h2>
-          {checklist && (
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${STATUS_META[checklist.status as LifecycleStatus].color}`}>
-              {STATUS_META[checklist.status as LifecycleStatus].label}
-            </span>
-          )}
+          {checklist && (() => {
+            const m = STATUS_META[checklist.status as LifecycleStatus]
+              ?? { color: 'bg-slate-100 text-slate-500', label: checklist.status || 'Unknown' };
+            return (
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${m.color}`}>{m.label}</span>
+            );
+          })()}
         </div>
         {!isEditing && (
           <button

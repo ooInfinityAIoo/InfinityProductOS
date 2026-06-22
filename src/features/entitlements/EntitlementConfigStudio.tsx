@@ -56,11 +56,23 @@ export const EntitlementConfigStudio: React.FC = () => {
   const [selectedEntityType, setSelectedEntityType] = useState('SCREEN');
   const [search, setSearch] = useState('');
 
+  // WHY THIS EXISTS: `activeProductContext` is the package NAME ("Payment Hub"),
+  // but /entitlements/summary filters on package_id (PKG-XXXX). Passing the name
+  // returned an empty matrix. Resolve name → id via the packages master.
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+    enabled: !!activeProductContext,
+  });
+  const resolvedPackageId = packagesData?.packages?.find(
+    (p: any) => p.package_name === activeProductContext
+  )?.package_id ?? null;
+
   const { data: matrixData, isLoading } = useQuery({
-    queryKey: ['entitlements-matrix', activeProductContext, selectedEntityType],
+    queryKey: ['entitlements-matrix', resolvedPackageId, selectedEntityType],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (activeProductContext) params.set('package_id', activeProductContext);
+      if (resolvedPackageId) params.set('package_id', resolvedPackageId);
       if (selectedEntityType) params.set('entity_type', selectedEntityType);
       const res = await apiClient.get(`/entitlements/summary?${params}`);
       return res.data;
