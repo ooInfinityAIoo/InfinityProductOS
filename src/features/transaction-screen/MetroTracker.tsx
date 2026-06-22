@@ -49,12 +49,15 @@ export interface TrackerStation {
   /** Optional live sub-text below the station label, e.g. "retry 2/3 · next in 28s". */
   sub_text?: string;
   // E4 commit 2/N — Parallel branch support.
-  // branch_track: undefined/0 = main line, 1+ = parallel track below the main line.
-  // is_fork: this station spawns parallel branches (vertical drop lines go down from here).
-  // is_join: this station merges all branches (vertical lines come up to here).
   branch_track?: number;
   is_fork?: boolean;
   is_join?: boolean;
+  // E6 commit 1/N — SLA breach indicators.
+  // sla_warning: >75% of the step's SLA bound has elapsed (amber corner badge).
+  // sla_breached: >100% elapsed — the SLA has been missed (red corner badge).
+  // Only meaningful on the current active station (IN_PROGRESS, PAUSED, RETRYING).
+  sla_warning?: boolean;
+  sla_breached?: boolean;
 }
 
 interface MetroTrackerProps {
@@ -148,6 +151,32 @@ const StationNode: React.FC<{
         >
           {station.sub_text}
         </text>
+      )}
+      {/* E6 commit 1/N — SLA breach badge.
+          Rendered as a small filled circle in the top-right of the station.
+          Red = SLA already missed. Amber = >75% elapsed (warning zone).
+          Only appears on active stations — completed/pending nodes don't show SLA. */}
+      {(station.sla_breached || station.sla_warning) && (
+        <g>
+          <circle
+            cx={x + radius - 2}
+            cy={y - radius + 2}
+            r={4}
+            fill={station.sla_breached ? '#DC2626' : '#F59E0B'}
+            stroke="#FFFFFF"
+            strokeWidth={1.5}
+          />
+          <text
+            x={x + radius - 2}
+            y={y - radius + 5.5}
+            textAnchor="middle"
+            fontSize={5}
+            fill="#FFFFFF"
+            fontWeight={700}
+          >
+            {station.sla_breached ? '!' : '~'}
+          </text>
+        </g>
       )}
     </g>
   );

@@ -150,6 +150,25 @@ const mapInstanceToStations = (
       branch_track = parallelGroupTrackMap.get(parallelGroup);
     }
 
+    // E6 commit 1/N — SLA badge computation for the current active station.
+    // slaDuration is stored as "DD:HH:MM:SS" on the node (set in NodePropertiesDrawer).
+    // We compare elapsed time since the instance was created against the SLA bound.
+    // Only active states (IN_PROGRESS, PAUSED, RETRYING, AWAITING_REPAIR) get badges —
+    // completed/pending nodes don't need SLA warnings.
+    let sla_warning = false;
+    let sla_breached = false;
+    const activeStates: StepLifecycleState[] = ['IN_PROGRESS', 'PAUSED', 'RETRYING', 'AWAITING_REPAIR'];
+    if (idx === currentNodeIdx && activeStates.includes(state) && node.slaDuration && instance.created_at) {
+      const [dd, hh, mm, ss] = (node.slaDuration as string).split(':').map(Number);
+      const slaTotalSecs = (dd || 0) * 86400 + (hh || 0) * 3600 + (mm || 0) * 60 + (ss || 0);
+      if (slaTotalSecs > 0) {
+        const elapsedSecs = (Date.now() - new Date(instance.created_at).getTime()) / 1000;
+        const pct = elapsedSecs / slaTotalSecs;
+        sla_breached = pct >= 1.0;
+        sla_warning  = !sla_breached && pct >= 0.75;
+      }
+    }
+
     return {
       node_id: node.node_id,
       sequence_number: node.sequence_number,
@@ -159,6 +178,8 @@ const mapInstanceToStations = (
       branch_track,
       is_fork,
       is_join,
+      sla_warning,
+      sla_breached,
     };
   });
 };
@@ -179,7 +200,12 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: instanceResponse, isLoading, error } = useQuery({
+  // E6 commit 1/N — auto-refresh for active (non-terminal) instances.
+  // Terminal states (COMPLETED, REJECTED, CANCELLED, REVERSED, FAILED_TECHNICAL)
+  // don't change, so we skip polling for them. Active states poll every 10s so
+  // operators see retries, state transitions, and SLA warnings without manual refresh.
+  const TERMINAL_STATUSES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'REVERSED', 'FAILED_TECHNICAL', 'BLOCKED']);
+  const { data: instanceResponse, isLoading, error, isFetching } = useQuery({
     queryKey: ['workflow-instance', selectedInstanceId],
     queryFn: async () => {
       if (!selectedInstanceId) return null;
@@ -187,6 +213,13 @@ export const TransactionWorkflowScreen: React.FC = () => {
       return response.data;
     },
     enabled: !!selectedInstanceId,
+    // Poll every 10 seconds while the instance is in an active state.
+    // refetchInterval receives the cached data — if terminal, return false to stop polling.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (!status || TERMINAL_STATUSES.has(status)) return false;
+      return 10_000; // 10 seconds
+    },
   });
 
   // Memoize the stations array so the metro tracker doesn't re-render unnecessarily
@@ -440,11 +473,20 @@ export const TransactionWorkflowScreen: React.FC = () => {
               <span className="font-medium">Instance:</span>{' '}
               <span className="font-mono text-slate-500">{instanceResponse.instance_id}</span>
             </div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
-              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-              <span className="text-[11px] font-semibold text-slate-700">
-                {instanceResponse.status}
-              </span>
+            <div className="flex items-center gap-2">
+              {/* E6 — live-refresh pulse dot for active instances */}
+              {!TERMINAL_STATUSES.has(instanceResponse.status) && (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isFetching ? 'bg-indigo-400 animate-ping' : 'bg-green-400'}`} />
+                  {isFetching ? 'refreshing' : 'live'}
+                </div>
+              )}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
+                <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                <span className="text-[11px] font-semibold text-slate-700">
+                  {instanceResponse.status}
+                </span>
+              </div>
             </div>
           </div>
         </div>
