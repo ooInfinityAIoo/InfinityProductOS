@@ -313,6 +313,95 @@ def list_workflow_instances(
         "total": len(instances),
     }
 
+@router.get("/instances/{instance_id}", summary="Get a Single Workflow Execution Instance")
+def get_workflow_instance(
+    instance_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    WHY THIS EXISTS (E1 commit 1/N — TRANSACTION_SCREEN_DESIGN.md §1):
+    The Transaction Workflow Screen renders ONE specific transaction at a time —
+    its metro tracker needs the full instance (status, current_node_id, execution
+    trace, full lifecycle audit columns) plus the parent workflow's node list so
+    it can lay out the stations. The existing /instances/list returns batches
+    scoped for the queue view; this endpoint returns a single instance for the
+    detail view. Same payload shape as a row in the list response, plus the
+    parent workflow's nodes (so the UI doesn't make a second round trip).
+
+    WHAT BREAKS IF REMOVED: The Transaction Workflow Screen cannot fetch one
+    transaction — it would have to /list and filter client-side, which doesn't
+    scale and leaks every other operator's in-flight work into the response.
+
+    Returns 404 when the instance_id is not found — the screen renders a clean
+    'transaction not found' state rather than a 500.
+    """
+    instance = db.query(models.WorkflowExecutionInstance).filter(
+        models.WorkflowExecutionInstance.instance_id == instance_id
+    ).first()
+    if not instance:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow execution instance '{instance_id}' not found.",
+        )
+
+    # Fetch the parent workflow's nodes — the tracker needs sequence_number,
+    # node_title, node_type, and the E0 authoring columns (on_failure,
+    # reversibility, etc.) to color and label every station. Sorting by
+    # sequence_number gives the UI a deterministic left-to-right station order.
+    nodes = (
+        db.query(models.WorkflowNode)
+        .filter(models.WorkflowNode.workflow_id == instance.workflow_id)
+        .order_by(models.WorkflowNode.sequence_number)
+        .all()
+    )
+
+    return {
+        "instance_id": instance.instance_id,
+        "workflow_id": instance.workflow_id,
+        "current_node_id": instance.current_node_id,
+        "status": instance.status,
+        "current_context": instance.current_context,
+        "execution_trace": instance.execution_trace,
+        "created_at": instance.created_at,
+        "updated_at": instance.updated_at,
+        # E0 lifecycle audit columns — feed the tracker's per-state sub-text.
+        "retry_attempts_log": instance.retry_attempts_log,
+        "repair_queue_assigned": instance.repair_queue_assigned,
+        "cancelled_by": instance.cancelled_by,
+        "cancelled_reason_code": instance.cancelled_reason_code,
+        "cancelled_message": instance.cancelled_message,
+        "reversal_request_id": instance.reversal_request_id,
+        "template_version_pinned": instance.template_version_pinned,
+        # The workflow shape — one round trip, no client-side join.
+        "workflow_nodes": [
+            {
+                "node_id": n.node_id,
+                "sequence_number": n.sequence_number,
+                "node_title": n.node_title,
+                "node_code": n.node_code,
+                "node_type": n.node_type,
+                "canvas_x_position": n.canvas_x_position,
+                "canvas_y_position": n.canvas_y_position,
+                "iso_message_type": n.iso_message_type,
+                "message_direction": n.message_direction,
+                # E0 authoring columns — the tracker uses these to show
+                # reversibility (rollback icon), retry config, repair queue
+                # routing, and cancellability per station.
+                "on_failure": n.on_failure,
+                "retry_config": n.retry_config,
+                "repair_queue_name": n.repair_queue_name,
+                "cancellable": n.cancellable,
+                "skippable": n.skippable,
+                "reversibility": n.reversibility,
+                "reversal_recipe": n.reversal_recipe,
+                "reversal_rules": n.reversal_rules,
+            }
+            for n in nodes
+        ],
+    }
+
+
 @router.post("/{workflow_id}/execute/download-report", summary="Execute Workflow and Download PDF Report")
 def execute_workflow_and_download_report(workflow_id: str, payload: Dict[str, Any], db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
