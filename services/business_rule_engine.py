@@ -131,6 +131,21 @@ class BusinessRuleEngine:
         """
         Evaluates a single IF condition.
         """
+        op = condition.get("operator")
+
+        # Sanctions/list-screening operators (NOT_IN_SANCTION_LIST, IN_SANCTION_LIST) are a
+        # distinct capability: they screen a string name/BIC against a named external list
+        # (e.g. OFAC_SDN). The numeric comparison engine does not implement them and no list
+        # data is loaded. Raise an HONEST, specific error (instead of the cryptic "Operand
+        # has no source fields") so the workflow trace makes the gap obvious and a real
+        # sanctions-screening integration can be slotted in later. Tracked as Finding C1.
+        if op in ("NOT_IN_SANCTION_LIST", "IN_SANCTION_LIST"):
+            list_name = condition.get("list", "the configured sanctions list")
+            raise NotImplementedError(
+                f"Sanctions screening operator '{op}' against '{list_name}' is not implemented "
+                f"(no sanctions-list data loaded). Manual screening required."
+            )
+
         lhs_val = self._resolve_operand(condition.get("left_hand_side", {}), context)
         rhs_val = self._resolve_operand(condition.get("right_hand_side", {}), context)
         op = condition.get("operator")
@@ -202,6 +217,14 @@ class BusinessRuleEngine:
                             event_code = action.get("event_code") or action.get("event_type")
                             runtime_context.setdefault("_emitted_events", []).append(event_code)
                             execution_logs.append(f"  Action: EMIT_EVENT — {event_code}")
+                        elif action_type in ("BLOCK_PAYMENT", "REJECT_STEP"):
+                            # Hard-stop verbs: a compliance/validation rule has decided the
+                            # transaction must not proceed. Record a block decision on the
+                            # context so the workflow executor can halt/route accordingly.
+                            message = action.get("message") or f"{action_type} triggered by rule."
+                            runtime_context.setdefault("_blocks", []).append({"type": action_type, "message": message})
+                            runtime_context["_blocked"] = True
+                            execution_logs.append(f"  Action: {action_type} — {message}")
                         else:
                             execution_logs.append(f"  [WARN] Unknown action type '{action_type}' — skipped.")
             except Exception as e:

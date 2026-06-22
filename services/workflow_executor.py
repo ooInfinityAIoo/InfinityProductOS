@@ -195,6 +195,57 @@ class WorkflowExecutor:
 
         return True # Default pass if condition is not EVENT_MATCH and didn't fail before
 
+    def _normalize_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        WHY THIS EXISTS (Finding C adapter): workflow nodes authored in the studio /
+        golden-path seed describe each orchestration step semantically as
+          {action: "INVOKE_RULE", rule_token: ...}, {action: "INVOKE_API", api_name: ...},
+          {action: "EMIT_EVENT", event_code: ...}, {action: "REQUIRE_APPROVAL", role: ...}, ...
+        but this executor dispatches on {step_type, target_token, target_event_type}. Before
+        this adapter, those steps silently no-op'd (step_type was None) — the workflow walked
+        its nodes but invoked NO engines. This translates the authored 'action' shape into the
+        executor's shape so rules/calcs/APIs/events actually fire. Steps already carrying a
+        step_type pass through untouched (backward compatible).
+
+        WHAT BREAKS IF REMOVED: golden-path / studio-authored workflows execute as empty
+        shells — no rule evaluation, no calculation, no event broadcast.
+        """
+        if not isinstance(step, dict) or step.get("step_type"):
+            return step
+        action = step.get("action")
+        if not action:
+            return step
+
+        norm = dict(step)
+        if action == "INVOKE_RULE":
+            norm["step_type"] = "BUSINESS_RULE"
+            norm["target_token"] = step.get("rule_token") or step.get("target_token")
+        elif action == "INVOKE_FORMULA":
+            norm["step_type"] = "CALCULATION"
+            norm["target_token"] = step.get("formula_token") or step.get("target_token")
+        elif action == "INVOKE_API":
+            norm["step_type"] = "API_CALL"
+            norm["target_token"] = step.get("api_id") or step.get("api_name")
+        elif action == "EMIT_EVENT":
+            norm["step_type"] = "EVENT_BROADCAST"
+            norm["target_event_type"] = step.get("event_code") or step.get("event_type")
+        elif action == "REQUIRE_APPROVAL":
+            norm["step_type"] = "HUMAN_APPROVAL"
+            norm["target_token"] = step.get("role")
+        elif action == "INVOKE_SUB_WORKFLOW":
+            norm["step_type"] = "SUB_WORKFLOW"
+            norm["target_token"] = step.get("workflow_id") or step.get("target_token")
+        elif action == "INVOKE_RECONCILIATION":
+            norm["step_type"] = "RECONCILIATION"
+            norm["target_token"] = step.get("template_id") or step.get("target_token")
+        else:
+            # INVOKE_TEMPLATE / INVOKE_MAPPER and any unknown verbs: ingest-time or
+            # non-executable here. Mark explicitly so the dispatch loop logs a clean skip
+            # rather than silently doing nothing.
+            norm["step_type"] = "INGEST_NOOP"
+            norm["_noop_action"] = action
+        return norm
+
     def _execute_node_actions(self, node: models.WorkflowNode, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Executes the actions defined for a single node (rules, calculations, API calls).
@@ -216,6 +267,10 @@ class WorkflowExecutor:
             sorted_steps = sorted(node.orchestration_steps, key=lambda s: s.get('sequence_number', 99))
 
             for step in sorted_steps:
+                # Finding C adapter: translate authored {action, *_token, api_name, event_code}
+                # steps into the executor's {step_type, target_token, target_event_type} shape.
+                step = self._normalize_step(step)
+
                 # --- Conditional Invocation Check ---
                 should_invoke = True
                 rule_token = step.get("invocation_rule_token")
@@ -301,6 +356,11 @@ class WorkflowExecutor:
                         trace_depth=trace_depth,
                         correlation_id=correlation_id
                     ), db=self.db))
+
+                elif step_type == "INGEST_NOOP":
+                    # Ingest-time / non-executable verbs (INVOKE_TEMPLATE, INVOKE_MAPPER) —
+                    # parsing & mapping happen at file ingestion, not during DAG execution.
+                    self.execution_trace.append(f"Skipping ingest-time step '{step.get('_noop_action')}' (handled at ingestion, not execution).")
 
                 elif step_type == "SUB_WORKFLOW":
                     if not target_token:

@@ -119,6 +119,12 @@ DAY_COUNT_CONVENTIONS = {
 
 def _to_decimal(v: Any) -> Any:
     """Cast numeric values to Decimal. Non-numeric values pass through unchanged."""
+    # bool is a subclass of int, but True/False are flags, not money. Without this guard
+    # _to_decimal(True) -> Decimal(str(True)) -> Decimal('True') raises ConversionSyntax,
+    # which broke any calculation run after a rule put a boolean flag (e.g. _blocked) into
+    # the shared runtime context.
+    if isinstance(v, bool):
+        return v
     if isinstance(v, Decimal):
         return v
     if isinstance(v, (int, float)):
@@ -291,11 +297,29 @@ class CalculationEngine:
 
             target_field = formula_asset.target_output_field
             expression = formula_asset.mathematical_expression
-            static_params = formula_asset.parameters or {}
+            param_specs = formula_asset.parameters or []
 
             eval_context = {}
-            if static_params:
-                eval_context.update(static_params)
+            # WHY: `parameters` is a LIST of descriptors [{name, iso_field, type}], NOT a
+            # name->value dict. The expression references the short `name`s
+            # (e.g. ATMAccountStatement2_Amount), each of which is sourced from its mapped
+            # `iso_field` in the runtime context. Previously this did
+            # eval_context.update(param_specs) — calling dict.update() on a list of 3-key
+            # dicts, which raised "dictionary update sequence element #0 has length 3;
+            # 2 is required" and meant the formula variables were never bound at all.
+            if isinstance(param_specs, dict):
+                # Legacy/simple shape: already a name->value mapping.
+                for k, v in param_specs.items():
+                    eval_context[k] = _to_decimal(v) if isinstance(v, (int, float, Decimal, str)) else v
+            elif isinstance(param_specs, list):
+                for spec in param_specs:
+                    if not isinstance(spec, dict) or not spec.get("name"):
+                        continue
+                    iso_field = spec.get("iso_field")
+                    val = runtime_context.get(iso_field) if iso_field else spec.get("value")
+                    eval_context[spec["name"]] = _to_decimal(val) if isinstance(val, (int, float, Decimal, str)) else val
+            # Also expose the raw runtime context (ISO field names) so expressions that
+            # reference ISO fields directly still resolve.
             for k, v in runtime_context.items():
                 eval_context[k] = _to_decimal(v) if isinstance(v, (int, float, Decimal, str)) else v
 

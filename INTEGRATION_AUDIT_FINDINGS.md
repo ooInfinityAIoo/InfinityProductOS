@@ -29,6 +29,39 @@ still stop the engines from actually working together with the seeded data.
 
 **Severity:** Major (blocks in-tandem execution with current data; not a code bug)
 
+**STATUS: golden path RESOLVED & demonstrated end-to-end.** The root cause turned out to be
+the same *schema-mismatch* class as Finding D, not literally "unwired": the golden-path
+workflow `WF-ECC2B272` was already authored with real references, but in a semantic step shape
+(`{action:"INVOKE_RULE", rule_token}`, `{action:"INVOKE_FORMULA", formula_token}`,
+`{action:"INVOKE_API", api_name}`, `{action:"EMIT_EVENT", event_code}`,
+`{action:"REQUIRE_APPROVAL", role}`) that the executor (reading `{step_type, target_token,
+target_event_type}`) ignored. Fixes landed:
+- `WorkflowExecutor._normalize_step()` — adapter translating the authored `action` shape into
+  the executor's dispatch shape (+ an `INGEST_NOOP` branch for INVOKE_TEMPLATE/INVOKE_MAPPER).
+- `database.py` JSON serializer (`default=str`) — Decimal/datetime in the persisted
+  execution-instance context no longer crash on commit ("Object of type Decimal is not JSON
+  serializable").
+- Calc engine: bind list-shaped `parameters` (`{name, iso_field, type}`) to ISO-field values;
+  guard `_to_decimal(bool)`.
+- BRE: honest error for the unimplemented sanctions operator; handle BLOCK_PAYMENT / REJECT_STEP.
+
+Running `WF-ECC2B272` end-to-end now fires, in tandem: AML rule (flag+event), FX-stale rule
+(reject+event), **FX calc = 592500.00 (Decimal)**, human-approval pause, event broadcasts,
+document gates. Regression tests: `test_business_rule_engine_adapter.py`,
+`test_calculation_engine_params.py`.
+
+**Residual sub-findings (still open):**
+- **C1 (Major):** Sanctions-list screening (`NOT_IN_SANCTION_LIST` against OFAC_SDN) is not
+  implemented and no SDN list data is loaded — the OFAC rule logs an honest "manual screening
+  required" instead of actually screening. Needs a sanctions-screening capability + list data.
+- **C2 (Major):** SETTLE / POST_LEDGER nodes use `with db.begin():` but the executor also calls
+  `db.commit()` earlier in the same session, so reaching a settlement node after a prior commit
+  raises "A transaction is already begun on this Session." Financial-node session/transaction
+  management needs a fix before a payment can run all the way to settlement.
+- The broad statement below still holds for the *other* ~35 workflows (RTP/FedNow templates) —
+  their steps carry `step_type` but `target_token: null`, so they remain genuinely unwired and
+  need per-workflow wiring (a domain decision).
+
 **What:** Across all workflows there are **201 orchestration steps**, but only **6** carry a
 `target_token` (4 `API_CALL`, 2 `EVENT_BROADCAST`). Specifically:
 
