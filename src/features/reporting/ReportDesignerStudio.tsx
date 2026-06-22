@@ -92,6 +92,22 @@ export const ReportDesignerStudio: React.FC = () => {
     setWidgets([]);
   };
 
+  // WHY THIS EXISTS: powers the "Edit" button on the report detail view. Clicking a
+  // report in the list used to set selectedReport but the right panel had no block to
+  // render it (it only handled the empty state + create form), so the panel went blank.
+  // This loads an existing report's saved fields back into the create/edit form state
+  // so the same form can edit it, then flips into form mode.
+  const loadReportIntoForm = (rpt: any) => {
+    setReportName(rpt.report_name || '');
+    setDescription(rpt.description || '');
+    setIsThirdPartyEmbedded(!!rpt.is_third_party_embedded);
+    setThirdPartyEmbedUrl(rpt.third_party_embed_url || '');
+    setExposeAsHeadlessApi(!!rpt.expose_as_headless_api);
+    setApplicationPackageId(rpt.application_package_id || '');
+    setWidgets(Array.isArray(rpt.widgets) ? rpt.widgets : []);
+    setIsCreating(true);
+  };
+
   const handleAddWidget = () => {
     setWidgets([...widgets, {
       widget_id: `WGT-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
@@ -161,6 +177,61 @@ export const ReportDesignerStudio: React.FC = () => {
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
             <svg className="w-16 h-16 mb-4 opacity-50 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
             <p className="text-sm font-semibold text-slate-500">Select a report to view or create a new one.</p>
+          </div>
+        )}
+
+        {/* WHY THIS BLOCK EXISTS: read-only detail view for a selected report. Without it,
+            clicking a report set selectedReport but nothing rendered (blank panel) because
+            the panel only handled the empty state and the create form. This restores the
+            "view a report" path and offers Edit (loads it into the form) + Close. */}
+        {!isCreating && selectedReport && (
+          <div className="flex flex-col h-full animate-slide-in-right">
+            <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-800">{selectedReport.report_name}</h2>
+                  {selectedReport.status && <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{selectedReport.status}</span>}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{selectedReport.description || 'No description.'}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => loadReportIntoForm(selectedReport)} className="px-4 py-2 text-[12px] font-bold text-white bg-[#0176D3] rounded hover:bg-blue-700 transition-colors shadow-sm">Edit</button>
+                <button onClick={() => setSelectedReport(null)} className="px-4 py-2 text-[12px] font-bold text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors">Close</button>
+              </div>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto">
+              {selectedReport.is_third_party_embedded ? (
+                <div className="bg-purple-50 border border-purple-200 rounded p-6">
+                  <label className="block text-[12px] font-bold text-purple-800 uppercase mb-2">🔗 Embedded BI Report</label>
+                  <p className="text-[12px] font-mono text-purple-700 break-all">{selectedReport.third_party_embed_url || 'No embed URL configured.'}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
+                    <h3 className="text-[12px] font-extrabold text-slate-800 uppercase tracking-wider">Dashboard Widgets ({(selectedReport.widgets || []).length})</h3>
+                    {selectedReport.expose_as_headless_api && <span className="text-[10px] font-bold text-emerald-600">⚡ Exposed as Headless OData API</span>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(selectedReport.widgets || []).map((w: any, idx: number) => (
+                      <div key={w.widget_id || idx} className="bg-slate-50 border border-slate-200 rounded p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[13px] font-bold text-slate-800">{w.title || 'Untitled Widget'}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#F0F7FF] text-[#0176D3]">{(w.chart_type || '').replace(/_/g, ' ')}</span>
+                        </div>
+                        <dl className="text-[11px] text-slate-600 space-y-1">
+                          <div className="flex gap-2"><dt className="font-bold text-slate-500 w-20 shrink-0">Source</dt><dd className="font-mono text-[#0176D3] break-all">{w.data_source_entity}</dd></div>
+                          {w.x_axis_field && <div className="flex gap-2"><dt className="font-bold text-slate-500 w-20 shrink-0">X-Axis</dt><dd className="font-mono break-all">{w.x_axis_field}</dd></div>}
+                          {w.y_axis_field && <div className="flex gap-2"><dt className="font-bold text-slate-500 w-20 shrink-0">Y-Axis</dt><dd className="font-mono break-all">{w.y_axis_field}</dd></div>}
+                          {w.aggregation_method && <div className="flex gap-2"><dt className="font-bold text-slate-500 w-20 shrink-0">Aggregation</dt><dd className="font-mono text-emerald-600">{w.aggregation_method}</dd></div>}
+                        </dl>
+                      </div>
+                    ))}
+                    {(selectedReport.widgets || []).length === 0 && <div className="col-span-2 text-center text-slate-400 italic text-xs py-8 border-2 border-dashed border-slate-200 rounded">This report has no widgets configured.</div>}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
