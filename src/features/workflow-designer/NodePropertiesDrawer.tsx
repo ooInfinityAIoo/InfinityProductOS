@@ -81,7 +81,7 @@ const STEP_TYPE_GROUPS: { group: string; types: { value: string; label: string }
   ]},
 ];
 
-type Tab = 'basic' | 'screen' | 'logic' | 'documents' | 'signals';
+type Tab = 'basic' | 'screen' | 'logic' | 'documents' | 'signals' | 'reversal';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'basic',     label: 'Basic',      icon: '⚙️' },
@@ -89,6 +89,12 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'logic',     label: 'Logic',      icon: '🧠' },
   { id: 'documents', label: 'Documents',  icon: '📋' },
   { id: 'signals',   label: 'Signals',    icon: '🔔' },
+  // E4 commit 3/N — Reversal tab exposes saga compensation fields added in E0:
+  // reversibility, on_failure, cancellable, skippable, reversal_recipe.
+  // This lets workflow designers declare per-node rollback behaviour at authoring
+  // time; the Transaction Workflow Screen reads these at runtime to decide what
+  // the Reversal Drawer shows and whether the engine runs compensation steps.
+  { id: 'reversal',  label: 'Reversal',   icon: '↶' },
 ];
 
 export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node, workflowId, onClose, onUpdateData }) => {
@@ -135,6 +141,19 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
   const [nodeType, setNodeType]           = useState<string>('');
   const [participantId, setParticipantId] = useState<string>('');
 
+  // ── Reversal / failure-handling fields (E0 data model — E4 commit 3/N UI) ──
+  // These fields let the workflow designer declare per-node rollback and failure
+  // behaviour at authoring time. The Transaction Workflow Screen reads them at
+  // runtime to control the Reversal Drawer, action buttons, and recovery paths.
+  const [reversibility,   setReversibility]   = useState<string>('REVERSIBLE');
+  const [onFailure,       setOnFailure]        = useState<string>('RETRY');
+  const [cancellable,     setCancellable]      = useState<boolean>(true);
+  const [skippable,       setSkippable]        = useState<boolean>(false);
+  // reversal_recipe sub-fields (from WorkflowNode.reversal_recipe JSONB)
+  const [reversalDbNote,  setReversalDbNote]   = useState<string>('');
+  const [reversalApiId,   setReversalApiId]    = useState<string>('');
+  const [reversalEventCode, setReversalEventCode] = useState<string>('');
+
   // ── Read-only guard ───────────────────────────────────────────────────
   const [isReadOnly, setIsReadOnly]         = useState(false);
   const [lastModifiedBy, setLastModifiedBy] = useState('');
@@ -164,6 +183,16 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
     setCommTemplateId(node.data.comm_template_id || '');
     setNodeType(node.data.node_type || '');
     setParticipantId(node.data.participant_id || '');
+
+    // Reversal fields — hydrate from E0 node data columns
+    setReversibility(node.data.reversibility || 'REVERSIBLE');
+    setOnFailure(node.data.on_failure || 'RETRY');
+    setCancellable(node.data.cancellable !== false); // default true
+    setSkippable(node.data.skippable || false);
+    const recipe = node.data.reversal_recipe || {};
+    setReversalDbNote(recipe.db_reversal || '');
+    setReversalApiId(recipe.api_reversal?.api_id || '');
+    setReversalEventCode(recipe.event_reversal?.event_code || '');
 
     if (node.data.lastModifiedBy) {
       setIsReadOnly(true);
@@ -223,6 +252,13 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
 
   const handleSaveAll = () => {
     const slaDuration = `${slaDays.padStart(2,'0')}:${slaHours.padStart(2,'0')}:${slaMins.padStart(2,'0')}:${slaSecs.padStart(2,'0')}`;
+    // Build reversal_recipe only if at least one field is filled in.
+    // Omitting empty keys keeps the JSON compact and avoids confusing the runtime.
+    const reversalRecipe: Record<string, any> = {};
+    if (reversalDbNote)    reversalRecipe.db_reversal    = reversalDbNote;
+    if (reversalApiId)     reversalRecipe.api_reversal   = { api_id: reversalApiId };
+    if (reversalEventCode) reversalRecipe.event_reversal = { event_code: reversalEventCode };
+
     onUpdateData({
       title,
       seq,
@@ -237,6 +273,12 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
       comm_template_id: commTemplateId || null,
       node_type: nodeType || null,
       participant_id: participantId || null,
+      // E4 commit 3/N — reversal authoring fields
+      reversibility,
+      on_failure: onFailure,
+      cancellable,
+      skippable,
+      reversal_recipe: Object.keys(reversalRecipe).length > 0 ? reversalRecipe : null,
       lastModifiedBy: 'Current User',
       lastModifiedAt: new Date().toISOString(),
     });
@@ -794,6 +836,184 @@ export const NodePropertiesDrawer: React.FC<NodePropertiesDrawerProps> = ({ node
                 <PolicyRefBadge label="Template ref" value={commTemplateId} />
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── REVERSAL TAB (E4 commit 3/N) ── */}
+        {/* WHY THIS TAB EXISTS: Reversal (saga compensation) is configured per-node at
+            authoring time. The designer specifies:
+            1. reversibility — whether and how this step can be rolled back
+            2. on_failure — what happens if the step fails (retry/repair/fail-fast)
+            3. cancellable / skippable — operator action permissions
+            4. reversal_recipe — the compensating steps the engine will run at runtime
+            The Transaction Workflow Screen (E3 Reversal Drawer) reads these fields to
+            decide what to show and whether to enable the "Reverse" button.
+            WHAT BREAKS IF REMOVED: Workflow designers have no way to declare reversal
+            behaviour. Every node defaults to REVERSIBLE/no-recipe, which means the
+            runtime can't perform meaningful compensation. */}
+        {activeTab === 'reversal' && (
+          <div className="space-y-6">
+
+            {/* ── Reversibility ── */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Reversibility
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Can this step be rolled back after it completes?
+                Irreversible steps (e.g. regulatory submissions, real money settlements) cannot be undone.
+              </p>
+              <select
+                value={reversibility}
+                onChange={e => setReversibility(e.target.value)}
+                className="w-full text-[12px] text-slate-800 border border-slate-200 rounded-xl p-2 focus:border-indigo-500 outline-none bg-white"
+              >
+                <option value="REVERSIBLE">Reversible — can roll back at any time</option>
+                <option value="REVERSIBLE_WITH_APPROVAL">Reversible with 4-eye approval</option>
+                <option value="CONDITIONALLY_REVERSIBLE">Conditionally reversible (rule-gated)</option>
+                <option value="IRREVERSIBLE">Irreversible — regulatory or final settlement</option>
+              </select>
+              {reversibility === 'IRREVERSIBLE' && (
+                <div className="mt-2 p-2.5 rounded-lg bg-red-50 border border-red-200 text-[10px] text-red-800">
+                  🔒 This step will be locked in the Reversal Drawer. Operators will see a warning but cannot submit a reversal request.
+                </div>
+              )}
+              {reversibility === 'REVERSIBLE_WITH_APPROVAL' && (
+                <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-800">
+                  👥 Reversal will require a second approver (4-eye check). The submitter cannot also be the approver.
+                </div>
+              )}
+            </div>
+
+            {/* ── On-failure behaviour ── */}
+            <div className="pt-4 border-t border-slate-100">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                On Failure Behaviour
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                What should the engine do when this step fails after all retry attempts are exhausted?
+              </p>
+              <select
+                value={onFailure}
+                onChange={e => setOnFailure(e.target.value)}
+                className="w-full text-[12px] text-slate-800 border border-slate-200 rounded-xl p-2 focus:border-indigo-500 outline-none bg-white"
+              >
+                <option value="RETRY">Retry — exponential back-off until max_attempts reached</option>
+                <option value="REPAIR_QUEUE">Route to Repair Queue — operator manually intervenes</option>
+                <option value="FAIL_FAST">Fail Fast — terminate workflow immediately</option>
+              </select>
+            </div>
+
+            {/* ── Operator permissions ── */}
+            <div className="pt-4 border-t border-slate-100">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Operator Permissions
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Which manual override actions are operators allowed to take on this step in the Transaction Workflow Screen?
+              </p>
+              <div className="space-y-2.5">
+                <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={cancellable}
+                    onChange={e => setCancellable(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <div className="text-[12px] font-bold text-slate-700">Cancellable</div>
+                    <div className="text-[10px] text-slate-400">Operator can cancel the transaction at this step (purple Cancel button in TWS)</div>
+                  </div>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={skippable}
+                    onChange={e => setSkippable(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <div className="text-[12px] font-bold text-slate-700">Skippable</div>
+                    <div className="text-[10px] text-slate-400">Operator can skip this step if it fails (shows Skip button in the Step Issue Panel)</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* ── Reversal Recipe ── */}
+            {reversibility !== 'IRREVERSIBLE' && (
+              <div className="pt-4 border-t border-slate-100">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Reversal Recipe
+                </label>
+                <p className="text-[10px] text-slate-400 mb-3">
+                  Define the compensation steps the engine executes when this step is reversed.
+                  The Transaction Workflow Screen shows this recipe in plain language before the operator confirms.
+                  Leave all fields empty if this step has no side-effects to compensate.
+                </p>
+
+                {/* DB reversal note */}
+                <div className="mb-3">
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Database restore note</label>
+                  <input
+                    type="text"
+                    value={reversalDbNote}
+                    onChange={e => setReversalDbNote(e.target.value)}
+                    placeholder="e.g. Restore account balance from pre-step snapshot"
+                    className="w-full text-[11px] text-slate-800 border border-slate-200 rounded-lg p-2 focus:border-indigo-500 outline-none bg-white"
+                  />
+                  <div className="text-[9px] text-slate-400 mt-1">Shown as "→ Database fields will be restored" in the Reversal Drawer.</div>
+                </div>
+
+                {/* API reversal */}
+                <div className="mb-3">
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Compensating API (API Designer ID)</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={reversalApiId}
+                      onChange={e => setReversalApiId(e.target.value)}
+                      className="flex-1 text-[11px] text-slate-800 border border-slate-200 rounded-lg p-2 focus:border-indigo-500 outline-none bg-white font-mono text-indigo-700"
+                    >
+                      <option value="">— No compensating API —</option>
+                      {apiData?.integrations?.map((a: any) => (
+                        <option key={a.api_id} value={a.api_id}>{a.api_name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleInvoke('api-designer')}
+                      className="bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white border border-indigo-200 text-[10px] font-bold px-2.5 rounded-lg transition-all"
+                    >
+                      →
+                    </button>
+                  </div>
+                  <div className="text-[9px] text-slate-400 mt-1">Shown as "→ Compensating API will be called" in the Reversal Drawer.</div>
+                </div>
+
+                {/* Event reversal */}
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Reversal event code</label>
+                  <input
+                    type="text"
+                    value={reversalEventCode}
+                    onChange={e => setReversalEventCode(e.target.value)}
+                    placeholder="e.g. EVT_FX_HOLD_REVERSED"
+                    className="w-full text-[11px] text-slate-800 border border-slate-200 rounded-lg p-2 focus:border-indigo-500 outline-none bg-white font-mono"
+                  />
+                  <div className="text-[9px] text-slate-400 mt-1">Shown as "→ Reversal event will be emitted" in the Reversal Drawer. Triggers downstream Insights/Recon updates.</div>
+                </div>
+
+                {/* Recipe preview */}
+                {(reversalDbNote || reversalApiId || reversalEventCode) && (
+                  <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-[10px] text-slate-700">
+                    <div className="font-bold text-slate-600 mb-1.5">Recipe preview (what the operator will see):</div>
+                    {reversalDbNote    && <div className="mb-1">→ Database fields will be restored from pre-step snapshot</div>}
+                    {reversalApiId     && <div className="mb-1">→ Compensating API will be called to reverse downstream effects</div>}
+                    {reversalEventCode && <div>→ Reversal event <span className="font-mono text-indigo-700">{reversalEventCode}</span> will be emitted</div>}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         )}
 
