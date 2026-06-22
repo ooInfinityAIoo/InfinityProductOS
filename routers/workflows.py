@@ -261,6 +261,121 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An error occurred during workflow resumption: {str(e)}")
 
+@router.get("/instances/search", summary="Search Workflow Execution Instances",
+    description="""
+    WHY THIS EXISTS (E5 — TRANSACTION_SCREEN_DESIGN.md §6):
+    The Transaction Workflow Screen can receive millions of transactions per day. Simple
+    /instances/list is fine for the last-50 picker, but operators need to search by
+    transaction reference, customer ID, amount range, or lifecycle state across the full
+    history. This endpoint is the Postgres-first implementation of that search — no
+    Elasticsearch dependency for MVP. Multi-field OR search on indexed string columns;
+    status filtering as a multi-value IN clause; date range on created_at.
+
+    WHAT BREAKS IF REMOVED: Operators can only browse the 50 most-recent instances;
+    they cannot find specific transactions by ID or any business reference.
+    """)
+def search_workflow_instances(
+    q: Optional[str] = None,          # free-text prefix on instance_id / master_transaction_id
+    statuses: Optional[str] = None,   # comma-separated: PAUSED,RETRYING,COMPLETED
+    workflow_id: Optional[str] = None,
+    cancelled_by: Optional[str] = None,
+    repair_queue: Optional[str] = None,
+    date_from: Optional[str] = None,  # ISO date string, inclusive
+    date_to: Optional[str] = None,    # ISO date string, inclusive
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    """
+    Multi-field transaction search for the Transaction Workflow Screen.
+    Runs entirely in Postgres — uses indexed column LIKE for the free-text query,
+    IN clause for status multi-select, and string comparison on ISO date columns.
+    Paginated via limit + offset; returns total_count + has_more for UI pagination.
+    """
+    query = db.query(models.WorkflowExecutionInstance)
+
+    # Free-text — match instance_id prefix OR master_transaction_id prefix.
+    # ilike is case-insensitive LIKE, safe for our ISO-style IDs.
+    if q:
+        search_pattern = f"{q}%"
+        query = query.filter(
+            models.WorkflowExecutionInstance.instance_id.ilike(search_pattern) |
+            models.WorkflowExecutionInstance.master_transaction_id.ilike(search_pattern)
+        )
+
+    # Multi-status filter — comma-separated values e.g. "PAUSED,RETRYING"
+    if statuses:
+        status_list = [s.strip().upper() for s in statuses.split(",") if s.strip()]
+        if status_list:
+            query = query.filter(
+                models.WorkflowExecutionInstance.status.in_(status_list)
+            )
+
+    # Exact workflow_id match — scopes search to one template
+    if workflow_id:
+        query = query.filter(
+            models.WorkflowExecutionInstance.workflow_id == workflow_id
+        )
+
+    # Who cancelled it — 'rule' | 'operator' | 'system'
+    if cancelled_by:
+        query = query.filter(
+            models.WorkflowExecutionInstance.cancelled_by == cancelled_by
+        )
+
+    # Which repair queue it's sitting in
+    if repair_queue:
+        query = query.filter(
+            models.WorkflowExecutionInstance.repair_queue_assigned == repair_queue
+        )
+
+    # Date range on created_at (stored as ISO string — lexicographic comparison works
+    # for YYYY-MM-DDTHH:MM:SS format, which is what we use everywhere)
+    if date_from:
+        query = query.filter(
+            models.WorkflowExecutionInstance.created_at >= date_from
+        )
+    if date_to:
+        # Append "Z" sentinel so date_to covers the full day
+        query = query.filter(
+            models.WorkflowExecutionInstance.created_at <= date_to + "T23:59:59"
+        )
+
+    # Total count (before pagination) — needed so the UI can show "X results"
+    total_count = query.count()
+
+    instances = (
+        query
+        .order_by(models.WorkflowExecutionInstance.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    return {
+        "instances": [
+            {
+                "instance_id": i.instance_id,
+                "workflow_id": i.workflow_id,
+                "master_transaction_id": i.master_transaction_id,
+                "current_node_id": i.current_node_id,
+                "status": i.status,
+                "created_at": i.created_at,
+                "updated_at": i.updated_at,
+                "cancelled_by": i.cancelled_by,
+                "cancelled_reason_code": i.cancelled_reason_code,
+                "repair_queue_assigned": i.repair_queue_assigned,
+            }
+            for i in instances
+        ],
+        "total_count": total_count,
+        "has_more": (offset + limit) < total_count,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
 @router.get("/instances/list", summary="List Workflow Execution Instances")
 def list_workflow_instances(
     workflow_id: Optional[str] = None,
