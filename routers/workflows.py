@@ -109,6 +109,92 @@ def list_workflows(
         q = q.filter(models.WorkflowConfiguration.template_category == template_category)
     return q.offset(skip).limit(limit).all()
 
+# ── Wiring Audit endpoints must be BEFORE /{workflow_id} to avoid route shadowing ──
+
+@router.get("/wiring-audit", summary="Wiring Audit — Unwired Orchestration Steps",
+    description="""
+    WHY THIS EXISTS:
+    ~35 RTP/FedNow workflow templates were seeded with step_type set (BUSINESS_RULE,
+    CALCULATION, API_CALL) but no target_token — meaning those steps fire as no-ops
+    at runtime. This endpoint scans every workflow node's orchestration_steps and
+    returns only the steps that have a step-type requiring a target but no target set.
+    The Workflow Designer Wiring Audit panel uses this to give designers a single view
+    of everything that needs wiring, with inline dropdowns to fix it.
+    """)
+def get_wiring_audit(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    NEEDS_TARGET = {"INVOKE_RULE", "INVOKE_FORMULA", "INVOKE_API", "INVOKE_CALCULATION",
+                    "BUSINESS_RULE", "CALCULATION", "API_CALL"}
+    rules    = db.query(models.BusinessRuleSet).all()
+    formulas = db.query(models.SymbolicFormulaAsset).all()
+    apis     = db.query(models.ApiConfiguration).all()
+    workflows_all = db.query(models.WorkflowConfiguration).all()
+    rule_options    = [{"value": r.token_code, "label": f"{r.business_name} ({r.token_code})"} for r in rules]
+    formula_options = [{"value": f.token_code, "label": f"{f.business_name} ({f.token_code})"} for f in formulas]
+    api_options     = [{"value": a.api_name,   "label": f"{a.api_name} ({a.api_id})"}          for a in apis]
+    workflow_options= [{"value": w.workflow_id, "label": f"{w.workflow_name} ({w.workflow_id})"} for w in workflows_all]
+    unwired_by_workflow = {}
+    for wf in workflows_all:
+        for node in wf.nodes:
+            for idx, step in enumerate(node.orchestration_steps or []):
+                action = step.get("action") or step.get("step_type", "")
+                if action not in NEEDS_TARGET:
+                    continue
+                has_target = bool(
+                    step.get("target_token") or step.get("rule_token") or
+                    step.get("formula_token") or step.get("api_id") or
+                    step.get("api_name")
+                )
+                if not has_target:
+                    if wf.workflow_id not in unwired_by_workflow:
+                        unwired_by_workflow[wf.workflow_id] = {
+                            "workflow_id": wf.workflow_id, "workflow_name": wf.workflow_name, "unwired_steps": [],
+                        }
+                    step_kind = ("RULE" if action in ("INVOKE_RULE","BUSINESS_RULE") else
+                                 "FORMULA" if action in ("INVOKE_FORMULA","CALCULATION") else
+                                 "API" if action in ("INVOKE_API","API_CALL") else "WORKFLOW")
+                    unwired_by_workflow[wf.workflow_id]["unwired_steps"].append({
+                        "node_id": node.node_id, "node_title": node.node_title,
+                        "step_index": idx, "action": action, "step_kind": step_kind,
+                        "description": step.get("description", ""),
+                    })
+    return {
+        "workflows": list(unwired_by_workflow.values()),
+        "total_unwired": sum(len(w["unwired_steps"]) for w in unwired_by_workflow.values()),
+        "options": {"rules": rule_options, "formulas": formula_options,
+                    "apis": api_options, "workflows": workflow_options},
+    }
+
+
+@router.patch("/wiring-audit/apply", summary="Apply Wiring — Set target_token on orchestration steps")
+def apply_wiring(patches: List[Dict[str, Any]], db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """WHY THIS EXISTS: Persists wiring selections from the Wiring Audit panel per-step
+    without requiring a full node PUT. Each patch has node_id, step_index, target, step_kind."""
+    applied = 0
+    for patch in patches:
+        node_id    = patch.get("node_id")
+        step_index = patch.get("step_index")
+        target     = patch.get("target")
+        step_kind  = patch.get("step_kind", "RULE")
+        if not node_id or step_index is None or not target:
+            continue
+        node = db.query(models.WorkflowNode).filter(models.WorkflowNode.node_id == node_id).first()
+        if not node:
+            continue
+        steps = list(node.orchestration_steps or [])
+        if step_index >= len(steps):
+            continue
+        step = dict(steps[step_index])
+        if step_kind == "RULE":     step["rule_token"]    = target
+        elif step_kind == "FORMULA": step["formula_token"] = target
+        elif step_kind == "API":    step["api_name"]      = target
+        else:                       step["target_token"]  = target
+        steps[step_index] = step
+        node.orchestration_steps = steps
+        applied += 1
+    db.commit()
+    return {"applied": applied}
+
+
 @router.get("/{workflow_id}", response_model=schemas.WorkflowConfigurationResponse, summary="Get a Specific Workflow Graph")
 def get_workflow(workflow_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """

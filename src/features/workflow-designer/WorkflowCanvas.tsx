@@ -33,6 +33,7 @@ import { StudioNode } from './StudioNode';
 import { LabeledEdge } from './LabeledEdge';
 import { SwimlaneLabelNode } from './SwimlaneLabelNode';
 import { InfinityAIHelper } from '../../components/InfinityAIHelper';
+import { WiringAuditPanel } from './WiringAuditPanel';
 
 const nodeTypes = {
   customBankingNode: WorkflowNode,
@@ -196,6 +197,7 @@ const WorkflowCanvasInner: React.FC = () => {
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [showWiringAudit, setShowWiringAudit] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(true);
@@ -888,6 +890,10 @@ const WorkflowCanvasInner: React.FC = () => {
   return (
     <div className="w-full flex flex-col gap-6 p-6">
       <InfinityAIHelper studioKey="workflow-designer" />
+      {/* Wiring Audit panel — floats below AI helper, above the canvas */}
+      {showWiringAudit && (
+        <WiringAuditPanel onClose={() => setShowWiringAudit(false)} />
+      )}
       {/* COCKPIT LOCK UI: Level 2 Core Product Selector */}
       <div className={`glass-card rounded-2xl p-4 flex items-center justify-between shadow-sm border ${activeCoreProductId ? 'border-green-200/50 bg-green-50/10' : 'border-rose-200/50 bg-rose-50/10'}`}>
         <div className="flex items-center gap-3">
@@ -1159,6 +1165,17 @@ const WorkflowCanvasInner: React.FC = () => {
                   className="bg-white/90 hover:bg-white text-indigo-700 border border-indigo-100 font-bold text-[12px] px-4 py-2 rounded-xl shadow-lg transition-all flex items-center gap-2"
                 >
                   <span>👁️</span> 360° Preview
+                </button>
+                {/* Wiring Audit — surfaces all unwired rule/calc/API steps across all workflows */}
+                <button
+                  onClick={() => setShowWiringAudit(prev => !prev)}
+                  className={`font-bold text-[12px] px-4 py-2 rounded-xl shadow-lg transition-all flex items-center gap-2 ${
+                    showWiringAudit
+                      ? 'bg-slate-800 text-white border border-slate-700'
+                      : 'bg-white/90 hover:bg-white text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <span>🔗</span> Wiring Audit
                 </button>
                 <button
                   onClick={() => saveDraft(nodes, edges)}
