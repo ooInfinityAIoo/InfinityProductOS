@@ -53,7 +53,42 @@ Tests: `test_business_rule_engine_adapter.py`, `test_calculation_engine_params.p
 
 ---
 
-## Headline next item — Transaction Workflow Screen (E1 starting; E0 COMPLETE)
+## Headline next item — Transaction Workflow Screen E4+E5 COMPLETE (E6 remaining)
+
+### E4 — parallel branch visualization + reversal authoring — ✅ COMPLETE
+
+- ✅ **Commit 1/N (`5d77770`)** — ReversionRecoveryQueue dashboard (failed reversals ops view).
+- ✅ **Commit 2/N (`d4231b4`)** — Parallel branch visualization in MetroTracker SVG. FORK/JOIN stations + secondary dashed tracks below the main line for nodes with `parallel_group` field. Backward-compatible.
+- ✅ **Commit 3/N (`ec253d1`)** — 6th "Reversal" tab in NodePropertiesDrawer (Workflow Designer). Exposes per-node: reversibility, on_failure, cancellable, skippable, reversal_recipe (db/api/event). Wired into `handleSaveAll`.
+
+### E5 — transaction search — ✅ COMPLETE
+
+- ✅ **Commit 1/N (`4e6e892`)** — `GET /workflows/instances/search` backend endpoint. Multi-field: instance_id prefix, master_transaction_id prefix, multi-status IN, workflow_id, cancelled_by, repair_queue, ISO date range. Paginated with total_count + has_more.
+- ✅ **Commit 2/N (`f2aa004`)** — `TransactionSearch.tsx` frontend component. Status filter chips (all 12 lifecycle states), free-text bar, advanced drawer (date range, cancelled_by, repair queue, workflow ID), paginated results (20/page). "Search" button in TransactionWorkflowScreen header opens panel.
+
+### What operators can now do (E1–E5 full stack)
+
+✅ **View** — metro tracker with all 12 lifecycle states, live sub-text (retry counts, cancel reasons, queue names)
+✅ **Navigate** — Recent quick-picker + full transaction search across millions of records
+✅ **Act** — approve, reject, cancel from any state
+✅ **Retry** — manual retry on RETRYING/FAILED states
+✅ **Diagnose** — error code + message + retry history on step-issue panel
+✅ **Reverse** — rollback completed steps with saga compensation (E3)
+✅ **Author reversal** — designers configure per-node reversibility + recipe in Workflow Designer (E4)
+✅ **See parallel steps** — FORK/JOIN branches shown as secondary dashed tracks on metro tracker (E4)
+✅ **Search** — find any transaction by ID, status, date range, cancelled_by, repair queue (E5)
+
+### E6 — remaining (next session)
+
+- SLA badge overlay on metro tracker stations (yellow/red when SLA bound exceeded)
+- Entitlements enforcement (some operators see only their team's transactions)
+- Bulk operations (approve 10 PAUSED transactions at once)
+- ↶ reversal icon badge on REVERSED stations in the metro tracker
+- UI polish: keyboard shortcuts (⌘K for search), auto-refresh polling
+
+---
+
+## Previous session handoff — Transaction Workflow Screen (E1 starting; E0 COMPLETE)
 
 A full design spec is locked in `TRANSACTION_SCREEN_DESIGN.md` (repo root). This is the next major workstream and is the most important capability in the platform — every other studio exists so this screen can render and drive a transaction end-to-end.
 
