@@ -142,6 +142,14 @@ class WorkflowExecutor:
         if not condition:
             return True # An edge with no condition is considered a default path
 
+        # Guard the documented "empty/invalid → True" contract: some edges store the
+        # condition as a bare string (or other non-dict), and calling .get() on it
+        # raised "'str' object has no attribute 'get'", which aborted traversal and
+        # terminated the workflow after the first node. A non-dict condition has no
+        # structured form to evaluate, so treat it as a default (pass) path.
+        if not isinstance(condition, dict):
+            return True
+
         try:
             condition_type = condition.get("type", "SIMPLE").upper()
 

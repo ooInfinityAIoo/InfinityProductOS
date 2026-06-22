@@ -96,8 +96,12 @@ export const RuntimeTransactionShell: React.FC = () => {
         // Workflow paused at a human-in-loop node — need operator decision
         loadInstance(data);
       } else {
-        // Completed in one shot (STP path)
-        setActiveInstance({ ...data, status: data.status });
+        // Completed in one shot (STP path).
+        // WHY the trace mapping: POST /execute returns the step log under the key
+        // `trace`, but this component (and the instances list endpoint) read
+        // `execution_trace`. Without the alias the Execution Trace panel always
+        // showed "No trace yet" even on a successful run.
+        setActiveInstance({ ...data, status: data.status, execution_trace: data.execution_trace ?? data.trace ?? [] });
         setView('running');
         setErrorMsg(null);
       }
@@ -124,7 +128,9 @@ export const RuntimeTransactionShell: React.FC = () => {
 
   // Load a screen for the current node (if the node has screen_template)
   const loadInstance = async (instanceData: any) => {
-    setActiveInstance(instanceData);
+    // Alias `trace` -> `execution_trace` (see executeMut.onSuccess) so paused/resumed
+    // instances also populate the Execution Trace panel.
+    setActiveInstance({ ...instanceData, execution_trace: instanceData.execution_trace ?? instanceData.trace ?? [] });
     setView('running');
     setErrorMsg(null);
 
