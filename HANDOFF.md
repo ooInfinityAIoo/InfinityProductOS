@@ -53,7 +53,13 @@ Tests: `test_business_rule_engine_adapter.py`, `test_calculation_engine_params.p
 
 ---
 
-## Open items — pick up here
+## Headline next item — Transaction Workflow Screen
+
+A full design spec is locked in `TRANSACTION_SCREEN_DESIGN.md` (repo root). This is the next major workstream and is the most important capability in the platform — every other studio exists so this screen can render and drive a transaction end-to-end.
+
+The spec covers: lifecycle state palette (12 states), metro tracker visual model, parallel branches (FORK/JOIN), sub-workflows, reversal (saga compensation), search (Postgres-first, ES-later), failure handling (retry/repair-queue/cancellation), data model migrations, and a 7-phase build plan (E0 → E6). Start at **E0** — data model migrations + new lifecycle states + `CANCEL_TRANSACTION` rule action. No UI until E0 lands.
+
+## Other open items
 
 See `INTEGRATION_AUDIT_FINDINGS.md` for full detail.
 
