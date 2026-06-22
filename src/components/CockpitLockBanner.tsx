@@ -53,7 +53,9 @@ export const CockpitLockBanner: React.FC = () => {
   const subProducts = subProductsData?.subproducts ?? [];
 
   return (
-    <div className="rounded-2xl p-3.5 flex items-center justify-between shadow-sm mb-6 border border-slate-200/60 bg-slate-50/40">
+    // Responsive (Finding A2): allow the PACKAGE/PRODUCT/SUB-PRODUCT group to wrap below
+    // the label group on narrow viewports instead of the dropdowns clipping off the right.
+    <div className="rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-y-3 shadow-sm mb-6 border border-slate-200/60 bg-slate-50/40">
       {/* Left — filter icon + label */}
       <div className="flex items-center gap-3 shrink-0">
         <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-500 border border-indigo-100">

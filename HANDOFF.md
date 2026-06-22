@@ -25,9 +25,16 @@ run **in tandem** at runtime. 9 commits, all on `origin/main` (latest `3a1b7b2`)
    studio-authored rules `{field, operator, value}` / `{type: FLAG_FOR_REVIEW/EMIT_EVENT}`.
 7. **Workflow executor step adapter** (`3a1b7b2`, Finding C) — golden path `WF-ECC2B272` now
    fires rules + calc + events + approval **in tandem**. See `INTEGRATION_AUDIT_FINDINGS.md`.
+8. **Settlement-node savepoint** (`436e771`, Finding C2) — SETTLE / POST_LEDGER nodes now use
+   `db.begin_nested()` (SAVEPOINT) when a transaction is already active, else `db.begin()`. The
+   golden path now runs all the way to `STATUS=COMPLETED` with the double-entry guardrail
+   passing (Debits=Credits=592500). New `test_active_transaction_uses_savepoint`.
+9. **Responsive header + filter bar** (Finding A2) — `MasterHeaderNav.tsx` and `CockpitLockBanner.tsx`
+   now `flex-wrap` instead of clipping `EXIT PACKAGE` / dropdowns below ~1024px. Verified at
+   768px (no horizontal overflow) and 1440px (unchanged).
 
-Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculation_engine_params.py`
-(plus existing `test_workflow_executor_invariants.py`) — all green. Frontend `tsc --noEmit` clean.
+Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculation_engine_params.py`,
+`services/test_workflow_executor_invariants.py` — 10/10 green. Frontend `tsc --noEmit` clean.
 
 ---
 
@@ -35,18 +42,18 @@ Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculati
 
 See `INTEGRATION_AUDIT_FINDINGS.md` for full detail.
 
-- **A2 (Minor, UI):** Header nav + context-filter bar overflow ~65px below ~1024px — `EXIT PACKAGE`
-  and the product/sub-product dropdowns clip off the right. Desktop-first tool, so low priority.
-  *Not started.* This was the next thing Claude was about to do.
-- **C1 (Major):** Sanctions-list screening (`NOT_IN_SANCTION_LIST` vs OFAC_SDN) is not implemented
-  and no SDN data is loaded. The OFAC rule logs an honest "manual screening required" instead of
-  actually screening. Needs a screening capability + list data.
-- **C2 (Major):** SETTLE / POST_LEDGER nodes mix `db.commit()` with `with db.begin():`, so a
-  payment that reaches settlement raises "A transaction is already begun on this Session." Must be
-  fixed before a workflow can run all the way to settlement.
-- **~35 other workflows (RTP/FedNow templates):** steps carry `step_type` but `target_token: null`
-  — genuinely unwired. Wiring node→rule/calc is a **domain decision** (which rule on which node),
-  not a code fix. Consider a wiring UI in the Workflow Designer.
+- **C1 (Major) — only real code item left.** Sanctions-list screening (`NOT_IN_SANCTION_LIST`
+  vs OFAC_SDN) is not implemented and no SDN data is loaded. The OFAC rule currently logs an
+  honest "manual screening required" instead of actually screening. Needs (a) a screening
+  capability — either a Python operator that joins beneficiary name/BIC against a sanctions
+  list, or an external API hook (ADR #8) — and (b) SDN reference data loaded (a static seeded
+  list is fine for dev). This is the next planned task.
+- **~35 RTP/FedNow workflow templates** carry `step_type` but `target_token: null` — genuinely
+  unwired. Wiring node→rule/calc is a **domain decision** (which rule on which node), not a
+  code fix. Consider a wiring UI in the Workflow Designer.
+
+(Previously listed: **A2** responsive overflow and **C2** settlement-node transaction handling —
+both RESOLVED in this batch. See "Landed & verified" above.)
 
 ## How to verify the in-tandem chain
 ```bash

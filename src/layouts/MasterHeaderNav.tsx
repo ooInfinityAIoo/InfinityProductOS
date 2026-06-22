@@ -43,7 +43,11 @@ export const MasterHeaderNav: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200/50 px-8 h-16 flex items-center justify-between shadow-glass">
+    // Responsive (Finding A2): below ~1024px the nav groups no longer fit on one row.
+    // min-height + flex-wrap drop them to a second row instead of clipping 'EXIT PACKAGE'
+    // off the right edge. overflow-x-auto is intentionally NOT used — it would create a
+    // scroll container that clips the absolutely-positioned dropdown menus.
+    <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-slate-200/50 px-4 lg:px-8 min-h-16 py-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 shadow-glass">
       <div className="flex items-center gap-6">
         <div 
           onClick={() => { setProductContext(null); setActiveModule('dashboard'); }}
