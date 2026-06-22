@@ -53,11 +53,20 @@ Tests: `test_business_rule_engine_adapter.py`, `test_calculation_engine_params.p
 
 ---
 
-## Headline next item — Transaction Workflow Screen
+## Headline next item — Transaction Workflow Screen (E0 IN PROGRESS)
 
 A full design spec is locked in `TRANSACTION_SCREEN_DESIGN.md` (repo root). This is the next major workstream and is the most important capability in the platform — every other studio exists so this screen can render and drive a transaction end-to-end.
 
-The spec covers: lifecycle state palette (12 states), metro tracker visual model, parallel branches (FORK/JOIN), sub-workflows, reversal (saga compensation), search (Postgres-first, ES-later), failure handling (retry/repair-queue/cancellation), data model migrations, and a 7-phase build plan (E0 → E6). Start at **E0** — data model migrations + new lifecycle states + `CANCEL_TRANSACTION` rule action. No UI until E0 lands.
+The spec covers: lifecycle state palette (12 states), metro tracker visual model, parallel branches (FORK/JOIN), sub-workflows, reversal (saga compensation), search (Postgres-first, ES-later), failure handling (retry/repair-queue/cancellation), data model migrations, and a 7-phase build plan (E0 → E6).
+
+### E0 progress
+- ✅ **Commit 1/N (`b90ee6e`)** — Data model: 15 new columns on `WorkflowNode` (failure handling + reversal) and `WorkflowExecutionInstance` (lifecycle telemetry). Migration script at `migrations/e0_001_transaction_workflow_columns.py` — idempotent, safe to re-run.
+- ✅ **Commit 2/N (`645ee2c`)** — `CANCEL_TRANSACTION` rule action added to the Business Rule Engine adapter. Engine emits `_cancelled` signal on context; **executor does not yet halt on it** (commit 3 wires this).
+- 🟡 **Commit 3/N (next)** — Executor halts on `_cancelled` and persists `WorkflowExecutionInstance` with `status='CANCELLED'`, `cancelled_by='rule'|'operator'|'system'`, mirroring the existing `_blocked` → `REJECTED` path from finding C3.
+- ⏳ **Commit 4/N** — Pydantic schemas (`WorkflowNodeCreate`, `WorkflowExecutionInstance` response) expose the new fields.
+- ⏳ **Commit 5/N** — Routers accept + return the new fields on `POST /workflows/` and `GET /workflows/instances/list`.
+
+E0 lifecycle pattern: small commits, each runnable + tested + pushed (CLAUDE.md Build Safety Protocol). 22/22 backend tests passing as of `645ee2c`.
 
 ## Other open items
 
