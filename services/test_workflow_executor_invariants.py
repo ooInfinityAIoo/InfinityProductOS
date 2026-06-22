@@ -13,9 +13,13 @@ class TestWorkflowExecutorInvariants(unittest.TestCase):
         # 1. Create a mocked Database Session
         self.mock_db = MagicMock()
         
-        # Mock the context manager for db.begin() so it safely executes in our test
+        # Mock the context manager for db.begin() / db.begin_nested() so it safely executes.
         self.mock_db.begin.return_value.__enter__.return_value = MagicMock()
-        
+        self.mock_db.begin_nested.return_value.__enter__.return_value = MagicMock()
+        # Default: no transaction active -> the financial guardrail uses db.begin().
+        # (Finding C2: when a transaction IS active the executor uses db.begin_nested().)
+        self.mock_db.in_transaction.return_value = False
+
         # 2. Construct a mock Workflow Configuration and Financial Node
         self.mock_workflow = MagicMock()
         self.mock_workflow.workflow_id = "WF-TEST-001"
@@ -77,6 +81,30 @@ class TestWorkflowExecutorInvariants(unittest.TestCase):
         # Verify the specific exception and trace log
         self.assertIn("Imbalanced transaction", str(exception_context.exception))
         self.assertIn("[FATAL_INVARIANT_ERROR]", self.executor.execution_trace[-1])
+
+    def test_active_transaction_uses_savepoint(self):
+        """
+        Finding C2: when a transaction is already active (the executor commits earlier in a
+        run, and SA 2.0 autobegins), the financial guardrail must open a SAVEPOINT via
+        db.begin_nested() instead of db.begin() — which would raise 'A transaction is already
+        begun on this Session.'
+        """
+        self.mock_db.in_transaction.return_value = True
+        context = {
+            "api_responses": {
+                "core_banking_api": {
+                    "legs": [
+                        {"type": "DEBIT", "amount": 1000.00},
+                        {"type": "CREDIT", "amount": 1000.00},
+                    ]
+                }
+            }
+        }
+        self.executor._execute_node_actions(self.mock_node, context)
+        # Savepoint used, NOT a fresh begin()
+        self.mock_db.begin_nested.assert_called_once()
+        self.mock_db.begin.assert_not_called()
+        self.assertIn("✓ Invariant State Verification Passed", self.executor.execution_trace[-1])
 
 if __name__ == '__main__':
     unittest.main()

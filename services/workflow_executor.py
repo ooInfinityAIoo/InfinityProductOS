@@ -834,7 +834,16 @@ class WorkflowExecutor:
             # All financial state changes for this node are executed within a single,
             # atomic database transaction. A failure will trigger a hard rollback.
             try:
-                with self.db.begin():
+                # WHY in_transaction() guard: a SQLAlchemy 2.0 Session autobegins a
+                # transaction on first use, and this executor calls db.commit() earlier in
+                # the run (persisting paused instances, broadcasting events). So by the time
+                # a payment reaches a SETTLE/POST_LEDGER node a transaction is usually already
+                # active, and self.db.begin() raises "A transaction is already begun on this
+                # Session." (Finding C2). Open a SAVEPOINT (begin_nested) inside the active
+                # transaction instead — same atomic-rollback semantics for the financial
+                # guardrail, no conflict. Only begin() a fresh transaction when none is open.
+                financial_txn = self.db.begin_nested() if self.db.in_transaction() else self.db.begin()
+                with financial_txn:
                     self.execution_trace.append("Entering Invariant State Verification Gate for financial node.")
                     # This implements the "Double-Entry Ledger Guardrail" specification.
                     self._validate_double_entry_ledger(node, context)

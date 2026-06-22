@@ -54,10 +54,13 @@ document gates. Regression tests: `test_business_rule_engine_adapter.py`,
 - **C1 (Major):** Sanctions-list screening (`NOT_IN_SANCTION_LIST` against OFAC_SDN) is not
   implemented and no SDN list data is loaded — the OFAC rule logs an honest "manual screening
   required" instead of actually screening. Needs a sanctions-screening capability + list data.
-- **C2 (Major):** SETTLE / POST_LEDGER nodes use `with db.begin():` but the executor also calls
-  `db.commit()` earlier in the same session, so reaching a settlement node after a prior commit
-  raises "A transaction is already begun on this Session." Financial-node session/transaction
-  management needs a fix before a payment can run all the way to settlement.
+- **C2 (Major) — RESOLVED.** SETTLE / POST_LEDGER nodes used `with db.begin():`, but the
+  executor commits earlier in the run and SA 2.0 autobegins, so reaching settlement raised
+  "A transaction is already begun on this Session." Fixed in `workflow_executor.py`: open a
+  SAVEPOINT via `db.begin_nested()` when a transaction is already active, else `db.begin()` —
+  same atomic-rollback semantics, no conflict. Verified: `WF-ECC2B272` now runs end-to-end to
+  STATUS=COMPLETED with the double-entry guardrail passing (Debits=Credits). New test
+  `test_active_transaction_uses_savepoint` in `test_workflow_executor_invariants.py`.
 - The broad statement below still holds for the *other* ~35 workflows (RTP/FedNow templates) —
   their steps carry `step_type` but `target_token: null`, so they remain genuinely unwired and
   need per-workflow wiring (a domain decision).
