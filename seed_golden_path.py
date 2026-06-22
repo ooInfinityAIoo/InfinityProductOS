@@ -199,7 +199,9 @@ rules = [
         "token": "BRE-XBDR-FX-STALE-V1",
         "desc": "Rejects the payment enrichment step if the provided FX rate is older than 15 minutes.",
         "definition": {
-            "conditions": [{"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.XchgRateAge_Mins", "operator": "LESS_THAN", "value": 15}],
+            # Semantics: this rule REJECTS the step when the rate is STALE (>= 15 min old),
+            # so the condition must fire when age_mins >= 15 — not <. Authoring was inverted.
+            "conditions": [{"field": "FIToFICstmrCdtTrf.CdtTrfTxInf.XchgRateAge_Mins", "operator": "GREATER_THAN_OR_EQUAL_TO", "value": 15}],
             "logical_operator": "AND",
             "actions": [
                 {"type": "REJECT_STEP", "message": "FX rate is stale (>15 minutes). Re-fetch current rate from treasury feed before proceeding."},

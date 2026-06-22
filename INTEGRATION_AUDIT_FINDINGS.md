@@ -73,11 +73,21 @@ document gates. Regression tests: `test_business_rule_engine_adapter.py`,
   the workflow as REJECTED. Audit/compliance signal is correct; the lifecycle gate is the next
   layer of work (executor change to halt on BLOCK actions). Tracked as **C3** below.
 
-- **C3 (Minor, lifecycle gating):** `BLOCK_PAYMENT` action is recorded by the rule engine but
-  the executor doesn't halt on it. A blocked payment currently completes through the DAG with
-  the block visible only in `_review_flags` / `_emitted_events`. Executor enhancement: after
-  rule evaluation at a node, if `_review_flags` includes a BLOCK or context contains a "blocked"
-  marker, terminate the workflow with `status=REJECTED` instead of traversing the next edge.
+- **C3 (Minor, lifecycle gating) — RESOLVED.** Executor now halts when the rule engine sets
+  `_blocked: True` on the context (which happens for `BLOCK_PAYMENT` or `REJECT_STEP` actions).
+  After `_execute_node_actions` returns, the executor persists a REJECTED `WorkflowExecutionInstance`
+  and returns `{status: REJECTED, blocked_at_node, blocks: [...], instance_id, final_context, trace}`
+  instead of traversing the next edge. Side benefits: surfaced **two more rule-authoring
+  inversions** that were previously hidden because the BLOCK was being ignored:
+    - OFAC rule: `NOT_IN_SANCTION_LIST` AND → `IN_SANCTION_LIST` OR (fixed in Finding C1)
+    - FX-stale rule: `LESS_THAN 15` → `GREATER_THAN_OR_EQUAL_TO 15` so it rejects when the rate
+      is STALE, not when it's FRESH. Patched in `seed_golden_path.py` and the running DB row.
+  Verified on `WF-ECC2B272`:
+    - Sanctioned + fresh FX → REJECTED at "AML & OFAC Screening" (`BLOCK_PAYMENT`)
+    - Clean + fresh FX → **COMPLETED** (audit flags emitted but no block — the in-tandem happy path)
+    - Clean + stale FX (30 min) → REJECTED at "FX Rate Enrichment" (`REJECT_STEP`)
+  2 new tests in `services/test_workflow_executor_block_halt.py` (halt + regression guard).
+  All 18 backend tests pass.
 - **C2 (Major) — RESOLVED.** SETTLE / POST_LEDGER nodes used `with db.begin():`, but the
   executor commits earlier in the run and SA 2.0 autobegins, so reaching settlement raised
   "A transaction is already begun on this Session." Fixed in `workflow_executor.py`: open a

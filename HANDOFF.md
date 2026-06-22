@@ -39,10 +39,17 @@ run **in tandem** at runtime. 9 commits, all on `origin/main` (latest `3a1b7b2`)
     (NOT_IN_SANCTION_LIST AND → IN_SANCTION_LIST OR). Verified end-to-end on the golden path:
     sanctioned beneficiary trips a recorded BLOCK + `EVT_OFAC_HIT_DETECTED`; clean payment is
     unaffected. 6 new sanctions tests.
+11. **Executor BLOCK halt + FX rule fix** (Finding C3) — executor now terminates with
+    `status=REJECTED` (persisting a REJECTED `WorkflowExecutionInstance`) when the rule engine
+    records a BLOCK_PAYMENT/REJECT_STEP action, instead of walking past it. The added rigor
+    surfaced the FX-stale rule's inverted authoring (`LESS_THAN 15` → `GREATER_THAN_OR_EQUAL_TO 15`)
+    — also fixed in seed and DB. Now: sanctioned + fresh FX → REJECTED at OFAC node; clean +
+    fresh FX → **COMPLETED** (true in-tandem happy path); clean + stale FX → REJECTED at FX node.
+    2 new tests; 18/18 backend tests pass.
 
-Tests: `services/test_business_rule_engine_adapter.py`, `services/test_calculation_engine_params.py`,
-`services/test_workflow_executor_invariants.py`, `services/test_sanctions_screening.py` — 16/16
-green. Frontend `tsc --noEmit` clean.
+Tests: `test_business_rule_engine_adapter.py`, `test_calculation_engine_params.py`,
+`test_workflow_executor_invariants.py`, `test_sanctions_screening.py`,
+`test_workflow_executor_block_halt.py` — 18/18 green. Frontend `tsc --noEmit` clean.
 
 ---
 
@@ -50,19 +57,13 @@ green. Frontend `tsc --noEmit` clean.
 
 See `INTEGRATION_AUDIT_FINDINGS.md` for full detail.
 
-- **C3 (Minor — lifecycle gating, next planned task):** the OFAC rule now correctly records a
-  `BLOCK_PAYMENT` action and emits `EVT_OFAC_HIT_DETECTED`, but the workflow executor still
-  walks past the node — a "blocked" payment completes through the DAG with the block visible
-  only in `_review_flags` / `_emitted_events`. Executor enhancement needed: after rule
-  evaluation at a node, if the rule engine recorded a BLOCK action, terminate the workflow
-  with `status=REJECTED` instead of traversing the next edge. Audit/compliance signal is
-  already correct; this is the lifecycle gate on top.
 - **~35 RTP/FedNow workflow templates** carry `step_type` but `target_token: null` — genuinely
   unwired. Wiring node→rule/calc is a **domain decision** (which rule on which node), not a
-  code fix. Consider a wiring UI in the Workflow Designer.
+  code fix. Consider a wiring UI in the Workflow Designer. This is the only real open item
+  in the integration audit.
 
 (Previously listed: **A2** responsive overflow, **C1** sanctions screening, **C2** settlement-node
-transaction handling — all RESOLVED in this batch. See "Landed & verified" above.)
+transaction handling, **C3** executor BLOCK halt — all RESOLVED. See "Landed & verified" above.)
 
 ## How to verify the in-tandem chain
 ```bash

@@ -974,7 +974,49 @@ class WorkflowExecutor:
                 try:
                     # Execute the node's primary actions, including governance checks
                     current_context = self._execute_node_actions(node, current_context)
-                    
+
+                    # --- LAYER 4: BLOCK_PAYMENT / REJECT_STEP HALT (Finding C3) ---
+                    # If a rule at this node recorded a BLOCK_PAYMENT or REJECT_STEP action, the
+                    # rule engine sets _blocked=True and pushes details to _blocks[]. Before C3
+                    # the executor still walked the next edge — the block was visible only as a
+                    # trace flag and a sanctioned payment could COMPLETE. Honor it now: terminate
+                    # the workflow with status=REJECTED, persist an audit instance, and return
+                    # the block reasons in the response so callers can act on them.
+                    if current_context.get("_blocked"):
+                        block_records = current_context.get("_blocks", []) or []
+                        primary_reason = (
+                            (block_records[0] or {}).get("message")
+                            if block_records else "Rule decision: payment blocked."
+                        )
+                        self.execution_trace.append(
+                            f"[REJECTED] Payment halted at node '{node.node_title}' — "
+                            f"{len(block_records)} block action(s) recorded. Primary reason: {primary_reason}"
+                        )
+                        import datetime
+                        instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+                        instance = models.WorkflowExecutionInstance(
+                            instance_id=instance_id,
+                            workflow_id=self.workflow.workflow_id,
+                            current_node_id=node.node_id,
+                            status="REJECTED",
+                            current_context=current_context,
+                            execution_trace=self.execution_trace,
+                            created_at=datetime.datetime.utcnow().isoformat(),
+                        )
+                        self.db.add(instance)
+                        self.db.commit()
+                        return {
+                            "status": "REJECTED",
+                            "workflow_id": self.workflow.workflow_id,
+                            "instance_id": instance_id,
+                            "final_context": self.masking_service.mask_pii_data(
+                                current_context, self.pii_field_properties
+                            ),
+                            "trace": self.execution_trace,
+                            "blocks": block_records,
+                            "blocked_at_node": node.node_title,
+                        }
+
                     # --- LAYER 4: RECURSIVE SUB-WORKFLOW PAUSE BUBBLING ---
                     if "__sub_workflow_paused__" in current_context:
                         sub_result = current_context.pop("__sub_workflow_paused__")
