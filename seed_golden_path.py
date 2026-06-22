@@ -270,9 +270,10 @@ nodes = [
      1, "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrBkSttlmDt", 850, 100),
 
     ("NODE-05", 5, "RTGS Settlement & GPI",     "SETTLE",
-     [{"action": "INVOKE_API",   "api_name": "SWIFT_GPI_TRACKER_POST",   "description": "Submit payment to SWIFT gpi and receive UETR"},
-      {"action": "INVOKE_API",   "api_name": "RTGS_SETTLEMENT_POST",     "description": "Confirm settlement via Bank of England RTGS"},
+     [{"action": "INVOKE_API",   "api_name": "SWIFT GPI Tracker — Submit Payment",       "description": "Submit payment to SWIFT gpi and receive UETR"},
+      {"action": "INVOKE_API",   "api_name": "Bank of England RTGS — Settlement Confirmation", "description": "Confirm settlement via Bank of England RTGS"},
       {"action": "EMIT_EVENT",   "event_code": "EVT_PAYMENT_SETTLED"}],
+
      ["EVT_PAYMENT_SETTLED"],
      ["SETTLEMENT_CONFIRMATION"],
      1, None, 1100, 100),

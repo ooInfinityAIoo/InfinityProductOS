@@ -247,14 +247,21 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
     merged_context = instance.current_context.copy()
     if payload.additional_context:
         merged_context.update(payload.additional_context)
+    # Tell the executor which existing instance to update on COMPLETED so it avoids
+    # creating a duplicate — the instance was already persisted at the PAUSED step.
+    merged_context["__resume_instance_id__"] = instance_id
 
     try:
         executor = WorkflowExecutor(db=db, workflow_id=workflow_id)
         result = executor.execute(initial_payload=merged_context, resume_from_node_id=instance.current_node_id, resume_trace=instance.execution_trace)
-        
-        instance.status = result.get("status", "FAILED")
-        instance.updated_at = datetime.datetime.utcnow().isoformat()
-        db.commit()
+
+        # Executor handles COMPLETED update internally via __resume_instance_id__.
+        # For non-COMPLETED terminal states (REJECTED, CANCELLED) sync the status here too.
+        new_status = result.get("status", "FAILED")
+        if new_status not in ("COMPLETED",):
+            instance.status = new_status
+            instance.updated_at = datetime.datetime.utcnow().isoformat()
+            db.commit()
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

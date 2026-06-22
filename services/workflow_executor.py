@@ -68,8 +68,11 @@ class WorkflowExecutor:
         self.rule_sets_by_token_code = cache.rule_sets_by_token_code
         self.recon_templates_by_id = cache.recon_templates_by_id
             
-        # Initialize unified outbound integration dispatcher
-        self.integration_dispatcher = IntegrationDispatcher(self.api_configs_by_id)
+        # Initialize unified outbound integration dispatcher (pass both indexes so steps can
+        # reference APIs by either UUID api_id or human-readable api_name)
+        self.integration_dispatcher = IntegrationDispatcher(
+            self.api_configs_by_id, cache.api_configs_by_name
+        )
 
         self.execution_trace = []
 
@@ -1159,5 +1162,52 @@ class WorkflowExecutor:
             trace_depth=trace_depth,
             correlation_id=correlation_id
         ), db=self.db))
-        
-        return {"status": "COMPLETED", "workflow_id": self.workflow.workflow_id, "final_context": masked_final_context, "trace": self.execution_trace}
+
+        # Persist a COMPLETED instance so operators can view the full execution trace
+        # in the Transaction Workflow Screen. Without this, successfully completed
+        # transactions have no DB record — the metro tracker would 404.
+        import datetime
+        completed_node_id = active_nodes[-1].node_id if active_nodes else (
+            list(self.nodes_by_id.keys())[-1] if self.nodes_by_id else None
+        )
+        # If resuming an existing instance, update it rather than creating a duplicate.
+        resume_instance_id = current_context.get("__resume_instance_id__")
+        if resume_instance_id:
+            existing = self.db.query(models.WorkflowExecutionInstance).filter(
+                models.WorkflowExecutionInstance.instance_id == resume_instance_id
+            ).first()
+            if existing:
+                existing.status = "COMPLETED"
+                existing.current_node_id = completed_node_id
+                existing.execution_trace = self.execution_trace
+                existing.current_context = current_context
+                existing.updated_at = datetime.datetime.utcnow().isoformat()
+                self.db.commit()
+                return {
+                    "status": "COMPLETED",
+                    "workflow_id": self.workflow.workflow_id,
+                    "instance_id": resume_instance_id,
+                    "final_context": masked_final_context,
+                    "trace": self.execution_trace,
+                }
+
+        completed_instance_id = f"WFI-{uuid.uuid4().hex[:12].upper()}"
+        self.db.add(models.WorkflowExecutionInstance(
+            instance_id=completed_instance_id,
+            workflow_id=self.workflow.workflow_id,
+            current_node_id=completed_node_id,
+            status="COMPLETED",
+            current_context=current_context,
+            execution_trace=self.execution_trace,
+            created_at=datetime.datetime.utcnow().isoformat(),
+            updated_at=datetime.datetime.utcnow().isoformat(),
+        ))
+        self.db.commit()
+
+        return {
+            "status": "COMPLETED",
+            "workflow_id": self.workflow.workflow_id,
+            "instance_id": completed_instance_id,
+            "final_context": masked_final_context,
+            "trace": self.execution_trace,
+        }

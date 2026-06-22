@@ -12,8 +12,12 @@ class IntegrationDispatcher:
     A dedicated utility to handle outbound API calls with enterprise resiliency patterns:
     Circuit Breakers, Token Bucket Rate Limiting, and automated PII Masking.
     """
-    def __init__(self, api_configs_by_id: Dict[str, models.ApiConfiguration]):
+    def __init__(self, api_configs_by_id: Dict[str, models.ApiConfiguration],
+                 api_configs_by_name: Dict[str, models.ApiConfiguration] = None):
         self.api_configs_by_id = api_configs_by_id
+        # Name-keyed secondary index: lets workflow steps reference APIs by api_name when
+        # api_id is not known at authoring time (e.g. steps authored before the API was seeded).
+        self.api_configs_by_name = api_configs_by_name or {}
 
     def execute_api_call(
         self,
@@ -29,9 +33,11 @@ class IntegrationDispatcher:
         logs = []
         generated_events = []
         
-        api_config = self.api_configs_by_id.get(api_id)
+        # Try primary lookup by api_id, then fall back to api_name.
+        # This lets nodes reference an API by either its UUID (preferred) or its human name.
+        api_config = self.api_configs_by_id.get(api_id) or self.api_configs_by_name.get(api_id)
         if not api_config:
-            logs.append(f"[WARN] API trigger '{api_id}' not found in API registry. Skipping.")
+            logs.append(f"[WARN] API trigger '{api_id}' not found by id or name in API registry. Skipping.")
             return False, logs, generated_events
 
         # Layer 6 Guardrail: PII Leakage Prevention for External API Calls.

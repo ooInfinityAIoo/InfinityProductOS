@@ -9,7 +9,11 @@ class AssetCache:
     dictionaries for high-speed, O(1) lookups during orchestration.
     """
     def __init__(self, db: Session):
-        self.api_configs_by_id = {a.api_id: a for a in db.query(models.ApiConfiguration).all()}
+        all_apis = db.query(models.ApiConfiguration).all()
+        self.api_configs_by_id = {a.api_id: a for a in all_apis}
+        # Secondary index by api_name so workflow steps can reference an API by either its
+        # UUID api_id or its human-readable api_name — both resolve to the same config object.
+        self.api_configs_by_name = {a.api_name: a for a in all_apis}
         self.formulas_by_token_code = {f.token_code: f for f in db.query(models.SymbolicFormulaAsset).all()}
         self.composite_formulas_by_token_code = {c.token_code: c for c in db.query(models.CompositeFormulaBlueprint).all()}
         self.rule_sets_by_token_code = {rs.token_code: rs for rs in db.query(models.BusinessRuleSet).all()}
