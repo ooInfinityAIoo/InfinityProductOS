@@ -69,6 +69,16 @@ no-op steps in production.
 
 **Severity:** Critical (business rules cannot fire as authored, even when correctly wired)
 
+**STATUS: RESOLVED** (Option 1 — engine-side adapter). `services/business_rule_engine.py`
+now normalizes the studio condition shape `{field, operator, value}` → engine
+`{left_hand_side, right_hand_side, operator}` and the studio action shape
+`{type, message/event_code}` → `{action_type, ...}` (incl. FLAG_FOR_REVIEW / EMIT_EVENT
+handling and an operator-alias map). Round-trip regression tests in
+`services/test_business_rule_engine_adapter.py` (studio-shape rule triggers above
+threshold with flags/events, doesn't below, operator aliases normalize, engine-native
+shape still works). The "Operand has no source fields." crash no longer occurs. The
+long-term question of standardizing the *stored* shape (Options 2/3) is deferred.
+
 **What:** The Business Rules studio authors/stores a condition as:
 ```json
 { "field": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstdAmt.Amt", "operator": "GREATER_THAN", "value": 500000 }
