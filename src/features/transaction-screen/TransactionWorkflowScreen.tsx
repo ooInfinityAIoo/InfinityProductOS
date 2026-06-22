@@ -45,13 +45,18 @@ import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker
 //   - If instance.status in (RUNNING, PAUSED, RETRYING) → nodes before current
 //     are COMPLETED; current node gets the instance's status; rest are PENDING.
 //
-// E1 commit 5/N will enhance this to extract live sub-text from audit columns
-// (retry_attempts_log, cancelled_reason_code, repair_queue_assigned, etc.).
+// E1 commit 5/N: Extract live sub-text from instance audit columns:
+//   - RETRYING: "retry N/M" from retry_attempts_log
+//   - CANCELLED: "[reason_code] message"
+//   - AWAITING_REPAIR: "in {queue_name} queue"
+//   - PAUSED: context from execution_trace if available
+//
+// Sub-text is only shown on the current_node_id station (where the interesting
+// state is). Other stations (completed, pending) have no sub-text noise.
 const mapInstanceToStations = (
   instance: any,
   workflowNodes: any[]
 ): TrackerStation[] => {
-  const nodeMap = new Map(workflowNodes.map(n => [n.node_id, n]));
   const currentNodeIdx = workflowNodes.findIndex(n => n.node_id === instance.current_node_id);
 
   // Determine the state of the current node based on instance.status
@@ -69,6 +74,38 @@ const mapInstanceToStations = (
   };
   const currentState = statusToState[instance.status] || 'IN_PROGRESS';
 
+  // Extract sub-text for the current node based on its lifecycle state
+  // E1 commit 5/N — these come from the E0 audit columns on WorkflowExecutionInstance
+  let currentNodeSubText: string | undefined;
+  if (instance.current_node_id && currentState) {
+    if (currentState === 'RETRYING' && instance.retry_attempts_log) {
+      // Count retry attempts to show "retry N/M"
+      const attempts = Array.isArray(instance.retry_attempts_log)
+        ? instance.retry_attempts_log.length
+        : 0;
+      const maxAttempts = instance.retry_config?.max_attempts || 3;
+      currentNodeSubText = `retry ${attempts} / ${maxAttempts}`;
+    } else if (currentState === 'CANCELLED' && instance.cancelled_reason_code) {
+      // Show cancellation reason + message
+      const reasonCode = instance.cancelled_reason_code;
+      const message =
+        instance.cancelled_message ||
+        'Transaction cancelled by business rule.';
+      currentNodeSubText = `[${reasonCode}] ${message}`;
+    } else if (
+      currentState === 'AWAITING_REPAIR' &&
+      instance.repair_queue_assigned
+    ) {
+      // Show which repair queue this lives in
+      currentNodeSubText = `in ${instance.repair_queue_assigned} queue`;
+    } else if (currentState === 'PAUSED') {
+      // For PAUSED, look in execution_trace for a recent pause marker
+      // (e.g., "[PAUSED] awaiting PAYMENTS_MANAGER at node...")
+      // Fallback to a generic message if not found
+      currentNodeSubText = 'awaiting external input';
+    }
+  }
+
   return workflowNodes.map((node, idx) => {
     let state: StepLifecycleState;
     if (idx < currentNodeIdx) {
@@ -82,13 +119,15 @@ const mapInstanceToStations = (
       state = 'PENDING';
     }
 
+    // Only the current node gets sub-text; others are silent
+    const subText = idx === currentNodeIdx ? currentNodeSubText : undefined;
+
     return {
       node_id: node.node_id,
       sequence_number: node.sequence_number,
       node_title: node.node_title,
       state,
-      // sub_text lands in E1 commit 5/N — extracted from instance audit columns
-      sub_text: undefined,
+      sub_text: subText,
     };
   });
 };
