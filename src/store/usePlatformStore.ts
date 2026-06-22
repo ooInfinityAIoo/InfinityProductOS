@@ -15,7 +15,10 @@ export interface PlatformState {
   userRole: UserRole;
   
   // --- Navigation & Routing State ---
-  activeModule: 'dashboard' | 'domain-dashboard' | 'global-technical-dashboard' | 'products-registry' | 'product-registry' | 'subproduct-registry' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'unstructured-document-studio' | 'file-template-designer' | 'entitlements' | 'comm-templates' | 'doc-checklists' | 'notification-engine' | 'batch-gateway-designer' | 'package-runtime' | 'runtime-transaction-shell' | 'legacy-onboarding' | 'queue-infrastructure' | 'authorization-matrix' | 'role-profiles' | 'user-profiles' | null;
+  // 'transaction-workflow-screen' is the new runtime operator UI added in E1
+  // (TRANSACTION_SCREEN_DESIGN.md §2) — the metro tracker for a single live
+  // transaction. Distinct from the legacy 'runtime-transaction-shell' (queue view).
+  activeModule: 'dashboard' | 'domain-dashboard' | 'global-technical-dashboard' | 'products-registry' | 'product-registry' | 'subproduct-registry' | 'workflow-designer' | 'business-rules' | 'calculation-engine' | 'dge-canvas' | 'api-designer' | 'screen-designer' | 'masters-config' | 'field-registry' | 'ingestion-pipeline' | 'ai-assistant' | 'insights-factory' | 'event-repository' | 'execution-audit' | 'behavioral-profiles' | 'reconciliation-engine' | 'recon-tracking' | 'report-designer' | 'unstructured-document-studio' | 'file-template-designer' | 'entitlements' | 'comm-templates' | 'doc-checklists' | 'notification-engine' | 'batch-gateway-designer' | 'package-runtime' | 'runtime-transaction-shell' | 'transaction-workflow-screen' | 'legacy-onboarding' | 'queue-infrastructure' | 'authorization-matrix' | 'role-profiles' | 'user-profiles' | null;
   viewMode: ViewMode;
   hasUnsavedChanges: boolean;
   isWizardOpen: boolean;

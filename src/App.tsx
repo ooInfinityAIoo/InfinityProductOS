@@ -39,6 +39,8 @@ const QueueInfrastructureStudio = lazy(() => import('./features/queue-infrastruc
 const AuthorizationMatrixStudio = lazy(() => import('./features/entitlements/AuthorizationMatrixStudio').then(m => ({ default: m.AuthorizationMatrixStudio })));
 const RoleProfileStudio = lazy(() => import('./features/entitlements/RoleProfileStudio').then(m => ({ default: m.RoleProfileStudio })));
 const UserProfileStudio = lazy(() => import('./features/entitlements/UserProfileStudio').then(m => ({ default: m.UserProfileStudio })));
+// E1 (TRANSACTION_SCREEN_DESIGN.md §2) — runtime operator UI: metro tracker for a single live transaction.
+const TransactionWorkflowScreen = lazy(() => import('./features/transaction-screen/TransactionWorkflowScreen').then(m => ({ default: m.TransactionWorkflowScreen })));
 
 function App() {
   const activeModule = usePlatformStore((state) => state.activeModule);
@@ -135,6 +137,7 @@ function App() {
           {activeModule === 'authorization-matrix' && <AuthorizationMatrixStudio />}
           {activeModule === 'role-profiles' && <RoleProfileStudio />}
           {activeModule === 'user-profiles' && <UserProfileStudio />}
+          {activeModule === 'transaction-workflow-screen' && <TransactionWorkflowScreen />}
           </StudioErrorBoundary>
         </Suspense>
       </main>
