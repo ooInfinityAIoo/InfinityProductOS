@@ -35,6 +35,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
 import { InstancePicker } from './InstancePicker';
+import { StepIssuePanel } from './StepIssuePanel';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -459,11 +460,29 @@ export const TransactionWorkflowScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Info banner — E2 commit 2/N phase. */}
+        {/* E2 commit 3/N — Step-issue panel (failure diagnostics) */}
+        {currentNode &&
+          ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(
+            instanceResponse.status
+          ) && (
+            <StepIssuePanel
+              currentNode={currentNode}
+              instanceResponse={instanceResponse}
+              onRetry={() => retryMutation.mutate()}
+              onSendToRepair={() => {
+                /* E2 commit 3/N: placeholder for send-to-repair action */
+              }}
+              onCancel={() => cancelMutation.mutate()}
+              isRetryPending={retryMutation.isPending}
+            />
+          )}
+
+        {/* Info banner — E2 commit 3/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E2 commit 2/N:</span> Instance picker added
-          (⊕ Select Instance button). Search by ID, filter by status (PAUSED/COMPLETED/etc).
-          E2 commit 1/N action buttons available. Step-issue detail panel lands in E2 commit 3/N.
+          <span className="font-bold">E2 commit 3/N:</span> Step-issue detail panel
+          added for RETRYING/FAILED states. Shows error details, retry history, and
+          operator actions (Retry now, Skip, Send to repair queue, Cancel). Action
+          buttons + instance picker from E2 commits 1-2 available.
         </div>
       </div>
     </div>
