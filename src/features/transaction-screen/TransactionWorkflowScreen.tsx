@@ -31,7 +31,7 @@
 // cancel). E3-E4 add REVERSAL. E5 adds SEARCH.
 
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
 
@@ -133,13 +133,12 @@ const mapInstanceToStations = (
 };
 
 export const TransactionWorkflowScreen: React.FC = () => {
-  // E1 commit 4/N: Live data binding. Operator selects an instance ID (via a picker
-  // landing in a future commit); useQuery fetches the instance from the GET endpoint
-  // (E1 commit 1/N), and the metro tracker renders it live.
-  //
-  // For now, we hard-code a demo instance ID to prove the wiring works.
-  // The instance picker (to allow navigating between transactions) lands later.
+  // E2 commit 1/N: Action buttons + operator workflows. Operators can approve, reject,
+  // retry, or cancel a transaction from this screen. Each action mutates the instance
+  // state via POST /workflows/{id}/resume or specialized action endpoints.
   const [selectedInstanceId] = useState<string | null>('WFI-ECC2B272');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: instanceResponse, isLoading, error } = useQuery({
     queryKey: ['workflow-instance', selectedInstanceId],
@@ -156,6 +155,93 @@ export const TransactionWorkflowScreen: React.FC = () => {
     if (!instanceResponse || !instanceResponse.workflow_nodes) return [];
     return mapInstanceToStations(instanceResponse, instanceResponse.workflow_nodes);
   }, [instanceResponse]);
+
+  // E2 commit 1/N — Approve mutation (PAUSED → resume with approval decision)
+  // WHY THIS EXISTS: HUMAN_APPROVAL nodes pause the workflow waiting for operator
+  // decision. Approve sends that decision back to the engine, resuming execution.
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { decision: 'approve', approver_id: 'current_user' } // simplified for E2
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      // Refetch instance to see updated state
+      queryClient.invalidateQueries({
+        queryKey: ['workflow-instance', selectedInstanceId],
+      });
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(`Approve failed: ${String(err)}`);
+    },
+  });
+
+  // E2 commit 1/N — Reject mutation (PAUSED → resume with rejection decision)
+  const rejectMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { decision: 'reject', reason: 'Rejected by operator' }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['workflow-instance', selectedInstanceId],
+      });
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(`Reject failed: ${String(err)}`);
+    },
+  });
+
+  // E2 commit 1/N — Retry mutation (RETRYING/FAILED → retry the step)
+  const retryMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { action: 'retry' }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['workflow-instance', selectedInstanceId],
+      });
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(`Retry failed: ${String(err)}`);
+    },
+  });
+
+  // E2 commit 1/N — Cancel mutation (any step → terminate transaction with reason)
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { action: 'cancel_transaction', reason: 'Cancelled by operator' }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['workflow-instance', selectedInstanceId],
+      });
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(`Cancel failed: ${String(err)}`);
+    },
+  });
 
   // LOADING STATE
   if (isLoading) {
@@ -250,36 +336,98 @@ export const TransactionWorkflowScreen: React.FC = () => {
           <MetroTracker stations={stations} />
         </div>
 
+        {/* Error banner — E2 action errors */}
+        {actionError && (
+          <div className="mt-4 p-3 rounded-lg bg-red-50/40 border border-red-200/50 text-[11px] text-red-900">
+            <span className="font-bold">Action error:</span> {actionError}
+          </div>
+        )}
+
         {/* Current step details — populated from the instance's current_node_id */}
         {currentNode && (
           <div className="mt-6 p-4 rounded-xl bg-slate-50/50 border border-slate-200/60">
-            <div className="text-[12px] text-slate-600">
-              <span className="font-bold">
-                {currentNode.sequence_number}. {currentNode.node_title}
-              </span>
+            <div className="flex items-start justify-between mb-3">
+              <div className="text-[12px] text-slate-600">
+                <span className="font-bold">
+                  {currentNode.sequence_number}. {currentNode.node_title}
+                </span>
+                {instanceResponse.status === 'PAUSED' && (
+                  <span className="ml-2 text-slate-500">(paused)</span>
+                )}
+                {instanceResponse.status === 'RETRYING' && (
+                  <span className="ml-2 text-slate-500">(retrying)</span>
+                )}
+                <br />
+                <span className="text-slate-500 text-[11px] mt-2 block">
+                  {instanceResponse.status === 'PAUSED'
+                    ? 'Awaiting your decision to proceed.'
+                    : instanceResponse.status === 'RETRYING'
+                    ? 'Automatic retry in progress. You can retry now or skip this step.'
+                    : 'Step is executing.'}
+                </span>
+              </div>
+            </div>
+
+            {/* E2 commit 1/N — Action buttons */}
+            <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-slate-200/50">
+              {/* Approve button — PAUSED state only */}
               {instanceResponse.status === 'PAUSED' && (
-                <span className="ml-2 text-slate-500">(paused)</span>
+                <button
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200 text-green-700 text-[11px] font-semibold hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span>✓</span>
+                  {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                </button>
               )}
-              {instanceResponse.status === 'RETRYING' && (
-                <span className="ml-2 text-slate-500">(retrying)</span>
+
+              {/* Reject button — PAUSED state only */}
+              {instanceResponse.status === 'PAUSED' && (
+                <button
+                  onClick={() => rejectMutation.mutate()}
+                  disabled={rejectMutation.isPending}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span>✕</span>
+                  {rejectMutation.isPending ? 'Rejecting...' : 'Reject'}
+                </button>
               )}
-              <br />
-              <span className="text-slate-500 text-[11px] mt-2 block">
-                {instanceResponse.status === 'PAUSED'
-                  ? 'Awaiting human decision or external signal.'
-                  : instanceResponse.status === 'RETRYING'
-                  ? 'Automatic retry in progress.'
-                  : 'Step is executing.'}
-              </span>
+
+              {/* Retry button — RETRYING or FAILED states */}
+              {(instanceResponse.status === 'RETRYING' ||
+                instanceResponse.status === 'FAILED_TECHNICAL') && (
+                <button
+                  onClick={() => retryMutation.mutate()}
+                  disabled={retryMutation.isPending}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span>↻</span>
+                  {retryMutation.isPending ? 'Retrying...' : 'Retry now'}
+                </button>
+              )}
+
+              {/* Cancel button — always available if cancellable */}
+              {currentNode.cancellable && (
+                <button
+                  onClick={() => cancelMutation.mutate()}
+                  disabled={cancelMutation.isPending}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-700 text-[11px] font-semibold hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span>×</span>
+                  {cancelMutation.isPending ? 'Cancelling...' : 'Cancel'}
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* Info banner — E1 commit 4/N phase. Removed in 5/N when live sub-text lands. */}
-        <div className="mt-4 p-3 rounded-lg bg-green-50/40 border border-green-200/50 text-[11px] text-green-900">
-          <span className="font-bold">E1 commit 4/N:</span> Live data binding via
-          GET /workflows/instances/{'{id}'} working. Metro tracker renders live instance
-          status. Live sub-text (retry counts, cancel reasons) lands in commit 5/N.
+        {/* Info banner — E2 commit 1/N phase. Documents what's being added here. */}
+        <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
+          <span className="font-bold">E2 commit 1/N:</span> Action buttons added
+          (Approve/Reject for PAUSED, Retry for failures, Cancel for any step).
+          All buttons wire to POST /workflows/{'{id}'}/resume with appropriate payload.
+          Step-issue detail panel lands in E2 commit 3/N.
         </div>
       </div>
     </div>
