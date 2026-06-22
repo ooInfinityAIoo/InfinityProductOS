@@ -41,6 +41,39 @@ Or if multiple commits need undoing, tell the user exactly what will happen befo
 
 ---
 
+## ⚠️ Build Safety Protocol — Token-Cap Resilient (Mandatory for Every Build Session)
+
+The user (PM) works against a weekly token budget across two AI developers. A session can end abruptly at any point. These rules make the codebase resilient to mid-stream cutoffs — no matter when a session stops, the repo is always in a runnable, pushed state and the next session can pick up cleanly from `HANDOFF.md` + `git log`.
+
+### Rule 1 — Smallest commit that leaves the tree green
+The unit of work is **"smallest commit that runs"**, not "phase complete." A multi-step phase (like E0 — data migration + model classes + executor updates + new rule action) becomes 4–6 separate commits, each runnable on its own. Backend imports without errors, frontend `tsc --noEmit` passes, existing tests pass, DB schema is fully applied OR fully not — never half.
+
+### Rule 2 — Push immediately after every commit
+`git commit && git push origin main` is one operation. Never let a green commit sit unpushed. The cost of being interrupted between commit and push is the same as the cost of being interrupted between two commits.
+
+### Rule 3 — Checkpoint before destructive operations
+Migrations, file renames, large refactors, deletes. Always commit + push the **last clean state** immediately before starting a destructive operation. Worst case: `git revert HEAD` and we're back to safe.
+
+### Rule 4 — Proactive HANDOFF.md update when the session is deep
+When the conversation has been long or the user signals end-of-session, **before doing anything else**, commit + push, then update `HANDOFF.md` with one line on:
+- What the last commit did
+- What the next step is
+- Any files left open (should be none)
+
+Push that. Any future session — yours, Gemini's, or a cold restart — picks up by reading 1 file.
+
+### Rule 5 — Respect token-budget hints from the user
+If the user says "do as much as you can but pace for safety" or gives an explicit budget, prioritize **safe checkpoints over completing a phase**. End the session on a green commit + HANDOFF update rather than charging through to "done."
+
+### What never happens
+- A new commit is started before the previous one is pushed.
+- A migration or destructive operation runs from an uncommitted state.
+- A session ends with uncommitted changes in the working tree.
+- A session ends with commits unpushed.
+- Git history is rewritten (reset, rebase, force-push) without explicit user authorization for the specific operation.
+
+---
+
 ## ⚠️ Code Comment Standard — "Quick X-Ray" (Mandatory for Every File Touched)
 
 This codebase is built by two AI developers (Claude + Gemini) for a Product Manager who is not a developer. Every file must be readable like an X-ray — any AI or human picking it up cold should instantly understand WHY something exists, not just what it does.
