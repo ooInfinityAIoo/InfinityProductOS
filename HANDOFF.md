@@ -53,7 +53,46 @@ Tests: `test_business_rule_engine_adapter.py`, `test_calculation_engine_params.p
 
 ---
 
-## Headline next item — Transaction Workflow Screen E4+E5 COMPLETE (E6 remaining)
+## 🎉 Transaction Workflow Screen — E0 through E6 COMPLETE
+
+All 7 phases of the Transaction Workflow Screen are shipped and on `origin/main`.
+Latest commit: `40ace95`. 25/25 backend tests pass. Frontend `tsc --noEmit` clean.
+
+### E6 — SLA badges, bulk ops, keyboard shortcuts — ✅ COMPLETE
+
+- ✅ **Commit 1/N (`493df5e`)** — SLA badges on MetroTracker (amber corner dot >75% elapsed, red = breached). `TrackerStation` gets `sla_warning` + `sla_breached`. Computed from `node.slaDuration` vs `instance.created_at` in `mapInstanceToStations`. Auto-refresh: `refetchInterval` polls every 10s for active instances, stops for terminal states. Live/refreshing pulse dot in instance header.
+- ✅ **Commit 2/N (`5da29b7`)** — `BulkOperationsPanel.tsx`: select-all or individual checkbox on PAUSED/RETRYING/AWAITING_REPAIR/FAILED instances, choose Approve/Retry/Cancel, run sequentially with per-row progress. "Bulk" button in TWS header.
+- ✅ **Commit 3/N (`40ace95`)** — ⌘K / Ctrl+K opens search from anywhere. Esc closes all panels. Search button shows ⌘K hint.
+
+### Complete operator capability matrix (E0–E6)
+
+| Capability | Phase | Status |
+|---|---|---|
+| View metro tracker (12 lifecycle states) | E1 | ✅ |
+| Live sub-text (retry counts, cancel reasons, queue names) | E1 | ✅ |
+| Navigate — recent quick-picker | E2 | ✅ |
+| Act — approve / reject / cancel | E2 | ✅ |
+| Retry failed steps | E2 | ✅ |
+| Diagnose — step issue panel with error + retry history | E2 | ✅ |
+| Reverse — saga compensation + 4-eye approval | E3 | ✅ |
+| Parallel branch visualization (FORK/JOIN dashed tracks) | E4 | ✅ |
+| Reversal recipe authoring in Workflow Designer | E4 | ✅ |
+| Search millions of transactions (multi-field) | E5 | ✅ |
+| SLA breach badges (amber/red corner dot on stations) | E6 | ✅ |
+| Auto-refresh every 10s for active instances | E6 | ✅ |
+| Bulk approve / retry / cancel N transactions | E6 | ✅ |
+| ⌘K search shortcut, Esc close | E6 | ✅ |
+
+### What remains (E7 — future, not committed)
+
+- Entitlements enforcement (operators see only their team's transactions — needs backend RBAC column + middleware)
+- Reversal Recovery Queue backend endpoint (`GET /workflows/reversal-recovery-queue` — the frontend component exists in E4 commit 1/N but the endpoint returns 404)
+- SLA breach alerting (push notification / Slack when SLA breached — needs notification engine wiring)
+- Mobile-responsive metro tracker (current SVG is desktop-width)
+
+---
+
+## Previous session — Transaction Workflow Screen E4+E5 COMPLETE (E6 remaining)
 
 ### E4 — parallel branch visualization + reversal authoring — ✅ COMPLETE
 
