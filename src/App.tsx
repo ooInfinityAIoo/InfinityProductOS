@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { MasterHeaderNav } from './layouts/MasterHeaderNav';
 import { usePlatformStore } from './store/usePlatformStore';
+import { StudioErrorBoundary } from './components/StudioErrorBoundary';
 
 // Phase 1 Decomposition: Lazy loading the studios to split the Monolithic bundle
 const HomeDashboard = lazy(() => import('./features/dashboard/HomeDashboard').then(m => ({ default: m.HomeDashboard })));
@@ -59,6 +60,9 @@ function App() {
             <span className="text-xs font-bold tracking-widest uppercase text-slate-400">Loading Studio Module...</span>
           </div>
         }>
+          {/* key={activeModule}: remounts the boundary on every studio switch so a
+              crash in one studio is cleared the moment the user navigates elsewhere. */}
+          <StudioErrorBoundary key={activeModule ?? 'none'} moduleName={activeModule ?? 'studio'}>
           {activeModule === 'dashboard' && (
             <HomeDashboard />
           )}
@@ -131,6 +135,7 @@ function App() {
           {activeModule === 'authorization-matrix' && <AuthorizationMatrixStudio />}
           {activeModule === 'role-profiles' && <RoleProfileStudio />}
           {activeModule === 'user-profiles' && <UserProfileStudio />}
+          </StudioErrorBoundary>
         </Suspense>
       </main>
     </div>
