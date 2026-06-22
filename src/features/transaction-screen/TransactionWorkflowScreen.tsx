@@ -30,59 +30,147 @@
 // current-step details, live sub-text). E2 adds ACTIONS (approve, reject, retry,
 // cancel). E3-E4 add REVERSAL. E5 adds SEARCH.
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
 
-export const TransactionWorkflowScreen: React.FC = () => {
-  // E1 commit 3/N: Demo workflow data covering all 12 lifecycle states.
-  // Each station represents a node in the workflow; the state dictates its color,
-  // icon, and sub-text. This demo proves the metro tracker renders all states
-  // correctly before live data binding (commit 4/N) wires to the API.
-  //
-  // A real transaction would come from GET /workflows/instances/{instance_id}
-  // (landed in commit 1/N); for this demo we hardcode a rich example.
-  const demoStations: TrackerStation[] = [
-    {
-      node_id: 'NODE-1',
-      sequence_number: 1,
-      node_title: 'Ingest',
-      state: 'COMPLETED',
-    },
-    {
-      node_id: 'NODE-2',
-      sequence_number: 2,
-      node_title: 'AML & OFAC Screening',
-      state: 'COMPLETED',
-    },
-    {
-      node_id: 'NODE-3',
-      sequence_number: 3,
-      node_title: 'FX Rate Enrichment',
-      state: 'RETRYING',
-      sub_text: 'retry 2/3 · next in 28s',
-    },
-    {
-      node_id: 'NODE-4',
-      sequence_number: 4,
-      node_title: 'Dual Authorization',
-      state: 'PAUSED',
-      sub_text: 'awaiting PAYMENTS_MANAGER',
-    },
-    {
-      node_id: 'NODE-5',
-      sequence_number: 5,
-      node_title: 'RTGS Settlement',
-      state: 'PENDING',
-    },
-  ];
+// MAPPING FUNCTION: converts API instance response to metro tracker stations.
+// Maps the instance's current_node_id + workflow nodes to TrackerStation[].
+// WHAT BREAKS IF REMOVED: The metro tracker has no data source — can't render.
+//
+// Logic:
+//   - If instance.status in (COMPLETED, REJECTED, CANCELLED, REVERSED) → all prior
+//     nodes are green (COMPLETED). The terminal node gets the instance's status.
+//   - If instance.status in (RUNNING, PAUSED, RETRYING) → nodes before current
+//     are COMPLETED; current node gets the instance's status; rest are PENDING.
+//
+// E1 commit 5/N will enhance this to extract live sub-text from audit columns
+// (retry_attempts_log, cancelled_reason_code, repair_queue_assigned, etc.).
+const mapInstanceToStations = (
+  instance: any,
+  workflowNodes: any[]
+): TrackerStation[] => {
+  const nodeMap = new Map(workflowNodes.map(n => [n.node_id, n]));
+  const currentNodeIdx = workflowNodes.findIndex(n => n.node_id === instance.current_node_id);
 
-  // E1 commit 4/N will replace this with:
-  // const { data: instance } = useQuery({
-  //   queryKey: ['workflow-instance', selectedInstanceId],
-  //   queryFn: () => apiClient.get(`/workflows/instances/${selectedInstanceId}`)
-  // });
-  // const stations = mapInstanceToStations(instance);
-  const [_selectedInstanceId] = useState<string | null>('WFI-DEMO-001');
+  // Determine the state of the current node based on instance.status
+  const statusToState: Record<string, StepLifecycleState> = {
+    RUNNING: 'IN_PROGRESS',
+    PAUSED: 'PAUSED',
+    RETRYING: 'RETRYING',
+    AWAITING_REPAIR: 'AWAITING_REPAIR',
+    FAILED_TECHNICAL: 'FAILED_TECHNICAL',
+    COMPLETED: 'COMPLETED',
+    REJECTED: 'REJECTED',
+    BLOCKED: 'BLOCKED',
+    CANCELLED: 'CANCELLED',
+    REVERSED: 'REVERSED',
+  };
+  const currentState = statusToState[instance.status] || 'IN_PROGRESS';
+
+  return workflowNodes.map((node, idx) => {
+    let state: StepLifecycleState;
+    if (idx < currentNodeIdx) {
+      // Nodes before the current node are always completed
+      state = 'COMPLETED';
+    } else if (idx === currentNodeIdx) {
+      // Current node's state reflects the instance's lifecycle
+      state = currentState;
+    } else {
+      // Nodes after the current node are pending
+      state = 'PENDING';
+    }
+
+    return {
+      node_id: node.node_id,
+      sequence_number: node.sequence_number,
+      node_title: node.node_title,
+      state,
+      // sub_text lands in E1 commit 5/N — extracted from instance audit columns
+      sub_text: undefined,
+    };
+  });
+};
+
+export const TransactionWorkflowScreen: React.FC = () => {
+  // E1 commit 4/N: Live data binding. Operator selects an instance ID (via a picker
+  // landing in a future commit); useQuery fetches the instance from the GET endpoint
+  // (E1 commit 1/N), and the metro tracker renders it live.
+  //
+  // For now, we hard-code a demo instance ID to prove the wiring works.
+  // The instance picker (to allow navigating between transactions) lands later.
+  const [selectedInstanceId] = useState<string | null>('WFI-ECC2B272');
+
+  const { data: instanceResponse, isLoading, error } = useQuery({
+    queryKey: ['workflow-instance', selectedInstanceId],
+    queryFn: async () => {
+      if (!selectedInstanceId) return null;
+      const response = await apiClient.get(`/workflows/instances/${selectedInstanceId}`);
+      return response.data;
+    },
+    enabled: !!selectedInstanceId,
+  });
+
+  // Memoize the stations array so the metro tracker doesn't re-render unnecessarily
+  const stations = useMemo(() => {
+    if (!instanceResponse || !instanceResponse.workflow_nodes) return [];
+    return mapInstanceToStations(instanceResponse, instanceResponse.workflow_nodes);
+  }, [instanceResponse]);
+
+  // LOADING STATE
+  if (isLoading) {
+    return (
+      <div className="w-full flex flex-col gap-6 p-6">
+        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass h-[500px] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative flex items-center justify-center">
+              <div className="absolute w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+              <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center font-extrabold text-indigo-600 text-xs shadow-inner">
+                T
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-[12px] font-semibold text-slate-600">Fetching transaction...</div>
+              <div className="text-[11px] text-slate-500 mt-1">WFI-ECC2B272</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ERROR STATE
+  if (error || !instanceResponse) {
+    return (
+      <div className="w-full flex flex-col gap-6 p-6">
+        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-red-200/50 shadow-glass">
+          <div className="flex items-start gap-3">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center bg-red-50 text-red-600 font-extrabold text-xs flex-shrink-0 mt-0.5">
+              !
+            </div>
+            <div>
+              <h2 className="text-[13px] font-extrabold text-red-900">
+                Transaction not found
+              </h2>
+              <p className="text-[12px] text-red-700 mt-1">
+                Instance {selectedInstanceId} could not be loaded. The workflow may have
+                been archived or the ID is invalid.
+              </p>
+              <p className="text-[11px] text-red-600 mt-2 font-mono">
+                {error ? String(error) : 'Unknown error'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // LIVE DATA STATE
+  const currentNode = instanceResponse.workflow_nodes?.find(
+    (n: any) => n.node_id === instanceResponse.current_node_id
+  );
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
@@ -101,40 +189,58 @@ export const TransactionWorkflowScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Transaction header — would include UETR, customer, amount in commit 4/N. */}
+        {/* Transaction header — instance identity + status badge */}
         <div className="mb-4 pb-4 border-b border-slate-200/50">
-          <div className="text-[13px] text-slate-600">
-            <span className="font-medium">Demo instance:</span>{' '}
-            <span className="font-mono text-slate-400">WFI-DEMO-001</span>
+          <div className="flex items-center justify-between">
+            <div className="text-[13px] text-slate-600">
+              <span className="font-medium">Instance:</span>{' '}
+              <span className="font-mono text-slate-500">{instanceResponse.instance_id}</span>
+            </div>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
+              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+              <span className="text-[11px] font-semibold text-slate-700">
+                {instanceResponse.status}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Metro tracker — E1 commit 3/N. Renders all 12 lifecycle states from the
-            demoStations array. Color/icon language locked in design doc §2.1. */}
+        {/* Metro tracker — E1 commit 4/N live data. Renders the instance's workflow
+            with stations color-coded by their lifecycle state. */}
         <div className="mt-6">
-          <MetroTracker stations={demoStations} />
+          <MetroTracker stations={stations} />
         </div>
 
-        {/* Current step details — would come from instance.current_node_id in commit 4/N. */}
-        <div className="mt-6 p-4 rounded-xl bg-slate-50/50 border border-slate-200/60">
-          <div className="text-[12px] text-slate-600">
-            <span className="font-bold">Current step (demo):</span> Dual Authorization (paused)
-            <br />
-            <span className="text-slate-500">
-              Awaiting PAYMENTS_MANAGER approval. SLA 1h 23m of 4h.
-            </span>
+        {/* Current step details — populated from the instance's current_node_id */}
+        {currentNode && (
+          <div className="mt-6 p-4 rounded-xl bg-slate-50/50 border border-slate-200/60">
+            <div className="text-[12px] text-slate-600">
+              <span className="font-bold">
+                {currentNode.sequence_number}. {currentNode.node_title}
+              </span>
+              {instanceResponse.status === 'PAUSED' && (
+                <span className="ml-2 text-slate-500">(paused)</span>
+              )}
+              {instanceResponse.status === 'RETRYING' && (
+                <span className="ml-2 text-slate-500">(retrying)</span>
+              )}
+              <br />
+              <span className="text-slate-500 text-[11px] mt-2 block">
+                {instanceResponse.status === 'PAUSED'
+                  ? 'Awaiting human decision or external signal.'
+                  : instanceResponse.status === 'RETRYING'
+                  ? 'Automatic retry in progress.'
+                  : 'Step is executing.'}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Info banner for this demo phase. Removed in commit 4/N when live data lands. */}
-        <div className="mt-4 p-3 rounded-lg bg-amber-50/40 border border-amber-200/50 text-[11px] text-amber-900">
-          <span className="font-bold">E1 commit 3/N (demo):</span> Metro tracker rendering
-          all 12 lifecycle states. Live data binding to{' '}
-          <span className="font-mono bg-white px-1 py-0.5 rounded">
-            GET /workflows/instances/{'{id}'}
-          </span>{' '}
-          lands in commit 4/N. Live sub-text (retry counts, cancel reasons, queue names)
-          lands in commit 5/N.
+        {/* Info banner — E1 commit 4/N phase. Removed in 5/N when live sub-text lands. */}
+        <div className="mt-4 p-3 rounded-lg bg-green-50/40 border border-green-200/50 text-[11px] text-green-900">
+          <span className="font-bold">E1 commit 4/N:</span> Live data binding via
+          GET /workflows/instances/{'{id}'} working. Metro tracker renders live instance
+          status. Live sub-text (retry counts, cancel reasons) lands in commit 5/N.
         </div>
       </div>
     </div>
