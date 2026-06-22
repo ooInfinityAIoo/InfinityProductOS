@@ -34,6 +34,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
+import { InstancePicker } from './InstancePicker';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -136,8 +137,13 @@ export const TransactionWorkflowScreen: React.FC = () => {
   // E2 commit 1/N: Action buttons + operator workflows. Operators can approve, reject,
   // retry, or cancel a transaction from this screen. Each action mutates the instance
   // state via POST /workflows/{id}/resume or specialized action endpoints.
-  const [selectedInstanceId] = useState<string | null>('WFI-ECC2B272');
+  //
+  // E2 commit 2/N: Instance picker + navigation. Operators can search for and navigate
+  // between transactions. InstancePicker fetches recent/filtered instances from
+  // GET /workflows/instances/list and allows selecting one to view.
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('WFI-ECC2B272');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showInstancePicker, setShowInstancePicker] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: instanceResponse, isLoading, error } = useQuery({
@@ -299,19 +305,50 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col gap-6 p-6">
+      {/* E2 commit 2/N — Instance picker collapsible panel */}
+      {showInstancePicker && (
+        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-extrabold text-slate-800">Find a Transaction</h2>
+            <button
+              onClick={() => setShowInstancePicker(false)}
+              className="text-slate-500 hover:text-slate-700 text-lg leading-none"
+            >
+              ✕
+            </button>
+          </div>
+          <InstancePicker
+            selectedInstanceId={selectedInstanceId}
+            onSelect={(id) => {
+              setSelectedInstanceId(id);
+              setShowInstancePicker(false);
+            }}
+          />
+        </div>
+      )}
+
       <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 font-extrabold text-base shadow-inner">
-            T
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 font-extrabold text-base shadow-inner">
+              T
+            </div>
+            <div>
+              <h1 className="text-base font-extrabold text-slate-800 tracking-tight font-display">
+                Transaction Workflow Screen
+              </h1>
+              <p className="text-[11px] font-medium text-slate-500 mt-0.5">
+                Runtime view · Live metro tracker for a single transaction
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base font-extrabold text-slate-800 tracking-tight font-display">
-              Transaction Workflow Screen
-            </h1>
-            <p className="text-[11px] font-medium text-slate-500 mt-0.5">
-              Runtime view · Live metro tracker for a single transaction
-            </p>
-          </div>
+          {/* E2 commit 2/N — Instance selector button */}
+          <button
+            onClick={() => setShowInstancePicker(!showInstancePicker)}
+            className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
+          >
+            {showInstancePicker ? '✕ Close' : '⊕ Select Instance'}
+          </button>
         </div>
 
         {/* Transaction header — instance identity + status badge */}
@@ -422,12 +459,11 @@ export const TransactionWorkflowScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Info banner — E2 commit 1/N phase. Documents what's being added here. */}
+        {/* Info banner — E2 commit 2/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E2 commit 1/N:</span> Action buttons added
-          (Approve/Reject for PAUSED, Retry for failures, Cancel for any step).
-          All buttons wire to POST /workflows/{'{id}'}/resume with appropriate payload.
-          Step-issue detail panel lands in E2 commit 3/N.
+          <span className="font-bold">E2 commit 2/N:</span> Instance picker added
+          (⊕ Select Instance button). Search by ID, filter by status (PAUSED/COMPLETED/etc).
+          E2 commit 1/N action buttons available. Step-issue detail panel lands in E2 commit 3/N.
         </div>
       </div>
     </div>
