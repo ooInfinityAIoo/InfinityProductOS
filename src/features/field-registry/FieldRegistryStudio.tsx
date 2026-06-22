@@ -714,19 +714,23 @@ export const FieldRegistryStudio: React.FC = () => {
             className="px-2.5 py-1 text-[11px] font-bold border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40 transition-colors">
             ‹ Prev
           </button>
-          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-            let p = i;
-            if (totalPages > 7) {
-              const half = Math.floor(3);
-              p = Math.min(Math.max(page - half + i, 0), totalPages - 7 + i);
-            }
-            return (
-              <button key={p} onClick={() => setPage(p)}
-                className={`w-8 h-7 text-[11px] font-bold rounded transition-colors ${p === page ? 'bg-[#0176D3] text-white border border-blue-600' : 'border border-slate-300 bg-white hover:bg-slate-100 text-slate-600'}`}>
-                {p + 1}
-              </button>
-            );
-          })}
+          {(() => {
+            // Build a CONTIGUOUS window of page numbers centred on the current page.
+            // The previous per-index clamp produced duplicates near the edges
+            // (e.g. 0,0,0,0,1,2,3 → rendered "1 1 1 1 2 3 4" with duplicate React
+            // keys). Compute a single window start so every page number is unique.
+            const windowSize = Math.min(totalPages, 7);
+            const start = Math.max(0, Math.min(page - Math.floor(windowSize / 2), totalPages - windowSize));
+            return Array.from({ length: windowSize }, (_, i) => {
+              const p = start + i;
+              return (
+                <button key={p} onClick={() => setPage(p)}
+                  className={`w-8 h-7 text-[11px] font-bold rounded transition-colors ${p === page ? 'bg-[#0176D3] text-white border border-blue-600' : 'border border-slate-300 bg-white hover:bg-slate-100 text-slate-600'}`}>
+                  {p + 1}
+                </button>
+              );
+            });
+          })()}
           <button disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}
             className="px-2.5 py-1 text-[11px] font-bold border border-slate-300 rounded bg-white hover:bg-slate-100 disabled:opacity-40 transition-colors">
             Next ›
