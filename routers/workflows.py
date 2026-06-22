@@ -282,6 +282,12 @@ def list_workflow_instances(
     if instance_status:
         query = query.filter(models.WorkflowExecutionInstance.status == instance_status.upper())
     instances = query.order_by(models.WorkflowExecutionInstance.created_at.desc()).limit(limit).all()
+    # E0 commit 5/N — surface the new lifecycle audit columns (from E0 commit 1/N)
+    # so the Transaction Workflow Screen can render: the Cancelled / Repair Queue /
+    # Retry / Failed states with their reasons + audit metadata, and the runtime
+    # search index can populate WHY a transaction terminated. Older clients that
+    # only read the original 8 fields keep working — these are additive keys.
+    # See TRANSACTION_SCREEN_DESIGN.md §2.1 (state palette) + §8.2 (data model).
     return {
         "instances": [
             {
@@ -293,6 +299,14 @@ def list_workflow_instances(
                 "execution_trace": i.execution_trace,
                 "created_at": i.created_at,
                 "updated_at": i.updated_at,
+                # E0 audit columns — every key is nullable; clients should treat None as 'not set'.
+                "retry_attempts_log": i.retry_attempts_log,
+                "repair_queue_assigned": i.repair_queue_assigned,
+                "cancelled_by": i.cancelled_by,
+                "cancelled_reason_code": i.cancelled_reason_code,
+                "cancelled_message": i.cancelled_message,
+                "reversal_request_id": i.reversal_request_id,
+                "template_version_pinned": i.template_version_pinned,
             }
             for i in instances
         ],
