@@ -68,6 +68,19 @@ export const UnstructuredDocStudio: React.FC = () => {
   const { activeProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
 
+  // WHY THIS EXISTS: `activeProductContext` is the package NAME ("Payment Hub"),
+  // but the unstructured-docs API filters on package_id (PKG-XXXX). Passing the
+  // name as package_id silently matched zero rows — the studio always showed
+  // "No extraction blueprints yet". Resolve name → id via the packages master.
+  const { data: packagesData } = useQuery({
+    queryKey: ['packages'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+    enabled: !!activeProductContext,
+  });
+  const resolvedPackageId = packagesData?.packages?.find(
+    (p: any) => p.package_name === activeProductContext
+  )?.package_id ?? null;
+
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [profileFilter, setProfileFilter] = useState<ExtractionProfile | 'ALL'>('ALL');
@@ -86,11 +99,11 @@ export const UnstructuredDocStudio: React.FC = () => {
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: listData, isLoading } = useQuery({
-    queryKey: ['unstructured-blueprints', activeProductContext, profileFilter],
+    queryKey: ['unstructured-blueprints', resolvedPackageId, profileFilter],
     queryFn: async () => {
       let url = '/unstructured-docs/';
       const params: string[] = [];
-      if (activeProductContext) params.push(`package_id=${activeProductContext}`);
+      if (resolvedPackageId) params.push(`package_id=${resolvedPackageId}`);
       if (profileFilter !== 'ALL') params.push(`extraction_profile=${profileFilter}`);
       if (params.length) url += '?' + params.join('&');
       return (await apiClient.get(url)).data;
@@ -126,7 +139,7 @@ export const UnstructuredDocStudio: React.FC = () => {
   const createMutation = useMutation({
     mutationFn: async () => apiClient.post('/unstructured-docs/', {
       ...draft,
-      application_package_id: activeProductContext || undefined,
+      application_package_id: resolvedPackageId || undefined,
       ai_extraction_config: buildConfig(),
     }),
     onSuccess: () => {
@@ -265,8 +278,13 @@ export const UnstructuredDocStudio: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {blueprints.map((b: any) => {
-              const statusMeta = STATUS_META[b.status as LifecycleStatus];
-              const profileMeta = PROFILE_META[b.extraction_profile as ExtractionProfile];
+              // Defensive lookups: a record with an unknown status or a malformed
+              // extraction_profile (e.g. legacy data where the profile column holds a
+              // JSON rules blob) must not crash the whole studio.
+              const statusMeta = STATUS_META[b.status as LifecycleStatus]
+                ?? { color: 'bg-slate-100 text-slate-500', label: b.status || 'Unknown' };
+              const profileMeta = PROFILE_META[b.extraction_profile as ExtractionProfile]
+                ?? { icon: '📦', label: 'Custom', color: 'bg-slate-50 border-slate-200', desc: '' };
               const ruleCount = b.extraction_profile === 'PDF_AGENTIC'
                 ? (b.ai_extraction_config?.sections?.length ?? 0)
                 : (b.ai_extraction_config?.extraction_rules?.length ?? 0);

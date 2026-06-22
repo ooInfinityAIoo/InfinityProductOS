@@ -39,6 +39,58 @@ def list_event_definitions(skip: int = 0, limit: int = 200, db: Session = Depend
     events = db.query(models.EventDefinition).order_by(models.EventDefinition.event_type).offset(skip).limit(limit).all()
     return events
 
+# ── Event Bus Observability ────────────────────────────────────────────────
+# WHY THESE EXIST: The Event Repository Studio polls /events/status, /events/stats
+# and /events/recent to render the live topology, KPI cards and "neural fire trace".
+# These routes MUST be declared BEFORE the DELETE "/{event_type}" route below —
+# otherwise FastAPI matches /status, /stats, /recent against the "{event_type}"
+# path (which only allows DELETE) and every GET returns 405 Method Not Allowed.
+# That collision is exactly why the studio showed "No events registered".
+
+@router.get("/status", summary="Event Bus Topology & Subscribers")
+def event_bus_status(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Returns the live event topology the studio renders:
+      { listeners: { <EVENT_TYPE>: [ { callback_name } ] } }
+
+    Each registered event maps to the module that handles/emits it (its
+    source_module). In local dev there is no runtime subscriber ledger, so the
+    registered handler module is surfaced as the event's callback hook — this is
+    real registry data, not a fabricated runtime count.
+    """
+    defs = db.query(models.EventDefinition).order_by(models.EventDefinition.event_type).all()
+    listeners = {
+        d.event_type: ([{"callback_name": d.source_module}] if d.source_module else [])
+        for d in defs
+    }
+    return {"listeners": listeners, "registered_event_types": len(defs)}
+
+
+@router.get("/stats", summary="Event Broadcast Frequencies")
+def event_bus_stats(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Returns broadcast frequencies keyed by event type:
+      { total_events_broadcast, events_by_type: { <EVENT_TYPE>: count } }
+
+    NOTE: Local dev has no immutable broadcast ledger, so runtime fire counts are
+    reported as 0 rather than fabricated. The registry (event_type keys) is real;
+    counts populate once the Kafka event bus is wired in a deployed environment.
+    """
+    defs = db.query(models.EventDefinition).all()
+    events_by_type = {d.event_type: 0 for d in defs}
+    return {"total_events_broadcast": 0, "events_by_type": events_by_type}
+
+
+@router.get("/recent", summary="Recent Live Event Broadcasts")
+def recent_events(limit: int = 50, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    Returns the most recent event broadcasts for the live "neural fire trace".
+    No broadcast ledger exists in local dev, so this returns an empty list — the
+    panel shows its idle state rather than 405-ing the whole studio.
+    """
+    return {"events": [], "limit": limit}
+
+
 @router.delete("/{event_type}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an Event Definition")
 def delete_event_definition(event_type: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """

@@ -354,6 +354,12 @@ export const InsightsFactoryStudio: React.FC = () => {
     queryKey: ['insights'],
     queryFn: async () => (await apiClient.get('/insights/')).data,
   });
+  // WHY: GET /insights/ returns a bare array (List[InsightDefinitionResponse]),
+  // not an {insights: [...]} envelope. Reading `.insights` off an array always
+  // yielded undefined → the studio showed "No insights yet" despite live data.
+  const insightsList: any[] = Array.isArray(insightsData)
+    ? insightsData
+    : (insightsData?.insights ?? []);
 
   const { data: packagesData } = useQuery({
     queryKey: ['product-packages'],
@@ -597,13 +603,13 @@ export const InsightsFactoryStudio: React.FC = () => {
             <div className="flex justify-center mt-10">
               <div className="w-6 h-6 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
             </div>
-          ) : insightsData?.insights?.length === 0 || !insightsData?.insights ? (
+          ) : insightsList.length === 0 ? (
             <div className="text-center mt-10">
               <Lightbulb size={32} className="mx-auto text-slate-200 mb-3" />
               <p className="text-[11px] text-slate-400 font-medium">No insights yet.</p>
               <p className="text-[10px] text-slate-300">Use a template or create from scratch.</p>
             </div>
-          ) : insightsData.insights.map((insight: any) => (
+          ) : insightsList.map((insight: any) => (
             <div
               key={insight.insight_id}
               onClick={() => { setSelectedInsight(insight); setIsCreating(false); }}

@@ -851,12 +851,17 @@ for bp_id, bp_name, desc, fields in blueprints:
             blueprint_id=bp_id,
             blueprint_name=bp_name,
             description=desc,
-            extraction_profile=json.dumps({"mode": "AI_EXTRACT", "layout": "UNSTRUCTURED"}),
-            ai_extraction_config=json.dumps({
+            # extraction_profile MUST be one of the studio's enum values
+            # (PDF_STRUCTURED | PDF_AGENTIC | IMAGE_OCR). Storing a JSON blob here
+            # left PROFILE_META[...] undefined and crashed the whole studio render.
+            extraction_profile="PDF_AGENTIC",
+            # Store config as a real object (not a JSON string) so the UI can read
+            # ai_extraction_config.sections directly for the rule/section count.
+            ai_extraction_config={
                 "model": "claude-sonnet-4-6",
-                "prompt_template": f"Extract the following fields from this document: {', '.join(fields)}",
+                "sections": [{"section_name": f, "fields": [{"field_name": f}]} for f in fields],
                 "output_format": "JSON",
-            }),
+            },
             confidence_threshold=0.85,
             fallback_mode="HUMAN_REVIEW",
             application_package_id=PKG_ID,
