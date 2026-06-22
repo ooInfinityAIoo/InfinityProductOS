@@ -39,6 +39,7 @@ import { StepIssuePanel } from './StepIssuePanel';
 import { ReversalDrawer } from './ReversalDrawer';
 import { TransactionSearch } from './TransactionSearch';
 import { BulkOperationsPanel } from './BulkOperationsPanel';
+import { RunTransactionModal } from './RunTransactionModal';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -193,7 +194,8 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [showInstancePicker, setShowInstancePicker] = useState(false);
   // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
   const [showSearch, setShowSearch]       = useState(false);
-  const [showBulkOps, setShowBulkOps]       = useState(false);
+  const [showBulkOps, setShowBulkOps]     = useState(false);
+  const [showRunModal, setShowRunModal]   = useState(false);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -443,6 +445,15 @@ export const TransactionWorkflowScreen: React.FC = () => {
       )}
 
       {/* E6 commit 2/N — Bulk operations panel */}
+      {showRunModal && (
+        <RunTransactionModal
+          onClose={() => setShowRunModal(false)}
+          onInstanceCreated={(id) => {
+            setSelectedInstanceId(id);
+            setShowRunModal(false);
+          }}
+        />
+      )}
       {showBulkOps && (
         <BulkOperationsPanel onClose={() => setShowBulkOps(false)} />
       )}
@@ -473,8 +484,15 @@ export const TransactionWorkflowScreen: React.FC = () => {
               </p>
             </div>
           </div>
-          {/* E2/E5/E6 — Instance picker + full search + bulk ops */}
+          {/* E2/E5/E6/E7 — Run + Instance picker + full search + bulk ops */}
           <div className="flex gap-2 flex-wrap justify-end">
+            {/* ▶ Run Transaction — fires a real workflow execution end-to-end */}
+            <button
+              onClick={() => { setShowRunModal(true); setShowSearch(false); setShowBulkOps(false); setShowInstancePicker(false); }}
+              className="px-3 py-2 rounded-lg border border-green-400 text-green-700 bg-green-50 text-[11px] font-bold hover:bg-green-100 transition-colors whitespace-nowrap"
+            >
+              ▶ Run
+            </button>
             <button
               onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); setShowBulkOps(false); }}
               className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
