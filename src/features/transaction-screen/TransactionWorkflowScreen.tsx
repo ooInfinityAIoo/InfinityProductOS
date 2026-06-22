@@ -36,6 +36,7 @@ import { apiClient } from '../../api/client';
 import { MetroTracker, TrackerStation, StepLifecycleState } from './MetroTracker';
 import { InstancePicker } from './InstancePicker';
 import { StepIssuePanel } from './StepIssuePanel';
+import { ReversalDrawer } from './ReversalDrawer';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -145,6 +146,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('WFI-ECC2B272');
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
+  const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: instanceResponse, isLoading, error } = useQuery({
@@ -247,6 +249,33 @@ export const TransactionWorkflowScreen: React.FC = () => {
     },
     onError: (err) => {
       setActionError(`Cancel failed: ${String(err)}`);
+    },
+  });
+
+  // E3 commit 2/N — Reversal mutation (reverse a completed step via saga compensation)
+  const reversalMutation = useMutation({
+    mutationFn: async (payload: { reason: string; category: string }) => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        {
+          action: 'reverse_step',
+          node_id: reversalNodeId,
+          reason: payload.reason,
+          category: payload.category,
+        }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['workflow-instance', selectedInstanceId],
+      });
+      setReversalNodeId(null);
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(`Reversal failed: ${String(err)}`);
     },
   });
 
@@ -477,12 +506,34 @@ export const TransactionWorkflowScreen: React.FC = () => {
             />
           )}
 
-        {/* Info banner — E2 commit 3/N phase. */}
+        {/* E3 commit 2/N — Reversal Drawer (saga compensation) */}
+        {reversalNodeId && (
+          <ReversalDrawer
+            nodeId={reversalNodeId}
+            nodeTitle={
+              instanceResponse.workflow_nodes?.find((n: any) => n.node_id === reversalNodeId)
+                ?.node_title || 'Unknown'
+            }
+            reversibility={
+              instanceResponse.workflow_nodes?.find((n: any) => n.node_id === reversalNodeId)
+                ?.reversibility || 'REVERSIBLE'
+            }
+            reversalRecipe={
+              instanceResponse.workflow_nodes?.find((n: any) => n.node_id === reversalNodeId)
+                ?.reversal_recipe
+            }
+            onSubmit={(payload) => reversalMutation.mutate(payload)}
+            onClose={() => setReversalNodeId(null)}
+            isSubmitting={reversalMutation.isPending}
+          />
+        )}
+
+        {/* Info banner — E3 commit 2/N phase. */}
         <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E2 commit 3/N:</span> Step-issue detail panel
-          added for RETRYING/FAILED states. Shows error details, retry history, and
-          operator actions (Retry now, Skip, Send to repair queue, Cancel). Action
-          buttons + instance picker from E2 commits 1-2 available.
+          <span className="font-bold">E3 commit 2/N:</span> Reversal Drawer UI wired.
+          Operators can reverse (rollback) completed steps with saga compensation.
+          Full suite: view (E1) + navigate (E2 commit 2) + act (E2 commit 1) +
+          diagnose failures (E2 commit 3) + reverse (E3 commit 2).
         </div>
       </div>
     </div>
