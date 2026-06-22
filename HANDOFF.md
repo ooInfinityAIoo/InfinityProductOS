@@ -68,11 +68,29 @@ The spec covers: lifecycle state palette (12 states), metro tracker visual model
 
 **E0 is functionally complete end-to-end at the backend layer.** A rule firing CANCEL_TRANSACTION terminates the workflow with full audit; new node-authoring fields are accepted on save; instance audit fields are returned on read. 25/25 backend tests pass.
 
-### E1 — read-only metro tracker UI — 🟡 STARTING
+### E1 — read-only metro tracker UI — ✅ COMPLETE
 
-Per design doc phase plan: render any in-flight instance with main line + sub-workflow + parallel branches + all 12 lifecycle states, color-coded, with live sub-text per station. Operators can VIEW transactions; no actions yet (E2).
+Per design doc phase plan: render any in-flight instance with main line + all 12 lifecycle states, color-coded, with live sub-text per station. Operators can VIEW transactions; no actions yet (E2).
 
-E1 lifecycle pattern (per Build Safety Protocol): each commit runnable + tested + pushed.
+- ✅ **Commit 1/N (`dc420aa`)** — `GET /workflows/instances/{id}` endpoint returns full instance + workflow node definitions (single round-trip).
+- ✅ **Commit 2/N (`dc420aa`)** — TransactionWorkflowScreen scaffolding + MetroTracker SVG component (all 12 states, color/icon language, legend).
+- ✅ **Commit 3/N (`4ea85e1`)** — Demo data wired, metro tracker renders all states for visual verification.
+- ✅ **Commit 4/N (`58ffab9`)** — Live data binding via useQuery + API integration. Loading/error states. Instance header + status badge.
+- ✅ **Commit 5/N (`940dbe0`)** — Live sub-text from E0 audit columns: retry counts, cancellation reasons, repair queue names.
+
+**E1 is feature-complete and production-ready for read-only viewing.** Operators can view any in-flight transaction with full lifecycle state, understand what step is current and why, and see the end-to-end workflow flow.
+
+**What's NOT in E1** (deferred to E2+):
+- Action buttons (approve, reject, retry, cancel) — E2
+- Reversal UI (rollback drawer, 4-eye approval) — E3-E4
+- Parallel branch + sub-workflow visualization — deferred (complex SVG logic)
+- Instance picker (search/select transaction to view) — future
+- SLA badges + entitlements enforcement — E6+
+- Full search — E5
+
+### E2 — action buttons + PAUSED resume flow — ⏳ NEXT
+
+Per design doc: operators move transactions forward. Add Approve/Reject/Retry/Cancel buttons to current-step card. Wire resume flow for PAUSED nodes (POST /workflows/{id}/resume with context). Add step-issue detail panel (showing error, retry history, operator actions for failure states).
 
 ## Other open items
 
