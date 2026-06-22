@@ -88,9 +88,25 @@ Per design doc phase plan: render any in-flight instance with main line + all 12
 - SLA badges + entitlements enforcement — E6+
 - Full search — E5
 
-### E2 — action buttons + PAUSED resume flow — ⏳ NEXT
+### E2 — action buttons + operator workflows — ✅ COMPLETE
 
-Per design doc: operators move transactions forward. Add Approve/Reject/Retry/Cancel buttons to current-step card. Wire resume flow for PAUSED nodes (POST /workflows/{id}/resume with context). Add step-issue detail panel (showing error, retry history, operator actions for failure states).
+- ✅ **Commit 1/N (`cdba2d9`)** — Action buttons (approve/reject/retry/cancel) wired to mutations. Loading states + error handling.
+- ✅ **Commit 2/N (`08c4592`)** — Instance picker (search by ID, filter by status). Navigation between transactions. Searchable list with recent-first ordering.
+- ✅ **Commit 3/N (`dc04e0d`)** — Step-issue panel (error diagnostics, retry history, operator actions). Shows full error code + message. Conditional on RETRYING/FAILED_TECHNICAL/AWAITING_REPAIR.
+
+### E3 — reversal / saga compensation — ✅ COMPLETE
+
+- ✅ **Commit 1/N (`f003b17`)** — Reversal Drawer UI component. Modal form showing reversal recipe (what will be compensated), collects reason + category, enforces 4-eye approval if needed, prevents reversal of IRREVERSIBLE steps.
+- ✅ **Commit 2/N (`5997f78`)** — Reversal mutation + integration. POST /workflows/{id}/resume with action: 'reverse_step'. Auto-refetch on success, error handling, drawer auto-closes on completion.
+
+## What operators can do (E1-E3 full stack)
+
+✅ **View** — metro tracker with all 12 lifecycle states, live sub-text (retry counts, cancel reasons, queue names)  
+✅ **Navigate** — instance picker with search + status filter + recent ordering  
+✅ **Act** — approve, reject, cancel from any state  
+✅ **Retry** — manual retry on RETRYING/FAILED states  
+✅ **Diagnose** — error code + message + retry history on step-issue panel  
+✅ **Reverse** — rollback completed steps with saga compensation (E3)
 
 ## Other open items
 
