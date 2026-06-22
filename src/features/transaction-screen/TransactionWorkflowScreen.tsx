@@ -186,7 +186,9 @@ const mapInstanceToStations = (
 };
 
 export const TransactionWorkflowScreen: React.FC = () => {
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('WFI-ECC2B272');
+  // Default to the PAUSED test instance so the screen loads immediately with a real transaction.
+  // Operators can switch via ⊕ Recent, 🔍 Search, or ⌘K.
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('TWS-PAUSED-01');
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
   // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
