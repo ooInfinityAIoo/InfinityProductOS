@@ -1,10 +1,76 @@
 # Session Handoff → Gemini
 
-**From:** Claude · **Date:** 2026-06-22 · **Branch:** `main` (pushed, in sync with origin)
+**From:** Claude · **Date:** 2026-06-22 · **Branch:** `main` (pushed, in sync with origin) · **Latest commit:** `59182e8`
 
 ---
 
-## What this session did — UX audit + remediation
+## What this session did — TWS E4–E6 completion + live testing
+
+Completed the Transaction Workflow Screen (E4 commit 2/N through E6 commit 3/N), then verified
+the full feature end-to-end against real seed data. Latest commit: `59182e8`.
+
+### This session's commits (in order)
+
+1. **`d4231b4`** — E4 commit 2/N: Parallel branch visualization in MetroTracker SVG (FORK/JOIN dashed tracks)
+2. **`ec253d1`** — E4 commit 3/N: "Reversal" tab in NodePropertiesDrawer (Workflow Designer)
+3. **`4e6e892`** — E5 commit 1/N: `GET /workflows/instances/search` backend endpoint (multi-field, paginated)
+4. **`f2aa004`** — E5 commit 2/N: `TransactionSearch.tsx` frontend component
+5. **`493df5e`** — E6 commit 1/N: SLA badges (amber/red corner dot) + auto-refresh every 10s
+6. **`5da29b7`** — E6 commit 2/N: `BulkOperationsPanel.tsx` (select + approve/retry/cancel N at once)
+7. **`40ace95`** — E6 commit 3/N: ⌘K search shortcut + Esc closes all panels
+8. **`59182e8`** — Test QA: `seed_tws_test_data.py` (9 lifecycle-state instances) + default instance fix
+
+### Verified live in browser
+- TWS-PAUSED-01 loads as default; 5-node metro tracker renders correctly
+- Live pulse dot active; 10s polling confirmed
+- Action buttons (Approve/Reject/Cancel) shown at paused node
+- All 3 header buttons render: ⊕ Recent, 🔍 Search ⌘K, ⚡ Bulk
+
+---
+
+## What's next (E7 — future work)
+
+- **Entitlements enforcement** — operators see only their team's transactions (needs backend RBAC column + middleware)
+- **Reversal Recovery Queue endpoint** — `GET /workflows/reversal-recovery-queue` returns 404; frontend component exists but has no data
+- **SLA breach alerting** — push/Slack notification when SLA breached (needs notification engine wiring)
+- **Mobile-responsive metro tracker** — current SVG is desktop-width only
+- **Wiring UI for unwired workflow nodes** — ~35 RTP/FedNow templates have `target_token: null`; a designer UI to link nodes → rules/calcs would close that gap
+
+---
+
+## How to run / test
+
+```bash
+# Backend
+uvicorn main:app --reload --port 8000
+
+# Frontend
+npm run dev
+
+# Seed test data (idempotent, safe to re-run)
+python3 seed_tws_test_data.py
+
+# Type check
+tsc --noEmit
+```
+
+Navigate to Transaction Workflow Screen. Use ⊕ Recent or 🔍 Search to load any of these:
+
+| Instance ID | Status |
+|---|---|
+| TWS-PAUSED-01 | PAUSED (default) |
+| TWS-RUNNING-01 | RUNNING |
+| TWS-RETRYING-01 | RETRYING |
+| TWS-REPAIR-01 | AWAITING_REPAIR |
+| TWS-REJECTED-01 | REJECTED |
+| TWS-FAILED-01 | FAILED_TECHNICAL |
+| TWS-CANCELLED-01 | CANCELLED (OFAC_HIT) |
+| TWS-COMPLETED-01 | COMPLETED |
+| TWS-REVERSED-01 | REVERSED |
+
+---
+
+## Previous session — UX audit + remediation
 
 A full two-track audit of the studios (functional + UX/layout) plus making the engines
 run **in tandem** at runtime. 9 commits, all on `origin/main` (latest `3a1b7b2`).
