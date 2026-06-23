@@ -60,10 +60,10 @@ export const StepIssuePanel: React.FC<StepIssuePanelProps> = ({
             {instanceResponse.status === 'RETRYING'
               ? `Automatic retry in progress — attempt ${currentAttempt} of ${maxAttempts}`
               : instanceResponse.status === 'FAILED_TECHNICAL'
-              ? 'Technical failure — retries exhausted'
-              : instanceResponse.status === 'AWAITING_REPAIR'
-              ? 'Routed to repair queue pending manual intervention'
-              : 'Issue detected'}
+                ? 'Technical failure — retries exhausted'
+                : instanceResponse.status === 'AWAITING_REPAIR'
+                  ? 'Routed to repair queue pending manual intervention'
+                  : 'Issue detected'}
           </p>
         </div>
       </div>
@@ -113,8 +113,8 @@ export const StepIssuePanel: React.FC<StepIssuePanelProps> = ({
           {currentNode.on_failure === 'REPAIR_QUEUE'
             ? `Route to ${currentNode.repair_queue_name || 'repair queue'}`
             : currentNode.on_failure === 'FAIL_FAST'
-            ? 'Terminate workflow (no repair queue)'
-            : 'Continue attempting'}
+              ? 'Terminate workflow (no repair queue)'
+              : 'Continue attempting'}
         </div>
       )}
 

@@ -77,18 +77,18 @@ const STATE_STYLES: Record<StepLifecycleState, {
   glyphFill: string;   // colour of the glyph
   label: string;       // legend label
 }> = {
-  PENDING:          { fill: '#F1EFE8', stroke: '#B4B2A9',                  glyph: '',  glyphFill: '#888780', label: 'Pending' },
-  IN_PROGRESS:      { fill: '#FAC775', stroke: '#BA7517',                  glyph: '●', glyphFill: '#854F0B', label: 'In progress' },
-  PAUSED:           { fill: '#FAC775', stroke: '#BA7517',                  glyph: '‖', glyphFill: '#854F0B', label: 'Paused' },
-  RETRYING:         { fill: '#FAC775', stroke: '#BA7517', ring: '#A32D2D', glyph: '↻', glyphFill: '#A32D2D', label: 'Retrying' },
-  AWAITING_REPAIR:  { fill: '#E24B4A', stroke: '#A32D2D',                  glyph: '✕', glyphFill: '#FFFFFF', label: 'Awaiting repair' },
-  FAILED_TECHNICAL: { fill: '#A32D2D', stroke: '#501313',                  glyph: '✕', glyphFill: '#FFFFFF', label: 'Failed (technical)' },
-  BLOCKED:          { fill: '#A32D2D', stroke: '#501313',                  glyph: '!', glyphFill: '#FFFFFF', label: 'Blocked' },
-  REJECTED:         { fill: '#A32D2D', stroke: '#501313',                  glyph: '✕', glyphFill: '#FFFFFF', label: 'Rejected' },
-  CANCELLED:        { fill: '#7F77DD', stroke: '#534AB7',                  glyph: '✕', glyphFill: '#FFFFFF', label: 'Cancelled' },
-  COMPLETED:        { fill: '#639922', stroke: '#3B6D11',                  glyph: '✓', glyphFill: '#FFFFFF', label: 'Completed' },
-  REVERSED:         { fill: '#FAC775', stroke: '#BA7517',                  glyph: '↶', glyphFill: '#854F0B', label: 'Reversed' },
-  SKIPPED:          { fill: '#F1EFE8', stroke: '#B4B2A9',                  glyph: '—', glyphFill: '#888780', label: 'Skipped' },
+  PENDING: { fill: '#F1EFE8', stroke: '#B4B2A9', glyph: '', glyphFill: '#888780', label: 'Pending' },
+  IN_PROGRESS: { fill: '#FAC775', stroke: '#BA7517', glyph: '●', glyphFill: '#854F0B', label: 'In progress' },
+  PAUSED: { fill: '#FAC775', stroke: '#BA7517', glyph: '‖', glyphFill: '#854F0B', label: 'Paused' },
+  RETRYING: { fill: '#FAC775', stroke: '#BA7517', ring: '#A32D2D', glyph: '↻', glyphFill: '#A32D2D', label: 'Retrying' },
+  AWAITING_REPAIR: { fill: '#E24B4A', stroke: '#A32D2D', glyph: '✕', glyphFill: '#FFFFFF', label: 'Awaiting repair' },
+  FAILED_TECHNICAL: { fill: '#A32D2D', stroke: '#501313', glyph: '✕', glyphFill: '#FFFFFF', label: 'Failed (technical)' },
+  BLOCKED: { fill: '#A32D2D', stroke: '#501313', glyph: '!', glyphFill: '#FFFFFF', label: 'Blocked' },
+  REJECTED: { fill: '#A32D2D', stroke: '#501313', glyph: '✕', glyphFill: '#FFFFFF', label: 'Rejected' },
+  CANCELLED: { fill: '#7F77DD', stroke: '#534AB7', glyph: '✕', glyphFill: '#FFFFFF', label: 'Cancelled' },
+  COMPLETED: { fill: '#639922', stroke: '#3B6D11', glyph: '✓', glyphFill: '#FFFFFF', label: 'Completed' },
+  REVERSED: { fill: '#FAC775', stroke: '#BA7517', glyph: '↶', glyphFill: '#854F0B', label: 'Reversed' },
+  SKIPPED: { fill: '#F1EFE8', stroke: '#B4B2A9', glyph: '—', glyphFill: '#888780', label: 'Skipped' },
 };
 
 // Single station circle + label + sub-text, reused across main and branch tracks.

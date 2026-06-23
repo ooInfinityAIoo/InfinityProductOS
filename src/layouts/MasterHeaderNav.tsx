@@ -105,6 +105,21 @@ export const MasterHeaderNav: React.FC = () => {
         >
           <span className="animate-pulse">✨</span> Infinity AI
         </button>
+
+           {/* TRANSACTION WORKFLOW SCREEN */}
+           <div className="relative group h-full flex items-center py-5">
+             <button 
+               onClick={() => setActiveModule('transaction-workflow-screen')}
+               className={`text-[13px] font-bold px-3 py-1.5 rounded-lg hover:bg-slate-50/50 flex items-center gap-1 transition-all cursor-pointer ${
+                 activeModule === 'transaction-workflow-screen' 
+                   ? 'text-indigo-700 bg-indigo-50/80 border border-indigo-100/50' 
+                   : 'text-slate-600 hover:text-indigo-650'
+               }`}
+             >
+               Transaction Workflows
+             </button>
+           </div>
+
            {/* MASTER DATA DROPDOWN — permanent reference data that lives for the lifetime of a package */}
         <div className="relative group h-full flex items-center py-5">
           <button className="text-[13px] font-bold text-slate-600 hover:text-indigo-650 px-3 py-1.5 rounded-lg hover:bg-slate-50/50 flex items-center gap-1 cursor-default transition-all">

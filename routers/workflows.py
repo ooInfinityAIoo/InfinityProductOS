@@ -14,7 +14,7 @@ import models
 import schemas
 from services.workflow_executor import WorkflowExecutor
 from services.reporting_service import ReportingService
-from auth import get_current_user, CurrentUser, require_designer_privileges
+from auth import get_current_user, CurrentUser, require_designer_privileges, UserRole
 
 router = APIRouter(
     prefix="/api/v1/workflows",
@@ -443,6 +443,7 @@ def search_workflow_instances(
     repair_queue: Optional[str] = None,
     date_from: Optional[str] = None,  # ISO date string, inclusive
     date_to: Optional[str] = None,    # ISO date string, inclusive
+    assigned_team: Optional[str] = None, # team filter
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -455,6 +456,12 @@ def search_workflow_instances(
     Paginated via limit + offset; returns total_count + has_more for UI pagination.
     """
     query = db.query(models.WorkflowExecutionInstance)
+
+    # Entitlements enforcement
+    if current_user.role not in [UserRole.ADMIN, UserRole.AUDITOR]:
+        query = query.filter(models.WorkflowExecutionInstance.assigned_team == current_user.role.value)
+    elif assigned_team:
+        query = query.filter(models.WorkflowExecutionInstance.assigned_team == assigned_team)
 
     # Free-text — match instance_id prefix OR master_transaction_id prefix.
     # ilike is case-insensitive LIKE, safe for our ISO-style IDs.
@@ -527,6 +534,7 @@ def search_workflow_instances(
                 "cancelled_by": i.cancelled_by,
                 "cancelled_reason_code": i.cancelled_reason_code,
                 "repair_queue_assigned": i.repair_queue_assigned,
+                "assigned_team": i.assigned_team,
             }
             for i in instances
         ],
@@ -541,6 +549,7 @@ def search_workflow_instances(
 def list_workflow_instances(
     workflow_id: Optional[str] = None,
     instance_status: Optional[str] = None,
+    assigned_team: Optional[str] = None,
     limit: int = 50,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
@@ -557,6 +566,13 @@ def list_workflow_instances(
         query = query.filter(models.WorkflowExecutionInstance.workflow_id == workflow_id)
     if instance_status:
         query = query.filter(models.WorkflowExecutionInstance.status == instance_status.upper())
+
+    # Entitlements enforcement
+    if current_user.role not in [UserRole.ADMIN, UserRole.AUDITOR]:
+        query = query.filter(models.WorkflowExecutionInstance.assigned_team == current_user.role.value)
+    elif assigned_team:
+        query = query.filter(models.WorkflowExecutionInstance.assigned_team == assigned_team)
+
     instances = query.order_by(models.WorkflowExecutionInstance.created_at.desc()).limit(limit).all()
     # E0 commit 5/N — surface the new lifecycle audit columns (from E0 commit 1/N)
     # so the Transaction Workflow Screen can render: the Cancelled / Repair Queue /
@@ -583,6 +599,7 @@ def list_workflow_instances(
                 "cancelled_message": i.cancelled_message,
                 "reversal_request_id": i.reversal_request_id,
                 "template_version_pinned": i.template_version_pinned,
+                "assigned_team": i.assigned_team,
             }
             for i in instances
         ],

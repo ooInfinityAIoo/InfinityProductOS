@@ -515,6 +515,7 @@ class WorkflowExecutionInstance(Base):
     cancelled_message = Column(Text, nullable=True)
     reversal_request_id = Column(String, nullable=True, index=True)
     template_version_pinned = Column(Integer, nullable=True)
+    assigned_team = Column(String, nullable=True, index=True) # E7 item 3: Entitlements enforcement
 
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)

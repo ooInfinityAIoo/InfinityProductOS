@@ -20,15 +20,15 @@ import { apiClient } from '../../api/client';
 
 // Lifecycle states the operator can filter on. Maps to the status column values.
 const STATUS_OPTIONS = [
-  { value: 'PAUSED',          label: 'Paused',          color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  { value: 'RETRYING',        label: 'Retrying',        color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { value: 'PAUSED', label: 'Paused', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { value: 'RETRYING', label: 'Retrying', color: 'bg-amber-100 text-amber-700 border-amber-200' },
   { value: 'AWAITING_REPAIR', label: 'Awaiting repair', color: 'bg-red-100 text-red-700 border-red-200' },
-  { value: 'FAILED_TECHNICAL',label: 'Failed',          color: 'bg-red-100 text-red-700 border-red-200' },
-  { value: 'BLOCKED',         label: 'Blocked',         color: 'bg-red-100 text-red-700 border-red-200' },
-  { value: 'REJECTED',        label: 'Rejected',        color: 'bg-red-100 text-red-700 border-red-200' },
-  { value: 'CANCELLED',       label: 'Cancelled',       color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  { value: 'COMPLETED',       label: 'Completed',       color: 'bg-green-100 text-green-700 border-green-200' },
-  { value: 'REVERSED',        label: 'Reversed',        color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { value: 'FAILED_TECHNICAL', label: 'Failed', color: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'BLOCKED', label: 'Blocked', color: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'REJECTED', label: 'Rejected', color: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'CANCELLED', label: 'Cancelled', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { value: 'COMPLETED', label: 'Completed', color: 'bg-green-100 text-green-700 border-green-200' },
+  { value: 'REVERSED', label: 'Reversed', color: 'bg-amber-100 text-amber-700 border-amber-200' },
 ];
 
 // Status display badge — colour-coded to the 12-state lifecycle palette
@@ -49,16 +49,17 @@ interface TransactionSearchProps {
 
 export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, onClose }) => {
   // ── Basic search state ────────────────────────────────────────────────
-  const [q, setQ]                     = useState('');
+  const [q, setQ] = useState('');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // ── Advanced filter state ─────────────────────────────────────────────
-  const [dateFrom,      setDateFrom]      = useState('');
-  const [dateTo,        setDateTo]        = useState('');
-  const [cancelledBy,   setCancelledBy]   = useState('');
-  const [repairQueue,   setRepairQueue]   = useState('');
-  const [workflowId,    setWorkflowId]    = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [cancelledBy, setCancelledBy] = useState('');
+  const [repairQueue, setRepairQueue] = useState('');
+  const [workflowId, setWorkflowId] = useState('');
+  const [assignedTeam, setAssignedTeam] = useState('');
 
   // ── Pagination ────────────────────────────────────────────────────────
   const [offset, setOffset] = useState(0);
@@ -84,6 +85,7 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
     workflow_id: workflowId || undefined,
     cancelled_by: cancelledBy || undefined,
     repair_queue: repairQueue || undefined,
+    assigned_team: assignedTeam || undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     limit: LIMIT,
@@ -107,7 +109,7 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
   const instances: any[] = data?.instances ?? [];
   const totalCount: number = data?.total_count ?? 0;
   const hasMore: boolean = data?.has_more ?? false;
-  const hasActiveFilters = q || selectedStatuses.length > 0 || dateFrom || dateTo || cancelledBy || repairQueue || workflowId;
+  const hasActiveFilters = q || selectedStatuses.length > 0 || dateFrom || dateTo || cancelledBy || repairQueue || workflowId || assignedTeam;
 
   return (
     <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
@@ -155,11 +157,10 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
           <button
             key={opt.value}
             onClick={() => toggleStatus(opt.value)}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
-              selectedStatuses.includes(opt.value)
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${selectedStatuses.includes(opt.value)
                 ? opt.color + ' opacity-100'
                 : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
-            }`}
+              }`}
           >
             {opt.label}
           </button>
@@ -174,6 +175,7 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
               setCancelledBy('');
               setRepairQueue('');
               setWorkflowId('');
+              setAssignedTeam('');
               setOffset(0);
             }}
             className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors"
@@ -226,6 +228,21 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
               <option value="rule">Business rule</option>
               <option value="operator">Operator</option>
               <option value="system">System</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Assigned team</label>
+            <select
+              value={assignedTeam}
+              onChange={e => { setAssignedTeam(e.target.value); setOffset(0); }}
+              className="w-full text-[11px] border border-slate-200 rounded-lg p-1.5 bg-white focus:outline-none"
+            >
+              <option value="">Any</option>
+              <option value="operator">Operator</option>
+              <option value="sales">Sales</option>
+              <option value="risk">Risk</option>
+              <option value="admin">Admin</option>
+              <option value="auditor">Auditor</option>
             </select>
           </div>
           <div>
@@ -303,6 +320,11 @@ export const TransactionSearch: React.FC<TransactionSearchProps> = ({ onSelect, 
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <StatusBadge status={instance.status} />
+                    {instance.assigned_team && (
+                      <span className="text-[10px] text-blue-700 font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                        team: {instance.assigned_team}
+                      </span>
+                    )}
                     {instance.cancelled_reason_code && (
                       <span className="text-[10px] text-purple-700 font-mono bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
                         {instance.cancelled_reason_code}
