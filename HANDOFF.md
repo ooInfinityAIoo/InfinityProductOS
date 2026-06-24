@@ -41,8 +41,14 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
   local DB). Verified via TestClient: definition-driven payload runs to PAUSED.
   **Follow-up:** patch `seed_golden_path.py` to set this binding so fresh seeds
   include it (today only the migration does).
-- **Iteration 7** — Worklist / queue landing ("My Deals" equivalent) as the entry
-  point (currently the screen opens straight into one instance, `TWS-PAUSED-01`).
+- **Iteration 7 DONE** (commit below) — Worklist / queue landing is now the entry
+  point. New `Worklist.tsx` lists live instances with queue tabs (Pending approval
+  / Repair / Rejected / Completed / All) + counts, amount pulled from context,
+  click-to-open. `TransactionWorkflowScreen` now defaults to `selectedInstanceId =
+  null` → renders the worklist; opening a row drops into the record workspace;
+  a "← Worklist" button returns. Verified live (backend + vite): worklist showed
+  26 pending rows with formatted amounts; row click opened the record workspace
+  (metro tracker 11 stations, facts, decision bar). Amount facts now group-formatted.
 - **Iteration 8** — Institutional theme pass across the side panels
   (`StepIssuePanel`, `TransactionSearch`, `BulkOperationsPanel`, `ReversalDrawer`)
   and the shared `RuntimeScreenRenderer` (still light-glass).

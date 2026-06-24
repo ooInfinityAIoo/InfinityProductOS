@@ -40,6 +40,7 @@ import { ReversalDrawer } from './ReversalDrawer';
 import { TransactionSearch } from './TransactionSearch';
 import { BulkOperationsPanel } from './BulkOperationsPanel';
 import { RunTransactionModal } from './RunTransactionModal';
+import { Worklist } from './Worklist';
 // Iteration 2 (TXN_SCREEN_LAYOUT_LANGUAGE.md band D) — the shared screen
 // interpreter. Clicking a metro-tracker station renders THAT node's screen here,
 // read-only for completed steps (= "playback"), editable only for the live action.
@@ -85,7 +86,15 @@ const resolveFacts = (ctx: any): { label: string; value: string }[] => {
     for (const p of f.paths) {
       const v = getByPath(ctx, p);
       if (v !== undefined && v !== null && v !== '') {
-        out.push({ label: f.label, value: typeof v === 'object' ? JSON.stringify(v) : String(v) });
+        // Group-format numeric amounts (e.g. 592500 → 592,500.00) so the facts
+        // row reads like money, not a raw integer.
+        let display: string;
+        if (f.label === 'Amount' && !isNaN(Number(v))) {
+          display = Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        } else {
+          display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        }
+        out.push({ label: f.label, value: display });
         break;
       }
     }
@@ -241,7 +250,10 @@ const mapInstanceToStations = (
 export const TransactionWorkflowScreen: React.FC = () => {
   // Default to the PAUSED test instance so the screen loads immediately with a real transaction.
   // Operators can switch via ⊕ Recent, 🔍 Search, or ⌘K.
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>('TWS-PAUSED-01');
+  // Iteration 7 — the screen now LANDS on the worklist (null instance), not a
+  // hardcoded transaction. Opening a worklist row sets this and switches to the
+  // record workspace; "← Worklist" sets it back to null.
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInstancePicker, setShowInstancePicker] = useState(false);
   // E5 commit 2/N — full search panel (replaces simple instance picker for deep queries)
@@ -494,6 +506,34 @@ export const TransactionWorkflowScreen: React.FC = () => {
   });
 
   // LOADING STATE
+  // ── WORKLIST LANDING (iteration 7) ──────────────────────────────────────────
+  // No instance selected → show the queue worklist. New-transaction and search
+  // modals are reachable from here; both set selectedInstanceId on success, which
+  // drops the operator into the record workspace below.
+  if (!selectedInstanceId) {
+    return (
+      <div className="w-full flex flex-col gap-6 p-6">
+        {showRunModal && (
+          <RunTransactionModal
+            onClose={() => setShowRunModal(false)}
+            onInstanceCreated={(id) => { setSelectedInstanceId(id); setShowRunModal(false); }}
+          />
+        )}
+        {showSearch && (
+          <TransactionSearch
+            onSelect={(id) => { setSelectedInstanceId(id); setShowSearch(false); }}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
+        <Worklist
+          onSelect={(id) => setSelectedInstanceId(id)}
+          onNewTransaction={() => { setShowRunModal(true); setShowSearch(false); }}
+          onOpenSearch={() => { setShowSearch(true); setShowRunModal(false); }}
+        />
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="w-full flex flex-col gap-6 p-6">
@@ -624,6 +664,13 @@ export const TransactionWorkflowScreen: React.FC = () => {
             </div>
             {/* Run + Recent + Search + Bulk — restyled for the dark band */}
             <div className="flex gap-2 flex-wrap justify-end shrink-0">
+              {/* ← back to the queue worklist (iteration 7) */}
+              <button
+                onClick={() => setSelectedInstanceId(null)}
+                className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 text-[11px] font-semibold hover:bg-white/10 transition-colors whitespace-nowrap"
+              >
+                ← Worklist
+              </button>
               <button
                 onClick={() => { setShowRunModal(true); setShowSearch(false); setShowBulkOps(false); setShowInstancePicker(false); }}
                 className="px-3 py-1.5 rounded-lg border border-emerald-400/40 text-emerald-300 bg-emerald-400/10 text-[11px] font-bold hover:bg-emerald-400/20 transition-colors whitespace-nowrap"
