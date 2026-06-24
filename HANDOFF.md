@@ -49,9 +49,15 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
   a "← Worklist" button returns. Verified live (backend + vite): worklist showed
   26 pending rows with formatted amounts; row click opened the record workspace
   (metro tracker 11 stations, facts, decision bar). Amount facts now group-formatted.
-- **Iteration 8** — Institutional theme pass across the side panels
-  (`StepIssuePanel`, `TransactionSearch`, `BulkOperationsPanel`, `ReversalDrawer`)
-  and the shared `RuntimeScreenRenderer` (still light-glass).
+- **Iteration 8 DONE** (commit below) — Institutional theme pass. Removed all
+  remaining glassmorphism (`glass-card` / `bg-white/85 backdrop-blur-md` /
+  `shadow-glass`) from the transaction-screen surfaces — `BulkOperationsPanel`,
+  `TransactionSearch`, `ReversionRecoveryQueue`, and the three early-return/picker
+  panels in `TransactionWorkflowScreen` — replacing them with clean institutional
+  panels (`bg-white border border-slate-200 shadow-sm`). No glass remains in
+  `src/features/transaction-screen/` (only the modal's intentional `bg-black/40`
+  scrim). tsc clean; app mounts clean in vite. `StepIssuePanel`/`ReversalDrawer`
+  had no glass; the shared `RuntimeScreenRenderer` was already glass-free.
 - **Open decision (spec §4)** — facts-row config source: recommend deriving from
   the START node's screen definition rather than a new `WorkflowConfiguration`
   column. Not yet implemented; interim resolver is in `TransactionWorkflowScreen.tsx`.

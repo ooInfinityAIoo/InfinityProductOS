@@ -537,7 +537,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
   if (isLoading) {
     return (
       <div className="w-full flex flex-col gap-6 p-6">
-        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass h-[500px] flex items-center justify-center">
+        <div className="rounded-2xl p-6 bg-white border border-slate-200 shadow-sm h-[500px] flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <div className="relative flex items-center justify-center">
               <div className="absolute w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
@@ -559,7 +559,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
   if (error || !instanceResponse) {
     return (
       <div className="w-full flex flex-col gap-6 p-6">
-        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-red-200/50 shadow-glass">
+        <div className="rounded-2xl p-6 bg-white border border-red-200 shadow-sm">
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full flex items-center justify-center bg-red-50 text-red-600 font-extrabold text-xs flex-shrink-0 mt-0.5">
               !
@@ -591,7 +591,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
     <div className="w-full flex flex-col gap-6 p-6">
       {/* E2 commit 2/N — Recent instances quick-picker */}
       {showInstancePicker && (
-        <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
+        <div className="rounded-2xl p-6 bg-white border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-extrabold text-slate-800">Recent Transactions</h2>
             <button

@@ -115,7 +115,7 @@ export const BulkOperationsPanel: React.FC<BulkOperationsPanelProps> = ({ onClos
   const isComplete   = results !== null && !running;
 
   return (
-    <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
+    <div className="rounded-2xl p-6 bg-white border border-slate-200 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>

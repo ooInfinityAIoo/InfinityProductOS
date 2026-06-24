@@ -44,7 +44,7 @@ export const ReversionRecoveryQueue: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col gap-4 p-6">
-      <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
+      <div className="rounded-2xl p-6 bg-white border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-lg font-extrabold text-slate-800">
