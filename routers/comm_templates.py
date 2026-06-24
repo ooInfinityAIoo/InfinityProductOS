@@ -105,7 +105,7 @@ def create_template(
         status="DRAFT",
         application_package_id=payload.get("application_package_id"),
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(tmpl)
     db.commit()
@@ -162,7 +162,7 @@ def update_template(
             status="DRAFT",
             application_package_id=tmpl.application_package_id,
             created_at=now,
-            created_by=current_user.user_id,
+            created_by=current_user.id,
         )
         db.add(new_version)
         db.commit()
@@ -226,7 +226,7 @@ def make_live(
         raise HTTPException(404, f"Template '{template_id}' not found.")
     if tmpl.status != "PENDING_APPROVAL":
         raise HTTPException(400, f"Only PENDING_APPROVAL templates can go live. Current: {tmpl.status}")
-    if tmpl.created_by == current_user.user_id:
+    if tmpl.created_by == current_user.id:
         raise HTTPException(403, "4-Eye violation: approver cannot be the same as the creator.")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -245,7 +245,7 @@ def make_live(
     # Promote to LIVE
     tmpl.status = "LIVE"
     tmpl.made_live_at = now
-    tmpl.made_live_by = current_user.user_id
+    tmpl.made_live_by = current_user.id
     tmpl.updated_at = now
     db.commit()
 
@@ -254,7 +254,7 @@ def make_live(
         db, "COMM_TEMPLATE", tmpl.template_id,
         f"{tmpl.template_type}: {tmpl.template_name}",
         tmpl.application_package_id,
-        current_user.user_id
+        current_user.id
     )
 
     return {**_serialize(tmpl), "_note": "Template is now LIVE. Registered in Entitlement Module."}

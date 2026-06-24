@@ -118,7 +118,7 @@ def create_policy(
         version_number=1,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(policy)
     db.flush()
@@ -266,7 +266,7 @@ def make_live(
         raise HTTPException(404, f"Policy '{policy_id}' not found.")
     if p.status != "PENDING_APPROVAL":
         raise HTTPException(400, f"Only PENDING_APPROVAL policies can go live. Current: {p.status}")
-    if p.created_by == current_user.user_id:
+    if p.created_by == current_user.id:
         raise HTTPException(403, "4-Eye violation: approver cannot be the same as the creator.")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -283,13 +283,13 @@ def make_live(
 
     p.status = "LIVE"
     p.made_live_at = now
-    p.made_live_by = current_user.user_id
+    p.made_live_by = current_user.id
     p.updated_at = now
     db.commit()
 
     register_entity(
         db, "NOTIFICATION_POLICY", p.policy_id,
-        p.policy_name, p.application_package_id, current_user.user_id
+        p.policy_name, p.application_package_id, current_user.id
     )
 
     triggers = _get_triggers(db, policy_id)

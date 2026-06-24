@@ -205,7 +205,7 @@ def create_product(payload: schemas.ProductMasterCreate, db: Session = Depends(g
         status="DRAFT",
         created_at=now,
         updated_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(db_product)
     db.commit()
@@ -280,7 +280,7 @@ def create_subproduct(payload: schemas.SubproductMasterCreate, db: Session = Dep
         status="DRAFT",
         created_at=now,
         updated_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(db_subproduct)
     db.commit()

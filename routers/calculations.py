@@ -178,7 +178,7 @@ def create_calc_program(
         subproduct_id=payload.subproduct_id,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(db_program)
     db.flush()  # flush to get program_id before _sync needs it for formula_ref FK
@@ -267,7 +267,7 @@ def update_calc_program(
     program.product_id = payload.product_id
     program.subproduct_id = payload.subproduct_id
     program.updated_at = datetime.datetime.utcnow().isoformat()
-    program.updated_by = current_user.user_id
+    program.updated_by = current_user.id
 
     # Re-sync calculated fields — output tokens may have been added, removed, or renamed
     _sync_calculated_fields(db, program)
@@ -308,7 +308,7 @@ def clone_calc_program(
         subproduct_id=source.subproduct_id,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(clone)
     db.commit()

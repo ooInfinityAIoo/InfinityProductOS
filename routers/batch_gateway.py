@@ -71,7 +71,7 @@ def create_batch_config(
         config_id=str(uuid.uuid4()),
         created_at=now,
         updated_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
         status="DRAFT",
         **payload.dict(),
     )
@@ -118,7 +118,7 @@ def update_batch_config(
     for field, value in payload.dict(exclude_unset=True).items():
         setattr(config, field, value)
     config.updated_at = datetime.datetime.utcnow().isoformat()
-    config.updated_by = current_user.user_id
+    config.updated_by = current_user.id
     db.commit()
     db.refresh(config)
     return config
@@ -142,14 +142,14 @@ def update_batch_status(
     if not config:
         raise HTTPException(status_code=404, detail="Batch gateway configuration not found.")
     # Layer 6 Guardrail: 4-Eye — cannot approve your own batch config
-    if new_status == "LIVE" and config.created_by == current_user.user_id:
+    if new_status == "LIVE" and config.created_by == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="4-Eye policy violation: the creator cannot approve their own batch gateway configuration."
         )
     config.status = new_status.upper()
     config.updated_at = datetime.datetime.utcnow().isoformat()
-    config.updated_by = current_user.user_id
+    config.updated_by = current_user.id
     db.commit()
     db.refresh(config)
     return config

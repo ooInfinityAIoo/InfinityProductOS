@@ -173,7 +173,7 @@ def create_blueprint(
         version_number=1,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(b)
     db.commit()
@@ -269,7 +269,7 @@ def new_version(
         parent_blueprint_id=blueprint_id,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(b)
     db.commit()
@@ -326,7 +326,7 @@ def make_live(
         raise HTTPException(404, f"Blueprint '{blueprint_id}' not found.")
     if b.status != "PENDING_APPROVAL":
         raise HTTPException(400, f"Only PENDING_APPROVAL blueprints can go live. Current: {b.status}")
-    if b.created_by == current_user.user_id:
+    if b.created_by == current_user.id:
         raise HTTPException(403, "4-Eye violation: approver cannot be the same as the creator.")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -342,13 +342,13 @@ def make_live(
 
     b.status = "LIVE"
     b.made_live_at = now
-    b.made_live_by = current_user.user_id
+    b.made_live_by = current_user.id
     b.updated_at = now
     db.commit()
 
     register_entity(
         db, "EXTRACTION_BLUEPRINT", b.blueprint_id,
-        b.blueprint_name, b.application_package_id, current_user.user_id
+        b.blueprint_name, b.application_package_id, current_user.id
     )
 
     return {**_with_doc_type(db, b), "_note": "Blueprint is now LIVE. Registered in Entitlement Module."}

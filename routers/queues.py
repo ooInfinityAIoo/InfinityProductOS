@@ -55,7 +55,7 @@ def create_connection(
         package_id=payload.package_id,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(conn)
     db.commit()
@@ -122,7 +122,7 @@ def update_connection(
     conn.heartbeat_interval_sec = payload.heartbeat_interval_sec
     conn.package_id = payload.package_id
     conn.updated_at = datetime.datetime.utcnow().isoformat()
-    conn.updated_by = current_user.user_id
+    conn.updated_by = current_user.id
 
     db.commit()
     db.refresh(conn)
@@ -204,7 +204,7 @@ def create_queue(
         retry_interval_sec=payload.retry_interval_sec,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(queue)
     db.commit()
@@ -267,7 +267,7 @@ def update_queue(
     for field, val in payload.dict(exclude_unset=True).items():
         setattr(queue, field, val)
     queue.updated_at = datetime.datetime.utcnow().isoformat()
-    queue.updated_by = current_user.user_id
+    queue.updated_by = current_user.id
 
     db.commit()
     db.refresh(queue)
@@ -303,7 +303,7 @@ def create_routing_rule(
         priority=payload.priority,
         status="ACTIVE",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(rule)
     db.commit()
@@ -341,7 +341,7 @@ def update_routing_rule(
     for field, val in payload.dict(exclude_unset=True).items():
         setattr(rule, field, val)
     rule.updated_at = datetime.datetime.utcnow().isoformat()
-    rule.updated_by = current_user.user_id
+    rule.updated_by = current_user.id
 
     db.commit()
     db.refresh(rule)

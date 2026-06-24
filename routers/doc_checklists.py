@@ -100,7 +100,7 @@ def create_checklist(
         version_number=1,
         status="DRAFT",
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(checklist)
     db.flush()
@@ -234,7 +234,7 @@ def make_live(
         raise HTTPException(404, f"Checklist '{checklist_id}' not found.")
     if c.status != "PENDING_APPROVAL":
         raise HTTPException(400, f"Only PENDING_APPROVAL checklists can go live. Current: {c.status}")
-    if c.created_by == current_user.user_id:
+    if c.created_by == current_user.id:
         raise HTTPException(403, "4-Eye violation: approver cannot be the same as the creator.")
 
     now = datetime.now(timezone.utc).isoformat()
@@ -251,13 +251,13 @@ def make_live(
 
     c.status = "LIVE"
     c.made_live_at = now
-    c.made_live_by = current_user.user_id
+    c.made_live_by = current_user.id
     c.updated_at = now
     db.commit()
 
     register_entity(
         db, "DOC_CHECKLIST", c.checklist_id,
-        c.checklist_name, c.application_package_id, current_user.user_id
+        c.checklist_name, c.application_package_id, current_user.id
     )
 
     items = _get_items(db, checklist_id)

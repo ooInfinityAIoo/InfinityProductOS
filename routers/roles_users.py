@@ -62,7 +62,7 @@ def create_role(
         default_permissions=payload.default_permissions,
         status=payload.status,
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(role)
     db.commit()
@@ -123,7 +123,7 @@ def update_role(
             val = val.upper().replace(" ", "_")
         setattr(role, field, val)
     role.updated_at = datetime.datetime.utcnow().isoformat()
-    role.updated_by = current_user.user_id
+    role.updated_by = current_user.id
     db.commit()
     db.refresh(role)
     return role
@@ -185,7 +185,7 @@ def create_user(
         explicit_queue_ids=payload.explicit_queue_ids,
         status=payload.status,
         created_at=now,
-        created_by=current_user.user_id,
+        created_by=current_user.id,
     )
     db.add(user)
     db.commit()
@@ -243,7 +243,7 @@ def update_user(
     for field, val in payload.dict(exclude_unset=True).items():
         setattr(user, field, val)
     user.updated_at = datetime.datetime.utcnow().isoformat()
-    user.updated_by = current_user.user_id
+    user.updated_by = current_user.id
     db.commit()
     db.refresh(user)
     return user

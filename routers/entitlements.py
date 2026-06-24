@@ -151,7 +151,7 @@ def register_entity_endpoint(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_designer_privileges)
 ):
-    policies = register_entity(db, entity_type, entity_id, entity_name, package_id, current_user.user_id)
+    policies = register_entity(db, entity_type, entity_id, entity_name, package_id, current_user.id)
     return {
         "message": f"Registered {len(policies)} entitlement policies for {entity_type} '{entity_name}'",
         "policies_created": len(policies)
@@ -188,7 +188,7 @@ def update_policy(
         policy.can_approve = can_approve
 
     policy.updated_at = datetime.now(timezone.utc).isoformat()
-    policy.updated_by = current_user.user_id
+    policy.updated_by = current_user.id
     db.commit()
     return _serialize(policy)
 
