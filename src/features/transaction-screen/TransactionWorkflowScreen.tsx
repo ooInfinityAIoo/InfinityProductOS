@@ -40,6 +40,10 @@ import { ReversalDrawer } from './ReversalDrawer';
 import { TransactionSearch } from './TransactionSearch';
 import { BulkOperationsPanel } from './BulkOperationsPanel';
 import { RunTransactionModal } from './RunTransactionModal';
+// Iteration 2 (TXN_SCREEN_LAYOUT_LANGUAGE.md band D) — the shared screen
+// interpreter. Clicking a metro-tracker station renders THAT node's screen here,
+// read-only for completed steps (= "playback"), editable only for the live action.
+import { RuntimeScreenRenderer } from '../package-runtime/RuntimeScreenRenderer';
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -197,6 +201,10 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [showBulkOps, setShowBulkOps] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
+  // Iteration 2 — which station's screen the operator is currently viewing.
+  // null = follow the live current node; a node_id = the operator clicked a
+  // station to inspect/playback that step. Reset to null whenever the instance changes.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   // E6 commit 3/N — ⌘K (Mac) / Ctrl+K (Windows) opens the search panel.
@@ -251,6 +259,31 @@ export const TransactionWorkflowScreen: React.FC = () => {
     if (!instanceResponse || !instanceResponse.workflow_nodes) return [];
     return mapInstanceToStations(instanceResponse, instanceResponse.workflow_nodes);
   }, [instanceResponse]);
+
+  // Iteration 2 — when the operator switches to a different transaction, stop
+  // viewing whatever station they had open and snap back to the live current node.
+  useEffect(() => { setSelectedNodeId(null); }, [selectedInstanceId]);
+
+  // The station the operator is viewing: their explicit click, else the live node.
+  const viewedNodeId: string | null =
+    selectedNodeId ?? instanceResponse?.current_node_id ?? null;
+  const viewedNode = instanceResponse?.workflow_nodes?.find(
+    (n: any) => n.node_id === viewedNodeId
+  );
+  const viewedScreenTemplate: string | undefined = viewedNode?.screen_template;
+
+  // Band D — fetch the viewed node's screen definition. Keyed on the template id
+  // so React Query caches each step's screen; clicking back to a visited station
+  // is instant. Disabled when the node has no screen_template (we fall back to a
+  // generated context view so the band is never blank — see render below).
+  const { data: viewedScreen } = useQuery({
+    queryKey: ['node-screen', viewedScreenTemplate],
+    queryFn: async () => {
+      const res = await apiClient.get(`/screens/${viewedScreenTemplate}`);
+      return res.data;
+    },
+    enabled: !!viewedScreenTemplate,
+  });
 
   // E2 commit 1/N — Approve mutation (PAUSED → resume with approval decision)
   // WHY THIS EXISTS: HUMAN_APPROVAL nodes pause the workflow waiting for operator
@@ -545,8 +578,75 @@ export const TransactionWorkflowScreen: React.FC = () => {
         {/* Metro tracker — E1 commit 4/N live data. Renders the instance's workflow
             with stations color-coded by their lifecycle state. */}
         <div className="mt-6">
-          <MetroTracker stations={stations} />
+          <MetroTracker
+            stations={stations}
+            onStationClick={setSelectedNodeId}
+            activeStationId={viewedNodeId ?? undefined}
+          />
         </div>
+
+        {/* ── Band D (TXN_SCREEN_LAYOUT_LANGUAGE.md) — Step workspace ──────────
+            The screen of whichever station the operator clicked. Read-only unless
+            it is the live current node AND the instance is PAUSED awaiting action
+            (that single case is the editable approval; everything else is
+            playback). When the node has no screen_template we show the raw
+            context so the band is never blank. */}
+        {viewedNode && (
+          <div className="mt-6 p-4 rounded-xl border border-slate-200/70 bg-white/60">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Step {viewedNode.sequence_number} · {viewedNode.node_title}
+                {viewedNodeId !== instanceResponse.current_node_id && (
+                  <span className="ml-2 font-semibold text-indigo-500 normal-case tracking-normal">· playback (read-only)</span>
+                )}
+              </div>
+              {selectedNodeId && (
+                <button
+                  onClick={() => setSelectedNodeId(null)}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1"
+                >
+                  ↩ Back to current step
+                </button>
+              )}
+            </div>
+
+            {viewedScreenTemplate && viewedScreen ? (
+              <RuntimeScreenRenderer
+                screenName={viewedScreen.screen_name}
+                definition={viewedScreen.definition}
+                initialValues={instanceResponse.current_context}
+                readOnly={
+                  !(viewedNodeId === instanceResponse.current_node_id &&
+                    instanceResponse.status === 'PAUSED')
+                }
+                onSubmit={(_values, action) => {
+                  if (action === 'CANCEL_SESSION') { rejectMutation.mutate(); }
+                  else { approveMutation.mutate(); }
+                }}
+              />
+            ) : viewedScreenTemplate ? (
+              <div className="text-[12px] text-slate-400 py-4 text-center">Loading step screen…</div>
+            ) : (
+              // No screen bound to this node — generated context fallback (band D rule).
+              <div className="divide-y divide-slate-100">
+                {Object.entries(instanceResponse.current_context ?? {}).length === 0 ? (
+                  <p className="text-[12px] text-slate-400 py-4 text-center">
+                    No screen configured for this step, and no context to display.
+                  </p>
+                ) : (
+                  Object.entries(instanceResponse.current_context).map(([k, v]) => (
+                    <div key={k} className="flex items-start justify-between py-2 gap-4 text-[11px]">
+                      <span className="font-mono font-semibold text-indigo-600 break-all">{k}</span>
+                      <span className="text-slate-700 text-right break-all">
+                        {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Error banner — E2 action errors */}
         {actionError && (

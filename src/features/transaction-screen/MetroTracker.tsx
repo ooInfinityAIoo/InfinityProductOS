@@ -64,6 +64,14 @@ interface MetroTrackerProps {
   stations: TrackerStation[];
   /** Optional override for the SVG viewBox width — defaults to 680, the design-doc canvas width. */
   viewWidth?: number;
+  // ── Iteration 2 (TXN_SCREEN_LAYOUT_LANGUAGE.md band B) — clickable spine ──
+  // WHY: the metro tracker is no longer a passive picture. It is now the page
+  // spine: clicking ANY station opens that node's screen below (read-only =
+  // "playback" for completed steps; editable only for the current action).
+  // onStationClick fires with the clicked node_id; activeStationId draws the
+  // selection ring so the operator always knows which station they're viewing.
+  onStationClick?: (nodeId: string) => void;
+  activeStationId?: string;
 }
 
 // State-driven styling. Centralised so the legend (rendered alongside the SVG)
@@ -96,13 +104,35 @@ const StationNode: React.FC<{
   x: number;
   y: number;
   station: TrackerStation;
-}> = ({ x, y, station }) => {
+  // Iteration 2 — clickable spine. When onClick is supplied the station becomes
+  // an interactive control (pointer cursor, focusable, selection ring when active).
+  onClick?: (nodeId: string) => void;
+  active?: boolean;
+}> = ({ x, y, station, onClick, active }) => {
   const style = STATE_STYLES[station.state];
   const radius = station.state === 'IN_PROGRESS' || station.state === 'RETRYING' ? 15 : 12;
   const isError = ['FAILED_TECHNICAL', 'BLOCKED', 'REJECTED', 'AWAITING_REPAIR', 'RETRYING'].includes(station.state);
+  const clickable = !!onClick;
 
   return (
-    <g>
+    <g
+      onClick={clickable ? () => onClick!(station.node_id) : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick!(station.node_id); } } : undefined}
+      aria-label={clickable ? `Open ${station.node_title} screen` : undefined}
+      style={clickable ? { cursor: 'pointer' } : undefined}
+    >
+      {/* Selection ring — drawn around the station the operator is currently viewing.
+          Blue (info) so it never collides with the state palette (green/amber/red/purple). */}
+      {active && (
+        <circle cx={x} cy={y} r={radius + 6} fill="none" stroke="#378ADD" strokeWidth={2} />
+      )}
+      {/* Invisible larger hit-target so the whole label area is clickable, not just
+          the small circle — critical for touch and fast operator clicking. */}
+      {clickable && (
+        <circle cx={x} cy={y} r={radius + 10} fill="transparent" />
+      )}
       {/* Outer pulsing ring — RETRYING only */}
       {style.ring && (
         <circle cx={x} cy={y} r={radius + 3} fill="none" stroke={style.ring} strokeWidth={1.5} strokeDasharray="3 2" />
@@ -189,7 +219,7 @@ const BRANCH_SPACING = 80;  // vertical gap between each parallel branch track
 const STATION_R_MAX = 18;   // largest station radius (for drop-line endpoint clearance)
 const LABEL_BELOW = 30;     // space below station for label + sub-text
 
-export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth = 680 }) => {
+export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth = 680, onStationClick, activeStationId }) => {
   if (stations.length === 0) {
     return (
       <div className="h-[220px] rounded-2xl border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center text-slate-400 text-[12px] font-medium">
@@ -328,7 +358,14 @@ export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth 
 
               {/* Branch stations */}
               {branchStations.map((s, i) => (
-                <StationNode key={s.node_id} x={getX(i)} y={trackY} station={s} />
+                <StationNode
+                  key={s.node_id}
+                  x={getX(i)}
+                  y={trackY}
+                  station={s}
+                  onClick={onStationClick}
+                  active={activeStationId === s.node_id}
+                />
               ))}
             </g>
           );
@@ -336,7 +373,14 @@ export const MetroTracker: React.FC<MetroTrackerProps> = ({ stations, viewWidth 
 
         {/* ── Main track stations ────────────────────────────────────────── */}
         {mainStations.map((s, i) => (
-          <StationNode key={s.node_id} x={xForMain(i)} y={MAIN_Y} station={s} />
+          <StationNode
+            key={s.node_id}
+            x={xForMain(i)}
+            y={MAIN_Y}
+            station={s}
+            onClick={onStationClick}
+            active={activeStationId === s.node_id}
+          />
         ))}
 
         {/* ── FORK marker — double vertical bar at the fork station ──────── */}
