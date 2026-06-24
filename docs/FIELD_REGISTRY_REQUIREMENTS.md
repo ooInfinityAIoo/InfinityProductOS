@@ -24,19 +24,21 @@ This is the non-negotiable rule the whole design serves.
 ## 2. The anchoring model
 
 Every field carries mandatory anchors plus optional finer placement, forming a
-precise **five-level placement chain**:
+precise **six-level placement chain**. Banking terminology throughout — what the
+data model calls a workflow *node* is a **Workflow Step** to the business.
 
 ```
-       Package  →  Product  →  Sub-Product  →  Workflow ID  →  Workflow Step ID
-       (L1)        (L2)        (L3)            (L4)             (L5)
+  Package → Product → Sub-Product → Workflow ID → Workflow Step ID → Workflow SubStep ID
+  (L1)      (L2)      (L3)          (L4)           (L5)               (L6)
 
 FIELD anchors:
- ├─ L1  Package            MANDATORY · exactly one          (no global fields)
- ├─ —   Master             MANDATORY · exactly one          (no orphans; see §4)
- ├─ L2  Product            MANDATORY · one | many | ALL      (many-to-many + ALL flag)
- ├─ L3  Sub-Product        OPTIONAL  · placeholder for now
- ├─ L4  Workflow ID        OPTIONAL  · placeholder  (Transaction Workflow ID)
- └─ L5  Workflow Step ID   OPTIONAL  · placeholder  (Transaction Workflow Step ID)
+ ├─ L1  Package              MANDATORY · exactly one        (no global fields)
+ ├─ —   Master               MANDATORY · exactly one        (no orphans; see §4)
+ ├─ L2  Product              MANDATORY · one | many | ALL    (many-to-many + ALL flag)
+ ├─ L3  Sub-Product          OPTIONAL  · placeholder for now
+ ├─ L4  Workflow ID          OPTIONAL  · placeholder
+ ├─ L5  Workflow Step ID     OPTIONAL  · placeholder
+ └─ L6  Workflow SubStep ID  OPTIONAL  · placeholder
 ```
 
 - **L1 Package** — one per field (Q6). Global-defined/package-inherited deferred.
@@ -46,13 +48,21 @@ FIELD anchors:
   Many-to-many join **plus** an `applies_to_all_products` flag; ALL also auto-includes
   products added to the package later.
 - **L3 Sub-Product** — optional; narrows below a product.
-- **L4 Workflow ID** — optional; the Transaction Workflow (template) the field belongs to
+- **L4 Workflow ID** — optional; the Transaction Workflow the field belongs to
   → `WorkflowConfiguration.workflow_id`.
-- **L5 Workflow Step ID** — optional; the specific step (node) within that workflow
-  → `WorkflowNode.node_id`.
+- **L5 Workflow Step ID** — optional; the **Workflow Step** within that workflow
+  (banking term for the workflow node) → `WorkflowNode.node_id`.
+- **L6 Workflow SubStep ID** — optional; a **sub-step that spawns from a Workflow
+  Step** (the finer operations inside a step — e.g. an orchestration step). Needs a
+  stable sub-step identifier; today a step's `orchestration_steps` are an ordered
+  JSONB array without stable IDs, so introducing a `substep_id` is part of this work.
 
-L3–L5 are **placeholders now** (schema present, not yet enforced), so the full
-five-level chain exists from the start and lineage can resolve top-to-bottom.
+> Terminology note: we adopt **"Workflow Step"** (and "Workflow SubStep") as the
+> business names. The physical model keeps `WorkflowNode.node_id`; the rename is at
+> the spec/UI layer — no risky model-wide rename of the column.
+
+L3–L6 are **placeholders now** (schema present, not yet enforced), so the full
+six-level chain exists from the start and lineage can resolve top-to-bottom.
 
 ---
 
@@ -160,7 +170,9 @@ On `iso_field_registry` (`ISOFieldDefinition`):
 - `applies_to_all_products` → new boolean
 - chain placeholders (new, nullable): `subproduct_id` (L3) → `SubproductMaster.subproduct_id`;
   `workflow_id` (L4) → `WorkflowConfiguration.workflow_id`;
-  `workflow_step_id` (L5) → `WorkflowNode.node_id`
+  `workflow_step_id` (L5) → `WorkflowNode.node_id` (business: "Workflow Step");
+  `workflow_substep_id` (L6) → a sub-step within a Workflow Step (requires introducing
+  a stable `substep_id` on orchestration steps)
 - extend `field_source` enum (§3)
 
 New association:
