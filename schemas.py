@@ -376,7 +376,10 @@ class ISOFieldDefinitionCreate(BaseModel):
     technical_sys_name: str = Field(..., description="Internal system field identifier")
     client_business_name: str = Field(..., description="User-facing field label")
     display_preference: str = Field("ISO", description="Preference for UI rendering: ISO or CLIENT")
-    iso_business_name: str = Field(..., description="ISO 20022 standard field mapping")
+    # iso_business_name is now OPTIONAL (FIELD_REGISTRY_REQUIREMENTS.md §5): native
+    # BANK_CUSTOM fields have no ISO equivalent. Interim: when omitted the create
+    # handler falls back to client_business_name (true-nullable rebuild is a later phase).
+    iso_business_name: Optional[str] = Field(None, description="ISO 20022 standard field mapping (null for native non-ISO fields)")
     localized_names: Optional[Dict[str, str]] = Field(None, description="A JSON object for multilingual field names, keyed by locale (e.g., {'es': 'Monto Principal'}).")
     data_type: str = Field(..., description="Decimal, Alphanumeric, Amount, Date, Text")
     domain_category: str = Field(..., description="Business domain (HELOC, PAYMENTS, TREASURY)")
@@ -390,8 +393,18 @@ class ISOFieldDefinitionCreate(BaseModel):
     # field_source separates governance origin from display preference (different concerns):
     # ISO_20022 = pre-seeded ISO standard (read-only); BANK_CUSTOM = admin-defined proprietary;
     # CALCULATED = auto-registered when a Formula output token is saved
-    field_source: Optional[str] = Field("ISO_20022", description="ISO_20022 | BANK_CUSTOM | CALCULATED")
+    field_source: Optional[str] = Field("ISO_20022", description="ISO_20022 | BANK_CUSTOM | CALCULATED | DERIVED | CONFIGURATION | REGULATORY")
     formula_ref: Optional[str] = Field(None, description="For CALCULATED fields: program_id of the Formula that produces this field")
+    # ── Extended Field Registry anchors (FIELD_REGISTRY_REQUIREMENTS.md §2/§4/§5) ──
+    master_ref: Optional[str] = Field(None, description="MANDATORY — the Master (a MAINTENANCE screen) this field is anchored to. No master ⇒ not selectable.")
+    iso_field_ref: Optional[str] = Field(None, description="For aliased custom fields: the ISO field_id this field renames. Null for native fields.")
+    application_package_id: Optional[str] = Field(None, description="L1 — MANDATORY package this field belongs to.")
+    applies_to_all_products: bool = Field(False, description="L2 — when true the field applies to ALL products in the package (and future ones).")
+    product_ids: List[str] = Field(default_factory=list, description="L2 — specific products this field maps to (when not applies_to_all_products). Stored in field_product_map.")
+    subproduct_id: Optional[str] = Field(None, description="L3 placeholder — narrows below a product.")
+    workflow_id: Optional[str] = Field(None, description="L4 placeholder — Transaction Workflow ID.")
+    workflow_step_id: Optional[str] = Field(None, description="L5 placeholder — Workflow Step (WorkflowNode.node_id).")
+    workflow_substep_id: Optional[str] = Field(None, description="L6 placeholder — Workflow SubStep.")
 
 
 class ISOFieldDefinitionResponse(ISOFieldDefinitionCreate):

@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, cast, String, text
 from typing import List, Optional
+import os
 import uuid
 import datetime
 from datetime import datetime as dt_datetime
@@ -55,19 +56,56 @@ def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = 
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Field with technical_sys_name '{payload.technical_sys_name}' already exists."
         )
-        
+
+    # ── Mandatory anchoring (FIELD_REGISTRY_REQUIREMENTS.md §1/§2) — no orphans ──
+    # Every field must be anchored to a Package (L1), a Master, and a Product (L2:
+    # either ALL products or an explicit list). Existence of master/products is not
+    # hard-validated yet (masters are seeded in a later phase).
+    missing = []
+    if not payload.application_package_id:
+        missing.append("application_package_id (Package, L1)")
+    if not payload.master_ref:
+        missing.append("master_ref (Master)")
+    if not payload.applies_to_all_products and not payload.product_ids:
+        missing.append("product (set applies_to_all_products=true or provide product_ids)")
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Field must be anchored — missing: " + "; ".join(missing),
+        )
+
+    # Custom (non-ISO) fields use the reserved CUST_ namespace (D7) so they can
+    # never shadow an ISO technical_sys_name.
+    if payload.field_source == "BANK_CUSTOM" and not payload.technical_sys_name.startswith("CUST_"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="BANK_CUSTOM fields must use the reserved 'CUST_' prefix on technical_sys_name.",
+        )
+
     field_id = f"FIELD-{payload.domain_category[:4].upper()}-{str(uuid.uuid4())[:6].upper()}"
 
-    # The Create schema and the ORM model have drifted apart: the schema exposes
-    # `localized_names`, but the column is `localized_overrides`. Blindly splatting
-    # payload.dict() into the model raised "invalid keyword argument" and 500'd EVERY
-    # field registration (incl. BANK_CUSTOM non-ISO fields). Map the known rename and
-    # drop any other schema-only keys so the registry create is resilient to drift.
+    # Schema/model drift guard (the schema exposes `localized_names`; the column is
+    # `localized_overrides`) + drop schema-only keys like product_ids that aren't
+    # model columns.
     data = payload.dict()
     if "localized_names" in data:
         data["localized_overrides"] = data.pop("localized_names")
     valid_cols = {col.name for col in models.ISOFieldDefinition.__table__.columns}
     data = {k: v for k, v in data.items() if k in valid_cols}
+
+    # Interim (Phase 3-safe): iso_business_name is still NOT NULL at the DB level, so
+    # fall back to the client name for native non-ISO fields. The true-nullable
+    # rebuild is a separately-flagged phase.
+    if not data.get("iso_business_name"):
+        data["iso_business_name"] = payload.client_business_name
+    # Non-ISO fields display their client name by default.
+    if payload.field_source and payload.field_source != "ISO_20022":
+        data["display_preference"] = "CLIENT"
+
+    # AUTO_APPROVE_FIELDS (D5): skip 4-Eye during framework build (default on);
+    # real maker-checker gate is re-enabled at package go-live.
+    auto_approve = os.getenv("AUTO_APPROVE_FIELDS", "true").lower() in ("1", "true", "yes")
+    data["status"] = "ACTIVE" if auto_approve else "DRAFT"
 
     new_field = models.ISOFieldDefinition(
         field_id=field_id,
@@ -75,8 +113,18 @@ def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = 
         created_by=current_user.id,
         **data
     )
-    
     db.add(new_field)
+
+    # L2 product mapping — explicit products go into field_product_map (the ALL flag
+    # is stored on the field itself).
+    for pid in (payload.product_ids or []):
+        db.add(models.FieldProductMap(
+            map_id=f"FPM-{uuid.uuid4().hex[:8].upper()}",
+            field_id=field_id,
+            product_id=pid,
+            created_at=datetime.datetime.utcnow().isoformat(),
+        ))
+
     db.commit()
     db.refresh(new_field)
     return new_field
