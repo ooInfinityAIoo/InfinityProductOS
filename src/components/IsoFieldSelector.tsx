@@ -23,6 +23,17 @@ const DATA_TYPE_COLORS: Record<string, string> = {
   Decimal: 'bg-orange-50 text-orange-700 border-orange-200',
 };
 
+// Field-source badges (FIELD_REGISTRY_REQUIREMENTS.md §3/§6). ISO_20022 is the
+// default and intentionally shows NO tag so the standard fields stay visually clean;
+// every non-ISO source gets a distinct chip.
+const FIELD_SOURCE_TAG: Record<string, { label: string; cls: string }> = {
+  BANK_CUSTOM: { label: 'Custom', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  CALCULATED: { label: 'Calc', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  DERIVED: { label: 'Derived', cls: 'bg-teal-50 text-teal-700 border-teal-200' },
+  CONFIGURATION: { label: 'Config', cls: 'bg-slate-100 text-slate-600 border-slate-300' },
+  REGULATORY: { label: 'Reg', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+};
+
 export const IsoFieldSelector: React.FC<IsoFieldSelectorProps> = ({
   value,
   onChange,
@@ -54,6 +65,9 @@ export const IsoFieldSelector: React.FC<IsoFieldSelectorProps> = ({
   if (activeTypeFilter !== 'All') queryParams.set('data_type', activeTypeFilter);
   if (piiOnly) queryParams.set('is_pii', 'true');
   if (domainCategory) queryParams.set('domain_category', domainCategory);
+  // Selectability gate (FIELD_REGISTRY_REQUIREMENTS.md §6) — never offer orphan
+  // fields (no Master). ISO fields are grandfathered server-side until categorised.
+  queryParams.set('selectable_only', 'true');
   queryParams.set('limit', '50');
 
   const { data, isLoading } = useQuery({
@@ -260,6 +274,13 @@ export const IsoFieldSelector: React.FC<IsoFieldSelectorProps> = ({
                       {f.is_pii && (
                         <span className="flex-shrink-0 flex items-center gap-0.5 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded">
                           <Shield size={8} />PII
+                        </span>
+                      )}
+                      {/* Field-source tag — distinguishes non-ISO fields at a glance
+                          (FIELD_REGISTRY_REQUIREMENTS.md §6). ISO_20022 shows no tag. */}
+                      {FIELD_SOURCE_TAG[f.field_source as string] && (
+                        <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border ${FIELD_SOURCE_TAG[f.field_source as string].cls}`}>
+                          {FIELD_SOURCE_TAG[f.field_source as string].label}
                         </span>
                       )}
                     </div>

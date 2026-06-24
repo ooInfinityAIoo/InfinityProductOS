@@ -204,6 +204,8 @@ def search_iso_fields(
     is_pii: Optional[bool] = Query(None, description="Filter to only PII fields"),
     domain_category: Optional[str] = Query(None, description="Filter by domain"),
     display_preference: Optional[str] = Query(None, description="Filter by display preference: ISO or CLIENT"),
+    field_source: Optional[str] = Query(None, description="Filter by origin: ISO_20022 | BANK_CUSTOM | CALCULATED | DERIVED | CONFIGURATION | REGULATORY"),
+    selectable_only: bool = Query(False, description="Selectability gate (FIELD_REGISTRY_REQUIREMENTS.md §6): hide orphan fields. Interim rule — keep a field if it has a Master OR is a not-yet-categorised ISO_20022 field. Field pickers pass true."),
     sort_by: Optional[str] = Query("iso_business_name", description="Column to sort by"),
     sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
     db: Session = Depends(get_db),
@@ -234,6 +236,20 @@ def search_iso_fields(
         base_query = base_query.filter(models.ISOFieldDefinition.domain_category == domain_category)
     if display_preference in ("ISO", "CLIENT"):
         base_query = base_query.filter(models.ISOFieldDefinition.display_preference == display_preference)
+    if field_source:
+        base_query = base_query.filter(models.ISOFieldDefinition.field_source == field_source)
+
+    # Selectability gate — no orphan fields offered to pickers. Interim rule grandfathers
+    # ISO_20022 fields (master assignment happens in the categorisation phase); any other
+    # source MUST have a master_ref to appear. Tighten to "master_ref required for all"
+    # once auto-categorisation has run.
+    if selectable_only:
+        base_query = base_query.filter(
+            or_(
+                models.ISOFieldDefinition.master_ref.isnot(None),
+                models.ISOFieldDefinition.field_source == "ISO_20022",
+            )
+        )
 
     sort_col = SORTABLE_COLUMNS.get(sort_by, models.ISOFieldDefinition.iso_business_name)
     order_expr = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
