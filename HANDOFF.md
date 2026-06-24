@@ -23,10 +23,15 @@ Progress (phased, §13 of the spec):
   screens (Currency/Country/Customer/Bank + Amount/Date/Reference + Configuration/
   Calculation Output/Derived Field), scoped to Treasury System, with sample Currency/
   Country records. Verified: a field anchored to Currency Master is selectable.
-- **Phase 6 (riskiest):** rules-based auto-categorisation of the 3,013 ISO fields
-  (Package+Master+Product) + exception report. Groom the rule set before running.
-- **Phase 7:** where-used / lineage API + panel (rules/calcs/workflows/screens/mappers/
-  notifications/reports).
+- **Phase 7 API DONE** (`GET /fields/registry/{field_id}/where-used`) — lineage scan
+  across rules / calculations / screens / workflow steps / mappers / notifications /
+  reports. Best-effort match on technical_sys_name + iso_business_name (excludes
+  generic client_business_name). Verified: field bound in a screen → where-used finds it.
+  REMAINING: the in-studio lineage *panel* (frontend) — API is ready to wire.
+- **Phase 6 (riskiest, NEXT to groom):** rules-based auto-categorisation of the 3,013
+  ISO fields (Package+Master+Product) + exception report. Groom the rule set before
+  running. This is the step that tightens the selectability gate from "grandfather
+  ISO" to "master required for all".
 - **DEFERRED destructive op:** make `iso_business_name` truly nullable — needs a SQLite
   table rebuild of the 3,014-row registry; do with an explicit checkpoint + user nod.
 - Test data left in local DB: a few CUST_* fields + an FX Spot product/workflows under

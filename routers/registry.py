@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, cast, String, text
 from typing import List, Optional
 import os
+import json
 import uuid
 import datetime
 from datetime import datetime as dt_datetime
@@ -258,6 +259,80 @@ def search_iso_fields(
     fields = base_query.order_by(order_expr).offset(skip).limit(limit).all()
 
     return {"fields": fields, "total_count": total_count}
+
+
+@router.get("/{field_id}/where-used", summary="Field lineage — where is this field used?")
+def field_where_used(field_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
+    """
+    WHY THIS EXISTS (FIELD_REGISTRY_REQUIREMENTS.md §8):
+    Bank-grade impact analysis. Given a field, return every place it is referenced
+    across the platform — Business Rules, Calculations, Screens, Workflow Steps,
+    Data Gateway Mappers, Notifications, and Reports — so a user can see what breaks
+    before changing a field.
+
+    Best-effort scan: matches on the field's most identifier-like names
+    (technical_sys_name, iso_business_name) appearing in each artifact's definition.
+    client_business_name is deliberately excluded — it is often generic ("Amount")
+    and would produce false positives.
+    """
+    field = db.query(models.ISOFieldDefinition).filter(
+        models.ISOFieldDefinition.field_id == field_id
+    ).first()
+    if not field:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Field '{field_id}' not found.")
+
+    idents = {v for v in [field.technical_sys_name, field.iso_business_name] if v}
+
+    def matched(blob) -> list:
+        if blob is None:
+            return []
+        s = blob if isinstance(blob, str) else json.dumps(blob, default=str)
+        return sorted(i for i in idents if i and i in s)
+
+    usages = {"rules": [], "calculations": [], "screens": [],
+              "workflow_steps": [], "mappers": [], "notifications": [], "reports": []}
+
+    for r in db.query(models.BusinessRuleSet).all():
+        m = matched(r.definition)
+        if m:
+            usages["rules"].append({"id": r.rule_set_id, "name": r.business_name, "matched": m})
+    for f in db.query(models.SymbolicFormulaAsset).all():
+        m = matched(f"{f.mathematical_expression or ''} {f.target_output_field or ''}")
+        if m:
+            usages["calculations"].append({"id": f.asset_id, "name": f.business_name, "matched": m})
+    for s in db.query(models.ScreenTemplate).all():
+        m = matched(s.definition)
+        if m:
+            usages["screens"].append({"id": s.screen_id, "name": s.screen_name, "matched": m})
+    for n in db.query(models.WorkflowNode).all():
+        m = matched(n.orchestration_steps)
+        if m:
+            usages["workflow_steps"].append({"id": n.node_id, "name": n.node_title, "workflow_id": n.workflow_id, "matched": m})
+    for mp in db.query(models.PayloadFieldMapping).all():
+        blob = " ".join(str(x) for x in [mp.source_extracted_field, mp.target_iso_field,
+                                          mp.transformation_rule_code, mp.calculation_token_code] if x)
+        m = matched(blob)
+        if m:
+            usages["mappers"].append({"id": mp.mapping_id, "mapper_id": mp.mapper_id, "matched": m})
+    for ct in db.query(models.CommunicationTemplate).all():
+        blob = " ".join(str(x) for x in [ct.subject_line, ct.body_content] if x) + " " + json.dumps(ct.referenced_iso_fields or [], default=str)
+        m = matched(blob)
+        if m:
+            usages["notifications"].append({"id": ct.template_id, "name": ct.template_name, "matched": m})
+    for rb in db.query(models.ReportBlueprint).all():
+        m = matched(rb.widgets)
+        if m:
+            usages["reports"].append({"id": rb.report_id, "name": rb.report_name, "matched": m})
+
+    usage_count = sum(len(v) for v in usages.values())
+    return {
+        "field_id": field_id,
+        "technical_sys_name": field.technical_sys_name,
+        "identifiers": sorted(idents),
+        "usage_count": usage_count,
+        "usages": usages,
+    }
+
 
 @router.get("/{field_id}", response_model=schemas.ISOFieldDefinitionResponse, summary="Get a Specific ISO Field")
 def get_iso_field(field_id: str, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
