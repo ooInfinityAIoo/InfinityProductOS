@@ -225,13 +225,14 @@ function FilterChips({
 
 // ─── Domain Group Row ─────────────────────────────────────────────────────────
 
-function DomainGroup({ domain, fields, selectedIds, onToggleField, onToggleDisplay, onOpenEdit }: {
+function DomainGroup({ domain, fields, selectedIds, onToggleField, onToggleDisplay, onOpenEdit, onShowLineage }: {
   domain: string;
   fields: ISOField[];
   selectedIds: Set<string>;
   onToggleField: (id: string) => void;
   onToggleDisplay: (field: ISOField) => void;
   onOpenEdit: (field: ISOField) => void;
+  onShowLineage: (field: ISOField) => void;
 }) {
   const [open, setOpen] = useState(true);
   const c = domainColor(domain);
@@ -256,7 +257,8 @@ function DomainGroup({ domain, fields, selectedIds, onToggleField, onToggleDispl
         <FieldRow key={f.field_id} field={f} selected={selectedIds.has(f.field_id)}
           onToggle={() => onToggleField(f.field_id)}
           onToggleDisplay={() => onToggleDisplay(f)}
-          onOpenEdit={() => onOpenEdit(f)} />
+          onOpenEdit={() => onOpenEdit(f)}
+          onShowLineage={() => onShowLineage(f)} />
       ))}
     </tbody>
   );
@@ -264,11 +266,12 @@ function DomainGroup({ domain, fields, selectedIds, onToggleField, onToggleDispl
 
 // ─── Field Row ─────────────────────────────────────────────────────────────────
 
-function FieldRow({ field, selected, onToggle, onToggleDisplay, onOpenEdit }: {
+function FieldRow({ field, selected, onToggle, onToggleDisplay, onOpenEdit, onShowLineage }: {
   field: ISOField; selected: boolean;
   onToggle: () => void;
   onToggleDisplay: () => void;
   onOpenEdit: () => void;
+  onShowLineage: () => void;
 }) {
   const c = domainColor(field.domain_category);
   return (
@@ -316,7 +319,10 @@ function FieldRow({ field, selected, onToggle, onToggleDisplay, onOpenEdit }: {
           <span className="text-emerald-600 font-bold text-[10px] uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">OK</span>
         )}
       </td>
-      <td className="px-4 py-2.5 text-right">
+      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+        <button onClick={onShowLineage} title="Where is this field used?" className="text-[11px] font-bold text-slate-500 hover:text-slate-800 hover:underline uppercase tracking-wider transition-colors mr-3">
+          Lineage
+        </button>
         <button onClick={onOpenEdit} className="text-[11px] font-bold text-[#0176D3] hover:text-blue-800 hover:underline uppercase tracking-wider transition-colors">
           Edit
         </button>
@@ -356,6 +362,9 @@ export const FieldRegistryStudio: React.FC = () => {
   const queryClient = useQueryClient();
   const { activeProductContext } = usePlatformStore();
   const domainContext = activeProductContext || 'Global';
+
+  // Phase 7 — the field whose lineage ("where used") panel is open (null = closed).
+  const [lineageField, setLineageField] = useState<ISOField | null>(null);
 
   // Search & filters
   const [rawSearch, setRawSearch] = useState('');
@@ -658,6 +667,7 @@ export const FieldRegistryStudio: React.FC = () => {
                   onToggleField={toggleField}
                   onToggleDisplay={handleToggleDisplay}
                   onOpenEdit={openEditDrawer}
+                  onShowLineage={setLineageField}
                 />
               ))
             ) : (
@@ -668,6 +678,7 @@ export const FieldRegistryStudio: React.FC = () => {
                     onToggle={() => toggleField(field.field_id)}
                     onToggleDisplay={() => handleToggleDisplay(field)}
                     onOpenEdit={() => openEditDrawer(field)}
+                    onShowLineage={() => setLineageField(field)}
                   />
                 ))}
                 {fields.length === 0 && (
@@ -919,6 +930,85 @@ export const FieldRegistryStudio: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Phase 7 — field lineage / where-used panel */}
+      {lineageField && (
+        <LineageModal field={lineageField} onClose={() => setLineageField(null)} />
+      )}
     </div>
   );
 };
+
+// ─── Lineage ("Where Used") Modal ──────────────────────────────────────────────
+// WHY THIS EXISTS (FIELD_REGISTRY_REQUIREMENTS.md §8): bank-grade impact analysis —
+// shows every rule, calculation, screen, workflow step, mapper, notification, and
+// report that references this field, so a user sees what breaks before changing it.
+// Calls GET /fields/registry/{field_id}/where-used.
+const LINEAGE_GROUPS: { key: string; label: string }[] = [
+  { key: 'rules', label: 'Business Rules' },
+  { key: 'calculations', label: 'Calculations' },
+  { key: 'screens', label: 'Screens' },
+  { key: 'workflow_steps', label: 'Workflow Steps' },
+  { key: 'mappers', label: 'Data Gateway Mappers' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'reports', label: 'Reports' },
+];
+
+function LineageModal({ field, onClose }: { field: ISOField; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['field-where-used', field.field_id],
+    queryFn: async () => (await apiClient.get(`/fields/registry/${field.field_id}/where-used`)).data,
+  });
+  const usages = data?.usages ?? {};
+  const total = data?.usage_count ?? 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[120] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[85vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-[#1c2230]">
+          <div className="min-w-0">
+            <h2 className="text-sm font-extrabold text-white">Field lineage — where used</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5 font-mono truncate">{field.technical_sys_name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white text-lg font-bold">✕</button>
+        </div>
+        <div className="p-5 overflow-y-auto">
+          {isLoading ? (
+            <div className="py-10 text-center text-[12px] text-slate-400">Scanning the platform…</div>
+          ) : total === 0 ? (
+            <div className="py-10 text-center">
+              <div className="text-[13px] font-semibold text-slate-600">Not used anywhere yet</div>
+              <div className="text-[11px] text-slate-400 mt-1">Safe to change — no rules, screens, calcs, workflows, mappers, notifications, or reports reference it.</div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="text-[12px] text-slate-600">
+                Referenced in <span className="font-bold text-slate-900">{total}</span> place{total === 1 ? '' : 's'} across the platform.
+              </div>
+              {LINEAGE_GROUPS.map(g => {
+                const rows: any[] = usages[g.key] ?? [];
+                if (rows.length === 0) return null;
+                return (
+                  <div key={g.key} className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600">{g.label}</span>
+                      <span className="text-[10px] font-bold text-slate-400">{rows.length}</span>
+                    </div>
+                    <div className="divide-y divide-slate-50">
+                      {rows.map((r, i) => (
+                        <div key={i} className="px-4 py-2 flex items-center justify-between gap-3">
+                          <span className="text-[12px] font-semibold text-slate-800 truncate">{r.name || r.id}</span>
+                          <span className="text-[10px] font-mono text-slate-400 truncate shrink-0">{r.id}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

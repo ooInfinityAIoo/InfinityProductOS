@@ -27,7 +27,7 @@ Progress (phased, §13 of the spec):
   across rules / calculations / screens / workflow steps / mappers / notifications /
   reports. Best-effort match on technical_sys_name + iso_business_name (excludes
   generic client_business_name). Verified: field bound in a screen → where-used finds it.
-  REMAINING: the in-studio lineage *panel* (frontend) — API is ready to wire.
+  Phase 7 panel DONE — "Lineage" button per row opens a where-used modal in the Field Registry studio.
 - **Phase 6 (riskiest, NEXT to groom):** rules-based auto-categorisation of the 3,013
   ISO fields (Package+Master+Product) + exception report. Groom the rule set before
   running. This is the step that tightens the selectability gate from "grandfather
