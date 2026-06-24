@@ -23,27 +23,36 @@ This is the non-negotiable rule the whole design serves.
 
 ## 2. The anchoring model
 
-Every field carries mandatory anchors plus optional finer placement:
+Every field carries mandatory anchors plus optional finer placement, forming a
+precise **five-level placement chain**:
 
 ```
-FIELD
- ├─ Package            MANDATORY · exactly one        (no global fields)
- ├─ Master             MANDATORY · exactly one        (no orphans)
- ├─ Product            MANDATORY · one | many | ALL    (many-to-many + ALL flag)
- ├─ Sub-Product        OPTIONAL  · placeholder for now
- ├─ Workflow Template  OPTIONAL  · placeholder (Transaction Workflow Template ID)
- └─ Workflow Step      OPTIONAL  · placeholder (Transaction Workflow Step ID)
+       Package  →  Product  →  Sub-Product  →  Workflow ID  →  Workflow Step ID
+       (L1)        (L2)        (L3)            (L4)             (L5)
+
+FIELD anchors:
+ ├─ L1  Package            MANDATORY · exactly one          (no global fields)
+ ├─ —   Master             MANDATORY · exactly one          (no orphans; see §4)
+ ├─ L2  Product            MANDATORY · one | many | ALL      (many-to-many + ALL flag)
+ ├─ L3  Sub-Product        OPTIONAL  · placeholder for now
+ ├─ L4  Workflow ID        OPTIONAL  · placeholder  (Transaction Workflow ID)
+ └─ L5  Workflow Step ID   OPTIONAL  · placeholder  (Transaction Workflow Step ID)
 ```
 
-- **Package** — one per field (Q6). Global-defined/package-inherited is deferred.
-- **Master** — one per field (Q1/Q2). See §4.
-- **Product** — a field maps to one product, several products, or **ALL products**
+- **L1 Package** — one per field (Q6). Global-defined/package-inherited deferred.
+- **Master** — one per field (Q1/Q2), orthogonal to the chain. See §4.
+- **L2 Product** — a field maps to one product, several products, or **ALL products**
   in the package (Q7-product). Currency fields → ALL; niche fields → 1–3 products.
-  Modelled as a many-to-many join **plus** an `applies_to_all_products` flag; ALL
-  also auto-includes products added to the package later.
-- **Sub-Product / Workflow Template ID / Workflow Step ID** — optional placeholders
-  now, so the full chain **Package → Product → Sub-Product → Workflow Step** exists
-  in the schema even before we enforce the lower levels.
+  Many-to-many join **plus** an `applies_to_all_products` flag; ALL also auto-includes
+  products added to the package later.
+- **L3 Sub-Product** — optional; narrows below a product.
+- **L4 Workflow ID** — optional; the Transaction Workflow (template) the field belongs to
+  → `WorkflowConfiguration.workflow_id`.
+- **L5 Workflow Step ID** — optional; the specific step (node) within that workflow
+  → `WorkflowNode.node_id`.
+
+L3–L5 are **placeholders now** (schema present, not yet enforced), so the full
+five-level chain exists from the start and lineage can resolve top-to-bottom.
 
 ---
 
@@ -149,7 +158,9 @@ On `iso_field_registry` (`ISOFieldDefinition`):
 - `master_ref` → new, **required** (selectability gate)
 - `application_package_id` → **required** (was effectively optional)
 - `applies_to_all_products` → new boolean
-- `subproduct_id`, `workflow_template_id`, `workflow_step_id` → new nullable placeholders
+- chain placeholders (new, nullable): `subproduct_id` (L3) → `SubproductMaster.subproduct_id`;
+  `workflow_id` (L4) → `WorkflowConfiguration.workflow_id`;
+  `workflow_step_id` (L5) → `WorkflowNode.node_id`
 - extend `field_source` enum (§3)
 
 New association:
