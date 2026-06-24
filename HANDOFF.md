@@ -58,9 +58,13 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
   `src/features/transaction-screen/` (only the modal's intentional `bg-black/40`
   scrim). tsc clean; app mounts clean in vite. `StepIssuePanel`/`ReversalDrawer`
   had no glass; the shared `RuntimeScreenRenderer` was already glass-free.
-- **Open decision (spec §4)** — facts-row config source: recommend deriving from
-  the START node's screen definition rather than a new `WorkflowConfiguration`
-  column. Not yet implemented; interim resolver is in `TransactionWorkflowScreen.tsx`.
+- **Spec §4 facts-row — DONE.** The header facts row now derives from the START
+  node's screen definition (`buildFactsFromScreen` in `TransactionWorkflowScreen.tsx`),
+  falling back to the interim ISO-path resolver only when no start screen is bound.
+  No new `WorkflowConfiguration` column was needed. **Bug also fixed:** the
+  `/instances/{id}` response was omitting `workflow_nodes[].screen_template`, which
+  had silently broken both this facts row AND iteration-2 clickable-station
+  playback (every station fell back to raw context). Now serialized.
 - **Backend resume semantics — NOW WIRED (iteration 5, commit below).** The
   resume endpoint `POST /workflows/{id}/resume/{instance_id}` now branches on the
   decision/action contract (schema `WorkflowResumeRequest` extended with
@@ -69,11 +73,16 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
     `cancelled_by/reason_code/message` + trace (verified end-to-end via TestClient).
   - `action=cancel_transaction` → CANCELLED with reason.
   - `action=send_to_repair` → AWAITING_REPAIR + `repair_queue_assigned` from the node.
-  - `action=skip_step` → advances to the next node by sequence (linear approx;
-    full edge-aware skip is a follow-up) and resumes; completes if last.
+  - `action=skip_step` → **edge-aware**: follows the single outgoing `WorkflowEdge`;
+    falls back to sequence order only for branches/no-edge; completes if last.
   - `action=retry` → re-executes (only valid from RETRYING/FAILED/AWAITING_REPAIR).
   - `decision=approve` / bare resume → re-executes from the current node (PAUSED only).
-  - `action=reverse_step` → explicit 400 (saga reversal still NOT implemented here).
-  Terminal instances (COMPLETED/REJECTED/CANCELLED/REVERSED) are rejected with 400.
-- **Still open:** saga reversal (`reverse_step`) in resume; edge-aware skip.
+  - `action=reverse_step` → **implemented**: validates target node + reversibility
+    (IRREVERSIBLE → 400), transitions to REVERSED with an idempotent
+    `reversal_request_id`, records audit + traces the node's `reversal_recipe`
+    compensations. Exempt from the terminal gate so a COMPLETED txn can be reversed.
+  Terminal instances are otherwise rejected with 400.
+- **Still open (engine work):** actually DISPATCHING reversal compensations
+  (db/api/event) declared in `reversal_recipe` — currently recorded in the trace
+  only; the REVERSED state transition + idempotency key are committed.
 - Priority-3 (older): mobile-responsive metro tracker (SVG viewBox + adaptive radii).
