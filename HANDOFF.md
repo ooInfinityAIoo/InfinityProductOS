@@ -1,5 +1,35 @@
 # Handoff
 
+## Active effort (2026-06-24, later) — Extended Field Registry
+Turning the ISO-only field registry into a unified, master-anchored, package-scoped
+registry. **Contract: `docs/FIELD_REGISTRY_REQUIREMENTS.md`** (read first). Six-level
+chain: Package(L1)→Product(L2)→Sub-Product(L3)→Workflow ID(L4)→Workflow Step ID(L5)→
+Workflow SubStep ID(L6); Master is a separate mandatory anchor; no orphan fields.
+
+Progress (phased, §13 of the spec):
+- **Phase 1 DONE** (`f315ef8`) — additive schema: master_ref, iso_field_ref,
+  application_package_id, applies_to_all_products, subproduct_id, workflow_id,
+  workflow_step_id, workflow_substep_id on ISOFieldDefinition + `field_product_map`
+  table. Migration `e8_002` (idempotent). No behaviour change.
+- **Phase 2 DONE** (`654ac10`) — backfill field_source NULL→ISO_20022 (`e8_003`).
+  Now {ISO_20022: 3013, BANK_CUSTOM: n}.
+- **Phase 3-safe DONE** (`a581845`) — create enforces Package+Master+Product (clear
+  400s), CUST_ prefix for BANK_CUSTOM (D7), AUTO_APPROVE_FIELDS flag (D5, default on),
+  iso_business_name optional w/ client-name fallback, product_ids→field_product_map.
+- **NEXT — Phase 4:** selectability gate (hide fields with no master_ref from pickers)
+  + Custom/Calculated tags in IsoFieldSelector.
+- **Phase 5:** seed standard masters (Config/Calculated/Derived) + global canonical
+  (Currency/Country/Customer). Decided interim: small fixed attribute-master set
+  (Amount/Date/Reference), CUST_ prefix.
+- **Phase 6 (riskiest):** rules-based auto-categorisation of the 3,013 ISO fields
+  (Package+Master+Product) + exception report. Groom the rule set before running.
+- **Phase 7:** where-used / lineage API + panel (rules/calcs/workflows/screens/mappers/
+  notifications/reports).
+- **DEFERRED destructive op:** make `iso_business_name` truly nullable — needs a SQLite
+  table rebuild of the 3,014-row registry; do with an explicit checkpoint + user nod.
+- Test data left in local DB: a few CUST_* fields + an FX Spot product/workflows under
+  Treasury System (PKG-B3CFAF78). Harmless.
+
 ## Current Context
 **InfinityProductOS** (Banking Operations Platform), strict "Logic as Data" architecture.
 Active effort: **Transaction Workflow Screen rework** — adopting an institutional
