@@ -40,6 +40,15 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
 - **Open decision (spec §4)** — facts-row config source: recommend deriving from
   the START node's screen definition rather than a new `WorkflowConfiguration`
   column. Not yet implemented; interim resolver is in `TransactionWorkflowScreen.tsx`.
-- **Backend** — confirm the engine accepts the new resume actions used by Band E:
-  `send_to_repair`, `skip_step` (Approve/Reject/retry/cancel already wired).
+- **Backend (IMPORTANT — decision semantics are NOT implemented).** The resume
+  endpoint `POST /workflows/{id}/resume/{instance_id}` (routers/workflows.py:388)
+  (a) only accepts instances whose status is `PAUSED` (404 otherwise), and
+  (b) ignores `decision` / `action` / `reason` entirely — it just merges
+  `additional_context` and re-executes the current node. So today Reject behaves
+  identically to Approve, and the Band E Retry / Return-to-repair / Skip buttons
+  (which fire on RETRYING/FAILED/AWAITING_REPAIR, i.e. non-PAUSED) will 404.
+  The decision bar is UI-complete but **decorative until the resume endpoint is
+  taught to branch on decision/action and to accept non-PAUSED states.** This
+  predates the rework (Approve/Reject/Retry/Cancel were already unwired); the
+  next backend iteration should make resume honour the maker-checker contract.
 - Priority-3 (older): mobile-responsive metro tracker (SVG viewBox + adaptive radii).
