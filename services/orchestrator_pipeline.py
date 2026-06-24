@@ -106,8 +106,15 @@ def process_calculation_model(payload: dict, db: Session) -> dict:
     new_formula = SymbolicFormulaAsset(
         asset_id=asset_id,
         token_code=token_code,
+        # business_name is NOT NULL on the model but was never mapped here, so every
+        # formula create via the API 500'd on the constraint. Map it (and the other
+        # authored fields) through. Fall back to token_code so a name is always set.
+        business_name=payload.get("business_name") or token_code,
+        financial_domain=payload.get("financial_domain"),
         target_output_field=target_output_field,
         mathematical_expression=mathematical_expression,
+        parameters=payload.get("parameters"),
+        description=payload.get("description"),
         application_package_id=payload.get("application_package_id"),
         product_id=payload.get("product_id"),
         subproduct_id=payload.get("subproduct_id"),
