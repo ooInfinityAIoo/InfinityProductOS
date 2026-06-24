@@ -44,6 +44,54 @@ import { RunTransactionModal } from './RunTransactionModal';
 // interpreter. Clicking a metro-tracker station renders THAT node's screen here,
 // read-only for completed steps (= "playback"), editable only for the live action.
 import { RuntimeScreenRenderer } from '../package-runtime/RuntimeScreenRenderer';
+import { usePlatformStore } from '../../store/usePlatformStore';
+
+// ── Band A facts row (TXN_SCREEN_LAYOUT_LANGUAGE.md §4) ──────────────────────
+// Status → badge colour on the dark header band. Mirrors the metro-tracker
+// urgency language: green done · amber in-motion · red blocked · purple cancel.
+const STATUS_BADGE: Record<string, string> = {
+  COMPLETED: 'bg-emerald-500/20 text-emerald-300',
+  RUNNING: 'bg-amber-500/20 text-amber-300',
+  PAUSED: 'bg-amber-500/20 text-amber-300',
+  RETRYING: 'bg-amber-500/20 text-amber-300',
+  AWAITING_REPAIR: 'bg-red-500/20 text-red-300',
+  FAILED_TECHNICAL: 'bg-red-500/20 text-red-300',
+  BLOCKED: 'bg-red-500/20 text-red-300',
+  REJECTED: 'bg-red-500/20 text-red-300',
+  CANCELLED: 'bg-violet-500/20 text-violet-300',
+  REVERSED: 'bg-amber-500/20 text-amber-300',
+};
+
+// INTERIM facts resolver. §4 of the spec calls for the facts row to be
+// configurable per workflow (driven by the START node's screen). Until that
+// lands, we resolve a small set of well-known ISO 20022 paths (with flat-key
+// fallbacks) out of current_context and show only the ones that resolve — so a
+// non-payment workflow simply shows fewer facts rather than blank/incorrect cells.
+const FACT_CANDIDATES: { label: string; paths: string[] }[] = [
+  { label: 'Amount', paths: ['FIToFICstmrCdtTrf.CdtTrfTxInf.InstdAmt.Amt', 'amount', 'Amount'] },
+  { label: 'Currency', paths: ['FIToFICstmrCdtTrf.CdtTrfTxInf.InstdAmt.Ccy', 'currency', 'Ccy'] },
+  { label: 'Beneficiary', paths: ['FIToFICstmrCdtTrf.CdtTrfTxInf.Cdtr.Nm', 'beneficiary', 'beneficiary_name'] },
+  { label: 'Beneficiary BIC', paths: ['FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAgt.FinInstnId.BICFI', 'beneficiary_bic', 'BIC'] },
+  { label: 'Value date', paths: ['FIToFICstmrCdtTrf.CdtTrfTxInf.IntrBkSttlmDt', 'value_date', 'valueDate'] },
+];
+
+const getByPath = (obj: any, path: string): any =>
+  path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+
+const resolveFacts = (ctx: any): { label: string; value: string }[] => {
+  if (!ctx) return [];
+  const out: { label: string; value: string }[] = [];
+  for (const f of FACT_CANDIDATES) {
+    for (const p of f.paths) {
+      const v = getByPath(ctx, p);
+      if (v !== undefined && v !== null && v !== '') {
+        out.push({ label: f.label, value: typeof v === 'object' ? JSON.stringify(v) : String(v) });
+        break;
+      }
+    }
+  }
+  return out;
+};
 
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
@@ -205,6 +253,9 @@ export const TransactionWorkflowScreen: React.FC = () => {
   // null = follow the live current node; a node_id = the operator clicked a
   // station to inspect/playback that step. Reset to null whenever the instance changes.
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Band C — operator can dismiss the contextual instruction banner.
+  const [bandCDismissed, setBandCDismissed] = useState(false);
+  const { activeProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
 
   // E6 commit 3/N — ⌘K (Mac) / Ctrl+K (Windows) opens the search panel.
@@ -262,7 +313,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
   // Iteration 2 — when the operator switches to a different transaction, stop
   // viewing whatever station they had open and snap back to the live current node.
-  useEffect(() => { setSelectedNodeId(null); }, [selectedInstanceId]);
+  useEffect(() => { setSelectedNodeId(null); setBandCDismissed(false); }, [selectedInstanceId]);
 
   // The station the operator is viewing: their explicit click, else the live node.
   const viewedNodeId: string | null =
@@ -502,78 +553,87 @@ export const TransactionWorkflowScreen: React.FC = () => {
         />
       )}
 
-      <div className="glass-card rounded-2xl p-6 bg-white/85 backdrop-blur-md border border-white/30 shadow-glass">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 font-extrabold text-base shadow-inner">
-              T
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* ── Band A (TXN_SCREEN_LAYOUT_LANGUAGE.md) — dark record header ──────
+            Persistent record context that never scrolls away: action title,
+            status badge, identity line, and a configurable facts row. Dark
+            institutional band adopted from the StructuredFlow layout language. */}
+        <div className="bg-[#1c2230] px-6 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-[15px] font-bold tracking-tight text-white">
+                  {currentNode ? currentNode.node_title : 'Transaction'}
+                </h1>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_BADGE[instanceResponse.status] ?? 'bg-slate-600/40 text-slate-200'}`}>
+                  {instanceResponse.status}
+                </span>
+                {!TERMINAL_STATUSES.has(instanceResponse.status) && (
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isFetching ? 'bg-sky-400 animate-ping' : 'bg-emerald-400'}`} />
+                    {isFetching ? 'refreshing' : 'live'}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1 font-mono truncate">
+                {instanceResponse.workflow_id} · {instanceResponse.instance_id}
+              </div>
             </div>
-            <div>
-              <h1 className="text-base font-extrabold text-slate-800 tracking-tight font-display">
-                Transaction Workflow Screen
-              </h1>
-              <p className="text-[11px] font-medium text-slate-500 mt-0.5">
-                Runtime view · Live metro tracker for a single transaction
-              </p>
+            {/* Run + Recent + Search + Bulk — restyled for the dark band */}
+            <div className="flex gap-2 flex-wrap justify-end shrink-0">
+              <button
+                onClick={() => { setShowRunModal(true); setShowSearch(false); setShowBulkOps(false); setShowInstancePicker(false); }}
+                className="px-3 py-1.5 rounded-lg border border-emerald-400/40 text-emerald-300 bg-emerald-400/10 text-[11px] font-bold hover:bg-emerald-400/20 transition-colors whitespace-nowrap"
+              >
+                ▶ Run
+              </button>
+              <button
+                onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); setShowBulkOps(false); }}
+                className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 text-[11px] font-semibold hover:bg-white/10 transition-colors whitespace-nowrap"
+              >
+                {showInstancePicker ? '✕' : '⊕ Recent'}
+              </button>
+              <button
+                onClick={() => { setShowSearch(!showSearch); setShowInstancePicker(false); setShowBulkOps(false); }}
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${showSearch ? 'bg-sky-500 text-white border-sky-500' : 'border-sky-400/40 text-sky-300 hover:bg-sky-400/10'}`}
+              >
+                {showSearch ? '✕ Close' : '🔍 Search ⌘K'}
+              </button>
+              <button
+                onClick={() => { setShowBulkOps(!showBulkOps); setShowSearch(false); setShowInstancePicker(false); }}
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${showBulkOps ? 'bg-slate-200 text-slate-900 border-slate-200' : 'border-white/15 text-slate-200 hover:bg-white/10'}`}
+              >
+                {showBulkOps ? '✕ Close' : '⚡ Bulk'}
+              </button>
             </div>
           </div>
-          {/* E2/E5/E6/E7 — Run + Instance picker + full search + bulk ops */}
-          <div className="flex gap-2 flex-wrap justify-end">
-            {/* ▶ Run Transaction — fires a real workflow execution end-to-end */}
-            <button
-              onClick={() => { setShowRunModal(true); setShowSearch(false); setShowBulkOps(false); setShowInstancePicker(false); }}
-              className="px-3 py-2 rounded-lg border border-green-400 text-green-700 bg-green-50 text-[11px] font-bold hover:bg-green-100 transition-colors whitespace-nowrap"
-            >
-              ▶ Run
-            </button>
-            <button
-              onClick={() => { setShowInstancePicker(!showInstancePicker); setShowSearch(false); setShowBulkOps(false); }}
-              className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-[11px] font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap"
-            >
-              {showInstancePicker ? '✕' : '⊕ Recent'}
-            </button>
-            <button
-              onClick={() => { setShowSearch(!showSearch); setShowInstancePicker(false); setShowBulkOps(false); }}
-              className={`px-3 py-2 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${showSearch ? 'bg-indigo-600 text-white border-indigo-600' : 'border-indigo-300 text-indigo-600 hover:bg-indigo-50'
-                }`}
-            >
-              {showSearch ? '✕ Close' : '🔍 Search  ⌘K'}
-            </button>
-            {/* E6 commit 2/N — Bulk operations */}
-            <button
-              onClick={() => { setShowBulkOps(!showBulkOps); setShowSearch(false); setShowInstancePicker(false); }}
-              className={`px-3 py-2 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${showBulkOps ? 'bg-slate-700 text-white border-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                }`}
-            >
-              {showBulkOps ? '✕ Close' : '⚡ Bulk'}
-            </button>
+
+          {/* Facts row — §4 configurable context (interim resolver). Always ends
+              with Product so the operator sees the package they're working in. */}
+          <div className="flex flex-wrap gap-x-7 gap-y-2 mt-3 pt-3 border-t border-white/10">
+            {resolveFacts(instanceResponse.current_context).map(f => (
+              <div key={f.label}>
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{f.label}</div>
+                <div className="text-[12px] font-semibold text-white">{f.value}</div>
+              </div>
+            ))}
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Product</div>
+              <div className="text-[12px] font-semibold text-white">{activeProductContext ?? '—'}</div>
+            </div>
           </div>
         </div>
 
-        {/* Transaction header — instance identity + status badge */}
-        <div className="mb-4 pb-4 border-b border-slate-200/50">
-          <div className="flex items-center justify-between">
-            <div className="text-[13px] text-slate-600">
-              <span className="font-medium">Instance:</span>{' '}
-              <span className="font-mono text-slate-500">{instanceResponse.instance_id}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* E6 — live-refresh pulse dot for active instances */}
-              {!TERMINAL_STATUSES.has(instanceResponse.status) && (
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isFetching ? 'bg-indigo-400 animate-ping' : 'bg-green-400'}`} />
-                  {isFetching ? 'refreshing' : 'live'}
-                </div>
-              )}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200">
-                <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                <span className="text-[11px] font-semibold text-slate-700">
-                  {instanceResponse.status}
-                </span>
-              </div>
-            </div>
+        {/* ── Band C — contextual instruction banner (dismissible) ─────────── */}
+        {!bandCDismissed && instanceResponse.status === 'PAUSED' && (
+          <div className="bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-[11px] px-6 py-2 flex items-center justify-between gap-2">
+            <span>ℹ Review the captured instruction below, then approve or reject. Click any station to replay its screen.</span>
+            <button onClick={() => setBandCDismissed(true)} className="text-indigo-400 hover:text-indigo-700 font-bold">✕</button>
           </div>
-        </div>
+        )}
+
+        {/* Body — all bands B/D/E live inside the padded content region. */}
+        <div className="p-6">
 
         {/* Metro tracker — E1 commit 4/N live data. Renders the instance's workflow
             with stations color-coded by their lifecycle state. */}
@@ -773,13 +833,6 @@ export const TransactionWorkflowScreen: React.FC = () => {
           />
         )}
 
-        {/* Info banner — E3 commit 2/N phase. */}
-        <div className="mt-4 p-3 rounded-lg bg-blue-50/40 border border-blue-200/50 text-[11px] text-blue-900">
-          <span className="font-bold">E6 complete (E0–E6):</span>{' '}
-          SLA badges (amber/red corner dot on metro tracker when SLA exceeded) ·
-          Auto-refresh every 10s for active instances ·
-          Bulk ops (approve/retry/cancel N transactions at once) ·
-          ⌘K keyboard shortcut opens search · Esc closes all panels.
         </div>
       </div>
     </div>
