@@ -16,11 +16,13 @@ Progress (phased, §13 of the spec):
 - **Phase 3-safe DONE** (`a581845`) — create enforces Package+Master+Product (clear
   400s), CUST_ prefix for BANK_CUSTOM (D7), AUTO_APPROVE_FIELDS flag (D5, default on),
   iso_business_name optional w/ client-name fallback, product_ids→field_product_map.
-- **NEXT — Phase 4:** selectability gate (hide fields with no master_ref from pickers)
-  + Custom/Calculated tags in IsoFieldSelector.
-- **Phase 5:** seed standard masters (Config/Calculated/Derived) + global canonical
-  (Currency/Country/Customer). Decided interim: small fixed attribute-master set
-  (Amount/Date/Reference), CUST_ prefix.
+- **Phase 4 DONE** (`54f5216`) — search `selectable_only` gate (interim: master OR
+  grandfathered ISO_20022) + `field_source` filter; IsoFieldSelector passes the gate
+  and renders Custom/Calc/Derived/Config/Reg chips.
+- **Phase 5 DONE** (`seed_masters.py`) — 10 canonical masters seeded as LIVE MAINTENANCE
+  screens (Currency/Country/Customer/Bank + Amount/Date/Reference + Configuration/
+  Calculation Output/Derived Field), scoped to Treasury System, with sample Currency/
+  Country records. Verified: a field anchored to Currency Master is selectable.
 - **Phase 6 (riskiest):** rules-based auto-categorisation of the 3,013 ISO fields
   (Package+Master+Product) + exception report. Groom the rule set before running.
 - **Phase 7:** where-used / lineage API + panel (rules/calcs/workflows/screens/mappers/
