@@ -57,12 +57,23 @@ def register_iso_field(payload: schemas.ISOFieldDefinitionCreate, db: Session = 
         )
         
     field_id = f"FIELD-{payload.domain_category[:4].upper()}-{str(uuid.uuid4())[:6].upper()}"
-    
+
+    # The Create schema and the ORM model have drifted apart: the schema exposes
+    # `localized_names`, but the column is `localized_overrides`. Blindly splatting
+    # payload.dict() into the model raised "invalid keyword argument" and 500'd EVERY
+    # field registration (incl. BANK_CUSTOM non-ISO fields). Map the known rename and
+    # drop any other schema-only keys so the registry create is resilient to drift.
+    data = payload.dict()
+    if "localized_names" in data:
+        data["localized_overrides"] = data.pop("localized_names")
+    valid_cols = {col.name for col in models.ISOFieldDefinition.__table__.columns}
+    data = {k: v for k, v in data.items() if k in valid_cols}
+
     new_field = models.ISOFieldDefinition(
         field_id=field_id,
         created_at=datetime.datetime.utcnow().isoformat(),
         created_by=current_user.id,
-        **payload.dict()
+        **data
     )
     
     db.add(new_field)
