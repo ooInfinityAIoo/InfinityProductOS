@@ -21,6 +21,48 @@ router = APIRouter(
     tags=["Workflow Engine"]
 )
 
+
+def _create_nodes(workflow, node_payloads, workflow_id: str) -> dict:
+    """Create WorkflowNode rows and return a {node_code: generated node_id} map.
+
+    WHY: node_id is generated here, so the only stable handle a client can give us
+    is node_code. We return the map so edges can be resolved against it.
+    """
+    code_to_id: dict = {}
+    for node_payload in (node_payloads or []):
+        nid = f"NODE-{uuid.uuid4().hex[:8].upper()}"
+        nd = node_payload.dict()
+        code = nd.get("node_code")
+        if code:
+            code_to_id[code] = nid
+        workflow.nodes.append(
+            models.WorkflowNode(
+                node_id=nid,
+                workflow_id=workflow_id,
+                created_at=datetime.datetime.utcnow().isoformat(),
+                **nd,
+            )
+        )
+    return code_to_id
+
+
+def _create_edges(workflow, edge_payloads, workflow_id: str, code_to_id: dict) -> None:
+    """Create WorkflowEdge rows, translating source/target that match a node_code
+    into the generated node_id. Values that don't match a code pass through
+    unchanged (backward compatible with edges that already carry real node ids)."""
+    for edge_payload in (edge_payloads or []):
+        ed = edge_payload.dict()
+        ed["source_node_id"] = code_to_id.get(ed.get("source_node_id"), ed.get("source_node_id"))
+        ed["target_node_id"] = code_to_id.get(ed.get("target_node_id"), ed.get("target_node_id"))
+        workflow.edges.append(
+            models.WorkflowEdge(
+                edge_id=f"EDGE-{uuid.uuid4().hex[:8].upper()}",
+                workflow_id=workflow_id,
+                created_at=datetime.datetime.utcnow().isoformat(),
+                **ed,
+            )
+        )
+
 @router.post("/", response_model=schemas.WorkflowConfigurationResponse, status_code=status.HTTP_201_CREATED, summary="Create a Full Workflow Graph")
 def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
     """
@@ -49,29 +91,13 @@ def create_workflow(payload: schemas.WorkflowConfigurationCreate, db: Session = 
         template_category=getattr(payload, 'template_category', None),
     )
 
-    # Create and append node objects using the relationship
-    if payload.nodes:
-        for node_payload in payload.nodes:
-            new_workflow.nodes.append(
-                models.WorkflowNode(
-                    node_id=f"NODE-{uuid.uuid4().hex[:8].upper()}",
-                    workflow_id=workflow_id,
-                    created_at=datetime.datetime.utcnow().isoformat(),
-                    **node_payload.dict()
-                )
-            )
-
-    # Create and append edge objects using the relationship
-    if payload.edges:
-        for edge_payload in payload.edges:
-            new_workflow.edges.append(
-                models.WorkflowEdge(
-                    edge_id=f"EDGE-{uuid.uuid4().hex[:8].upper()}",
-                    workflow_id=workflow_id,
-                    created_at=datetime.datetime.utcnow().isoformat(),
-                    **edge_payload.dict()
-                )
-            )
+    # Create nodes, and remember each node's CODE -> generated ID. WHY: node_id is
+    # generated server-side and clients cannot know it ahead of time, so edges that
+    # reference nodes by their stable node_code are translated to the real node_id
+    # here. Without this, a connected multi-node workflow CANNOT be built through the
+    # API (edges would point at non-existent ids and every step would be terminal).
+    code_to_id = _create_nodes(new_workflow, payload.nodes, workflow_id)
+    _create_edges(new_workflow, payload.edges, workflow_id, code_to_id)
     
     try:
         db.add(new_workflow)
@@ -318,29 +344,10 @@ def update_workflow(workflow_id: str, payload: schemas.WorkflowConfigurationCrea
         # Flush the session to execute the deletes before the adds.
         db.flush()
 
-        # Create and add new nodes from the payload
-        if payload.nodes:
-            for node_payload in payload.nodes:
-                workflow.nodes.append(
-                    models.WorkflowNode(
-                        node_id=f"NODE-{uuid.uuid4().hex[:8].upper()}",
-                        workflow_id=workflow_id,
-                        created_at=datetime.datetime.utcnow().isoformat(),
-                        **node_payload.dict()
-                    )
-                )
-
-        # Create and add new edges from the payload
-        if payload.edges:
-            for edge_payload in payload.edges:
-                workflow.edges.append(
-                    models.WorkflowEdge(
-                        edge_id=f"EDGE-{uuid.uuid4().hex[:8].upper()}",
-                        workflow_id=workflow_id,
-                        created_at=datetime.datetime.utcnow().isoformat(),
-                        **edge_payload.dict()
-                    )
-                )
+        # Recreate nodes + edges, translating edge node_code refs to the new node ids
+        # (see _create_nodes/_create_edges — same reason as create_workflow).
+        code_to_id = _create_nodes(workflow, payload.nodes, workflow_id)
+        _create_edges(workflow, payload.edges, workflow_id, code_to_id)
 
         db.commit()
         db.refresh(workflow)

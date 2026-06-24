@@ -952,7 +952,13 @@ class WorkflowExecutor:
                         
                         return {"status": "PAUSED", "workflow_id": self.workflow.workflow_id, "instance_id": instance_id, "trace": self.execution_trace, "missing_documents": missing_docs}
 
-                if node.node_code == "HUMAN_APPROVAL":
+                # A node is a human-approval gate when its TYPE is HUMAN_APPROVAL
+                # (the 21-type taxonomy that models.py says drives executor dispatch).
+                # Previously this only checked node_code == "HUMAN_APPROVAL", so any
+                # node authored the documented way (node_type=HUMAN_APPROVAL, with a
+                # real node_code like "APPR") never paused — approvals silently passed
+                # through. node_code is kept for backward compatibility with old data.
+                if node.node_type == "HUMAN_APPROVAL" or node.node_code == "HUMAN_APPROVAL":
                     if is_resume_iteration and node.node_id == resume_from_node_id:
                         self.execution_trace.append(f"Human approval confirmed for node '{node.node_title}'. Proceeding.")
                     else:
