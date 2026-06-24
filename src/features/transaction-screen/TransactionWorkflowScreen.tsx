@@ -255,6 +255,10 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   // Band C — operator can dismiss the contextual instruction banner.
   const [bandCDismissed, setBandCDismissed] = useState(false);
+  // Band E (maker-checker) — reject requires a typed reason before it can fire.
+  // showReject reveals the reason field; rejectReason holds the mandatory text.
+  const [showReject, setShowReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const { activeProductContext } = usePlatformStore();
   const queryClient = useQueryClient();
 
@@ -361,12 +365,14 @@ export const TransactionWorkflowScreen: React.FC = () => {
   });
 
   // E2 commit 1/N — Reject mutation (PAUSED → resume with rejection decision)
+  // Band E — reject now carries the operator's mandatory reason to the engine
+  // (maker-checker audit). Reason text comes from the decision bar, not a hardcode.
   const rejectMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason: string) => {
       if (!instanceResponse) throw new Error('Instance not found');
       const response = await apiClient.post(
         `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
-        { decision: 'reject', reason: 'Rejected by operator' }
+        { decision: 'reject', reason }
       );
       return response.data;
     },
@@ -375,10 +381,47 @@ export const TransactionWorkflowScreen: React.FC = () => {
         queryKey: ['workflow-instance', selectedInstanceId],
       });
       setActionError(null);
+      setShowReject(false);
+      setRejectReason('');
     },
     onError: (err) => {
       setActionError(`Reject failed: ${String(err)}`);
     },
+  });
+
+  // Band E — return a stuck step to its repair queue (uses the node's
+  // repair_queue_name; only offered when on_failure = REPAIR_QUEUE).
+  const repairMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { action: 'send_to_repair' }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-instance', selectedInstanceId] });
+      setActionError(null);
+    },
+    onError: (err) => setActionError(`Return to repair failed: ${String(err)}`),
+  });
+
+  // Band E — manually skip a step the designer marked skippable.
+  const skipMutation = useMutation({
+    mutationFn: async () => {
+      if (!instanceResponse) throw new Error('Instance not found');
+      const response = await apiClient.post(
+        `/workflows/${instanceResponse.workflow_id}/resume/${selectedInstanceId}`,
+        { action: 'skip_step' }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow-instance', selectedInstanceId] });
+      setActionError(null);
+    },
+    onError: (err) => setActionError(`Skip failed: ${String(err)}`),
   });
 
   // E2 commit 1/N — Retry mutation (RETRYING/FAILED → retry the step)
@@ -680,7 +723,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
                     instanceResponse.status === 'PAUSED')
                 }
                 onSubmit={(_values, action) => {
-                  if (action === 'CANCEL_SESSION') { rejectMutation.mutate(); }
+                  if (action === 'CANCEL_SESSION') { setShowReject(true); }
                   else { approveMutation.mutate(); }
                 }}
               />
@@ -740,56 +783,111 @@ export const TransactionWorkflowScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* E2 commit 1/N — Action buttons */}
-            <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-slate-200/50">
-              {/* Approve button — PAUSED state only */}
-              {instanceResponse.status === 'PAUSED' && (
-                <button
-                  onClick={() => approveMutation.mutate()}
-                  disabled={approveMutation.isPending}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200 text-green-700 text-[11px] font-semibold hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <span>✓</span>
-                  {approveMutation.isPending ? 'Approving...' : 'Approve'}
-                </button>
-              )}
-
-              {/* Reject button — PAUSED state only */}
-              {instanceResponse.status === 'PAUSED' && (
-                <button
-                  onClick={() => rejectMutation.mutate()}
-                  disabled={rejectMutation.isPending}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <span>✕</span>
-                  {rejectMutation.isPending ? 'Rejecting...' : 'Reject'}
-                </button>
-              )}
-
-              {/* Retry button — RETRYING or FAILED states */}
-              {(instanceResponse.status === 'RETRYING' ||
-                instanceResponse.status === 'FAILED_TECHNICAL') && (
+            {/* ── Band E (TXN_SCREEN_LAYOUT_LANGUAGE.md) — maker-checker decision bar ──
+                A real decision surface, not a lone button: Approve / Reject (with a
+                MANDATORY typed reason) / Return-for-repair / Retry / Skip / Cancel,
+                each gated on the node's own failure-handling config. */}
+            <div className="mt-4 pt-3 border-t border-slate-200/50">
+              {/* Reject reason field — revealed by "Reject"; reject cannot fire until
+                  a reason is typed (maker-checker audit requirement). */}
+              {showReject && instanceResponse.status === 'PAUSED' && (
+                <div className="mb-3 flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder="Reason for rejection (required)"
+                    className="flex-1 px-3 py-1.5 text-[11px] border border-red-200 rounded-lg focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
+                  />
                   <button
-                    onClick={() => retryMutation.mutate()}
-                    disabled={retryMutation.isPending}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    onClick={() => rejectMutation.mutate(rejectReason.trim())}
+                    disabled={!rejectReason.trim() || rejectMutation.isPending}
+                    className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                   >
-                    <span>↻</span>
-                    {retryMutation.isPending ? 'Retrying...' : 'Retry now'}
+                    {rejectMutation.isPending ? 'Rejecting…' : 'Confirm reject'}
+                  </button>
+                  <button
+                    onClick={() => { setShowReject(false); setRejectReason(''); }}
+                    className="px-2 py-1.5 text-[11px] text-slate-500 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2 items-center">
+                {/* Approve / Reject — PAUSED human-approval state only */}
+                {instanceResponse.status === 'PAUSED' && (
+                  <>
+                    <button
+                      onClick={() => approveMutation.mutate()}
+                      disabled={approveMutation.isPending || showReject}
+                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 border border-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span>✓</span>
+                      {approveMutation.isPending ? 'Approving…' : 'Approve'}
+                    </button>
+                    {!showReject && (
+                      <button
+                        onClick={() => setShowReject(true)}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold hover:bg-red-100 transition-colors"
+                      >
+                        <span>✕</span> Reject
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Retry — RETRYING / FAILED_TECHNICAL */}
+                {(instanceResponse.status === 'RETRYING' ||
+                  instanceResponse.status === 'FAILED_TECHNICAL') && (
+                    <button
+                      onClick={() => retryMutation.mutate()}
+                      disabled={retryMutation.isPending}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                    >
+                      <span>↻</span>
+                      {retryMutation.isPending ? 'Retrying…' : 'Retry now'}
+                    </button>
+                  )}
+
+                {/* Return for repair — only when the node routes failures to a repair queue */}
+                {currentNode.on_failure === 'REPAIR_QUEUE' &&
+                  ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(instanceResponse.status) && (
+                    <button
+                      onClick={() => repairMutation.mutate()}
+                      disabled={repairMutation.isPending}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-semibold hover:bg-orange-100 disabled:opacity-50 transition-colors"
+                    >
+                      <span>⤺</span>
+                      {repairMutation.isPending ? 'Sending…' : `Return to repair${currentNode.repair_queue_name ? ` · ${currentNode.repair_queue_name}` : ''}`}
+                    </button>
+                  )}
+
+                {/* Skip — only when the designer marked this step skippable */}
+                {currentNode.skippable && instanceResponse.status !== 'COMPLETED' && (
+                  <button
+                    onClick={() => skipMutation.mutate()}
+                    disabled={skipMutation.isPending}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[11px] font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                  >
+                    <span>⏭</span>
+                    {skipMutation.isPending ? 'Skipping…' : 'Skip step'}
                   </button>
                 )}
 
-              {/* Cancel button — always available if cancellable */}
-              {currentNode.cancellable && (
-                <button
-                  onClick={() => cancelMutation.mutate()}
-                  disabled={cancelMutation.isPending}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-700 text-[11px] font-semibold hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <span>×</span>
-                  {cancelMutation.isPending ? 'Cancelling...' : 'Cancel'}
-                </button>
-              )}
+                {/* Cancel transaction — when the node permits it */}
+                {currentNode.cancellable && (
+                  <button
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors ml-auto"
+                  >
+                    <span>×</span>
+                    {cancelMutation.isPending ? 'Cancelling…' : 'Cancel transaction'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
