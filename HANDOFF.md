@@ -1,20 +1,45 @@
-# Handoff to Claude Code
+# Handoff
 
 ## Current Context
-We are working on **InfinityProductOS** (Banking Operations Platform). We operate under a strict "Logic as Data" architecture.
-The last major effort was E7 grooming and UI updates for the Transaction Workflow Screens.
+**InfinityProductOS** (Banking Operations Platform), strict "Logic as Data" architecture.
+Active effort: **Transaction Workflow Screen rework** — adopting an institutional
+layout language (synthesised from StructuredFlow / nCino / ANZ Transactive) so the
+screen stops looking like a demo and reads like a real bank ops surface.
 
-## What Gemini Just Completed
-1. **Transaction Workflow UI Polish**: Redesigned `MetroTracker.tsx`, `TransactionSearch.tsx`, `StepIssuePanel.tsx`, and `TransactionWorkflowScreen.tsx` into a high-density, institutional-grade dark mode aesthetic.
-2. **Master Blueprint Generation**: Installed the `docx` library and ran the user-provided `generate_system_doc.cjs` script to build the exhaustive `InfinityProductOS_System_Working_Document.docx` inside the `/docs/` folder.
-3. **Event Fan-out (Reverted)**: Initially implemented behavioral AI & insight triggers in `event_bus.py`, but reverted it via `git checkout` to await the user's explicit confirmation before proceeding with implementation.
+The contract for this rework lives in **`docs/TXN_SCREEN_LAYOUT_LANGUAGE.md`** —
+read it first. It defines a 5-band frame (A header · B step spine · C instruction
+banner · D step workspace · E decision bar), maps every band to a real column in
+`models.py`, and lists the iteration roadmap. The rule throughout: adopt the
+layout *language*, render content from definitions, never hardcode per product.
 
-*Note: Changes to `package.json` and `package-lock.json` reflect the `npm install docx` addition.*
+## Completed iterations (all committed + pushed to main, each green)
+1. `0075fb1` — docs: layout language spec (the contract).
+2. `d77486d` — Band B+D: MetroTracker promoted to a clickable spine; clicking any
+   station renders that node's screen via `RuntimeScreenRenderer` (read-only =
+   playback; editable only for the live PAUSED approval). Context fallback when no
+   screen bound.
+3. `2386f1e` — Band A+C: dark institutional record header + configurable facts row
+   (interim ISO-path resolver, see spec §4) + dismissible instruction banner.
+   Removed the developer changelog banner that was rendered into production UI.
+4. `01e899f` — Band E: real maker-checker decision bar — mandatory typed reject
+   reason, Return-to-repair (gated on `node.on_failure=REPAIR_QUEUE`), Skip
+   (gated on `node.skippable`), Approve primary, Cancel.
 
-## Next Steps / Pending Priorities
-The user explicitly wants to focus on **Transaction Workflow Screen Grooming**:
-*   **Goal**: The transaction screens should feel like a state-of-the-art Bloomberg terminal or a modern institutional trading platform. The user wants to move away from 'glassmorphism' towards a dense, structured, enterprise layout.
-*   **Discovery Completed**: Gemini mapped out the interconnection between the Screen Designer Studio (`ScreenDesignerStudio.tsx`) and the Transaction Workflow screens (`RuntimeTransactionShell.tsx`, `RuntimeScreenRenderer.tsx`).
-*   **Mobile-responsive metro tracker**: Priority 3 item is still open to update SVG `viewBox` and adaptive station radii for mobile viewports in the Metro Tracker.
+Verification each step: `tsc --noEmit` passes; app mounts clean in the vite
+preview (no error overlay). Full click-through interaction not yet exercised
+end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
 
-**Claude, please pick up the conversation with the user regarding the detailed grooming plan for the Transaction Screens.**
+## Next steps / open items (roadmap §6 of the spec)
+- **Iteration 5** — Manual capture screen rendered from the START-node definition
+  (retire the hardcoded `RunTransactionModal.tsx` demo harness).
+- **Iteration 6** — Worklist / queue landing ("My Deals" equivalent) as the entry
+  point (currently the screen opens straight into one instance, `TWS-PAUSED-01`).
+- **Iteration 7** — Institutional theme pass across the side panels
+  (`StepIssuePanel`, `TransactionSearch`, `BulkOperationsPanel`, `ReversalDrawer`)
+  and the shared `RuntimeScreenRenderer` (still light-glass).
+- **Open decision (spec §4)** — facts-row config source: recommend deriving from
+  the START node's screen definition rather than a new `WorkflowConfiguration`
+  column. Not yet implemented; interim resolver is in `TransactionWorkflowScreen.tsx`.
+- **Backend** — confirm the engine accepts the new resume actions used by Band E:
+  `send_to_repair`, `skip_step` (Approve/Reject/retry/cancel already wired).
+- Priority-3 (older): mobile-responsive metro tracker (SVG viewBox + adaptive radii).
