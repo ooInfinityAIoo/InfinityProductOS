@@ -102,6 +102,31 @@ const resolveFacts = (ctx: any): { label: string; value: string }[] => {
   return out;
 };
 
+// §4 PREFERRED resolver — derive the facts row from the workflow's START-node
+// screen definition (logic-as-data) rather than the hardcoded candidates above.
+// Picks the first few data-bound components that actually have a value in the
+// transaction context, so the header reflects whatever the bank authored as the
+// capture form — SWIFT shows amount/beneficiary; an ABS deal would show ISIN, etc.
+const humanizeLabel = (t: string): string =>
+  (t || '').replace(/^(LBL_|FLD_|BTN_)/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+const buildFactsFromScreen = (def: any, ctx: any): { label: string; value: string }[] => {
+  if (!ctx) return [];
+  const comps: any[] = Array.isArray(def) ? def : (def?.components ?? []);
+  const out: { label: string; value: string }[] = [];
+  for (const comp of comps) {
+    if (out.length >= 5) break;
+    const bind = comp.field_binding;
+    if (!bind) continue;
+    // Skip non-data display components (headers, static labels).
+    if (['section_header', 'label'].includes(comp.component_type)) continue;
+    const v = getByPath(ctx, bind);
+    if (v === undefined || v === null || v === '') continue;
+    out.push({ label: humanizeLabel(comp.label_token), value: typeof v === 'object' ? JSON.stringify(v) : String(v) });
+  }
+  return out;
+};
+
 // MAPPING FUNCTION: converts API instance response to metro tracker stations.
 // Maps the instance's current_node_id + workflow nodes to TrackerStation[].
 // WHAT BREAKS IF REMOVED: The metro tracker has no data source — can't render.
@@ -350,6 +375,21 @@ export const TransactionWorkflowScreen: React.FC = () => {
       return res.data;
     },
     enabled: !!viewedScreenTemplate,
+  });
+
+  // §4 — the START node's screen drives the header facts row. Find the workflow's
+  // first node (min sequence) and load its screen; buildFactsFromScreen then derives
+  // the facts from whatever the bank authored as the capture form.
+  const startNodeTemplate: string | undefined = useMemo(() => {
+    const nodes = instanceResponse?.workflow_nodes ?? [];
+    if (!nodes.length) return undefined;
+    return [...nodes].sort((a: any, b: any) => a.sequence_number - b.sequence_number)[0]?.screen_template;
+  }, [instanceResponse]);
+
+  const { data: startScreen } = useQuery({
+    queryKey: ['start-node-screen', startNodeTemplate],
+    queryFn: async () => (await apiClient.get(`/screens/${startNodeTemplate}`)).data,
+    enabled: !!startNodeTemplate,
   });
 
   // E2 commit 1/N — Approve mutation (PAUSED → resume with approval decision)
@@ -698,10 +738,17 @@ export const TransactionWorkflowScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Facts row — §4 configurable context (interim resolver). Always ends
-              with Product so the operator sees the package they're working in. */}
+          {/* Facts row — §4. Prefer facts derived from the START-node screen
+              definition (logic-as-data); fall back to the interim ISO-path resolver
+              when no start screen is bound. Always ends with Product. */}
           <div className="flex flex-wrap gap-x-7 gap-y-2 mt-3 pt-3 border-t border-white/10">
-            {resolveFacts(instanceResponse.current_context).map(f => (
+            {(() => {
+              const fromScreen = startScreen
+                ? buildFactsFromScreen(startScreen.definition, instanceResponse.current_context)
+                : [];
+              const facts = fromScreen.length > 0 ? fromScreen : resolveFacts(instanceResponse.current_context);
+              return facts;
+            })().map(f => (
               <div key={f.label}>
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">{f.label}</div>
                 <div className="text-[12px] font-semibold text-white">{f.value}</div>
