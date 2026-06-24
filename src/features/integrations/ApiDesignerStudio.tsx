@@ -378,7 +378,7 @@ export const ApiDesignerStudio: React.FC = () => {
                     placeholder="https://api.swift.com/v1/gpi/payments/{InstructedAmount}"
                     className="w-full font-mono text-[12px] text-indigo-700 border border-slate-200 bg-white rounded-xl p-2.5 focus:border-indigo-400 outline-none shadow-sm"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Use {'{ISO_field_name}'} to inject live values from the ISO Registry at runtime.</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Use {'{ISO_field_name}'} to inject live values from the Universal Registry at runtime.</p>
                 </div>
 
                 <div>

@@ -16,7 +16,7 @@ import { usePlatformStore } from '../store/usePlatformStore';
 // Context-aware config per studio — tips and example questions
 const STUDIO_CONTEXT: Record<string, { title: string; tips: string[]; examples: string[] }> = {
   'field-registry': {
-    title: 'ISO Field Registry',
+    title: 'Universal Field Registry',
     tips: [
       'Mark fields as PII to auto-apply masking across all studios.',
       'Use CLIENT display preference to show bank-friendly names instead of ISO codes.',

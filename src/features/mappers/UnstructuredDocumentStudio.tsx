@@ -213,7 +213,7 @@ export const UnstructuredDocumentStudio: React.FC = () => {
                         <IsoFieldSelector 
                           value={mapping.target_iso_field}
                           onChange={(val) => { const newM = [...mappings]; newM[idx].target_iso_field = val; setMappings(newM); }}
-                          placeholder="Map to ISO Registry Field..."
+                          placeholder="Map to Universal Registry Field..."
                         />
                       </div>
                     </div>

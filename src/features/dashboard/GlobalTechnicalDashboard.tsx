@@ -36,7 +36,7 @@ export const GlobalTechnicalDashboard: React.FC = () => {
   const telemetry: TelemetryItem[] = [
     { label: 'FastAPI Backend (port 8000)', status: apiReachable ? 'ok' : 'error', detail: apiReachable ? 'Connected · <10ms' : 'Unreachable' },
     { label: 'SQLite Ledger (local dev)', status: dbSynced ? 'ok' : 'warning', detail: dbSynced ? 'Synchronized' : 'Empty — run seed.py' },
-    { label: 'ISO Field Registry', status: (fieldsData?.total_count ?? 0) > 0 ? 'ok' : 'warning', detail: `${fieldsData?.total_count?.toLocaleString() ?? 0} fields indexed` },
+    { label: 'Universal Field Registry', status: (fieldsData?.total_count ?? 0) > 0 ? 'ok' : 'warning', detail: `${fieldsData?.total_count?.toLocaleString() ?? 0} fields indexed` },
     { label: 'Business Rule Engine', status: (rulesData?.length ?? 0) > 0 ? 'ok' : 'warning', detail: `${rulesData?.length ?? 0} rules compiled` },
     { label: 'Audit Ledger', status: 'ok', detail: 'Append-only · Secured' },
     { label: 'Celery Worker (async jobs)', status: 'warning', detail: 'Local mode — no broker running' },

@@ -1,6 +1,6 @@
 // ============================================================
 // WHY THIS FILE EXISTS:
-// This is the ISO Field Registry Studio — the master control panel for managing
+// This is the Universal Field Registry Studio — the master control panel for managing
 // the 3,013 ISO 20022 financial data fields that serve as the universal vocabulary
 // across ALL 10 studios in the platform.
 //
@@ -578,7 +578,7 @@ export const FieldRegistryStudio: React.FC = () => {
       {/* ── Header ── */}
       <div className="flex justify-between items-start px-6 py-4 border-b border-slate-200 bg-white">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight">ISO Field Registry</h1>
+          <h1 className="text-xl font-bold text-slate-800 tracking-tight">Universal Field Registry</h1>
           <p className="text-sm text-slate-500 mt-0.5">Universal semantic vocabulary across all studios — {statsTotal.toLocaleString()} attributes registered.</p>
         </div>
         <div className="flex items-center gap-3">

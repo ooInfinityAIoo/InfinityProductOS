@@ -131,7 +131,7 @@ export const DataGatewayStudio: React.FC = () => {
                 <div className="text-[13px] font-bold text-slate-800 tracking-tight">{mapper.mapper_name}</div>
                 <div className="text-[9px] font-mono text-indigo-650 bg-indigo-50/60 border border-indigo-100/30 px-2 py-0.5 rounded-lg font-bold">{mapper.mapper_id}</div>
               </div>
-              <div className="text-[10px] text-slate-400 font-medium">Maps {mapper.mappings?.length || 0} attributes to ISO Registry.</div>
+              <div className="text-[10px] text-slate-400 font-medium">Maps {mapper.mappings?.length || 0} attributes to Universal Registry.</div>
             </div>
           ))}
         </div>

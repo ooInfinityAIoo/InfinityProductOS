@@ -139,7 +139,7 @@ export const MasterHeaderNav: React.FC = () => {
             </button>
             <button onClick={() => setActiveModule('field-registry')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 border-b border-slate-100/50 transition-colors">
               <div className="text-[12px] font-bold text-indigo-600">Data Dictionary</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Global data fields and ISO 20022 field registry.</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Universal field registry — ISO 20022 plus custom, calculated & derived fields.</div>
             </button>
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Reference Tables

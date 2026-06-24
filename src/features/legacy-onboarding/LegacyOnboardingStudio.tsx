@@ -6,7 +6,7 @@
 //   Step 1 — Upload a screenshot of the legacy screen (e.g., T24 "Bilateral Keys")
 //             Designer selects extraction mode:
 //               • IN_HOUSE_OCR — zero API cost, runs on server via pytesseract +
-//                 ISO Registry fuzzy matching. Best for structured T24/Flexcube grids.
+//                 Universal Registry fuzzy matching. Best for structured T24/Flexcube grids.
 //               • ANTHROPIC_VISION — Claude claude-sonnet-4-6 vision API (paid per-call).
 //                 Best for complex/messy layouts. Highest accuracy.
 //   Step 2 — Extraction runs; designer reviews the field table: correct types,
@@ -280,7 +280,7 @@ export const LegacyOnboardingStudio: React.FC = () => {
                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">FREE</span>
                   </div>
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Runs on-server via pytesseract + ISO Registry fuzzy matching. Zero API cost.
+                    Runs on-server via pytesseract + Universal Registry fuzzy matching. Zero API cost.
                     Best for structured screens (T24, Flexcube clean grids). ~90% accuracy.
                   </p>
                 </button>

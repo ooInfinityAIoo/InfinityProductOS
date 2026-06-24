@@ -81,8 +81,8 @@ export const HomeDashboard: React.FC = () => {
   // Derived from live data — no hardcoded state.
   const setupItems = [
     {
-      label: 'ISO Field Registry',
-      desc: 'Global data dictionary synced with ISO 20022 schemas',
+      label: 'Universal Field Registry',
+      desc: 'Universal data dictionary — ISO 20022 plus custom, calculated & derived fields',
       done: (fieldsData?.total_count ?? 0) > 0,
       route: 'field-registry' as const,
     },
