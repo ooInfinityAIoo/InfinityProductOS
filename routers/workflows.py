@@ -397,13 +397,15 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
     if instance.workflow_id != workflow_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Instance does not belong to the specified workflow.")
 
-    TERMINAL_STATUSES = {"COMPLETED", "REJECTED", "CANCELLED", "REVERSED"}
-    if instance.status in TERMINAL_STATUSES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Transaction is already {instance.status} and cannot be actioned.")
-
     decision = (payload.decision or "").lower()
     action = (payload.action or "").lower()
     now_iso = datetime.datetime.utcnow().isoformat()
+
+    # A COMPLETED transaction is exactly what reversal (saga compensation) acts on,
+    # so reverse_step is exempt from the terminal-status gate; everything else is not.
+    TERMINAL_STATUSES = {"COMPLETED", "REJECTED", "CANCELLED", "REVERSED"}
+    if instance.status in TERMINAL_STATUSES and action != "reverse_step":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Transaction is already {instance.status} and cannot be actioned.")
 
     # Append to the instance's execution trace safely (it may be None on old rows).
     def _trace(line: str):
@@ -456,10 +458,46 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
         db.commit()
         return {"status": "AWAITING_REPAIR", "instance_id": instance_id, "repair_queue": queue, "trace": instance.execution_trace}
 
-    # REVERSE — saga compensation. Not yet implemented in the resume endpoint;
-    # fail explicitly rather than silently falling through to the approve path.
+    # REVERSE — saga compensation against a (usually completed) node.
     if action == "reverse_step":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Saga reversal is not yet wired into the resume endpoint (tracked in HANDOFF.md).")
+        target_node_id = payload.node_id or instance.current_node_id
+        node = db.query(models.WorkflowNode).filter_by(node_id=target_node_id).first()
+        if not node or node.workflow_id != workflow_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reversal target node not found in this workflow.")
+        # Idempotency: a reversal already recorded → return the existing state so a
+        # retried request never double-reverses (reversal_request_id is the key).
+        if instance.status == "REVERSED" and instance.reversal_request_id:
+            return {"status": "REVERSED", "instance_id": instance_id,
+                    "reversal_request_id": instance.reversal_request_id, "trace": instance.execution_trace}
+        reversibility = (node.reversibility or "REVERSIBLE").upper()
+        if reversibility == "IRREVERSIBLE":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Node '{node.node_title}' is IRREVERSIBLE and cannot be rolled back.")
+        if instance.status in ("REJECTED", "CANCELLED", "REVERSING", "REVERSAL_FAILED"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot reverse a {instance.status} transaction.")
+        reason = (payload.reason or "Reversal requested by operator").strip()
+        category = payload.category or "OPERATIONAL"
+        rrid = f"REV-{uuid.uuid4().hex[:12].upper()}"
+        instance.status = "REVERSED"
+        instance.reversal_request_id = rrid
+        instance.cancelled_by = "operator"
+        instance.cancelled_reason_code = f"REVERSAL_{category}"
+        instance.cancelled_message = reason
+        instance.updated_at = now_iso
+        _trace(f"↶ REVERSAL {rrid} on node '{node.node_title}' by {current_user.id} [{category}]: {reason}")
+        # Record the compensating actions the node's reversal_recipe declares, so the
+        # audit trail shows WHAT compensation is owed. NOTE: actually dispatching the
+        # db/api/event compensations through the engine is the remaining engine work;
+        # this commits the reversal state + idempotency key + recipe intent.
+        recipe = node.reversal_recipe or {}
+        if recipe:
+            for kind in ("db_reversal", "api_reversal", "event_reversal"):
+                if recipe.get(kind):
+                    _trace(f"   ↳ compensation [{kind}]: {recipe.get(kind)}")
+        else:
+            _trace("   ↳ no reversal_recipe on node — state reversal only")
+        db.commit()
+        return {"status": "REVERSED", "instance_id": instance_id, "reversal_request_id": rrid,
+                "node_id": target_node_id, "trace": instance.execution_trace}
 
     # ── Actions that DO continue execution (skip / retry / approve) ────────────
     # Default: resume from the current node. SKIP advances to the next node first.
@@ -471,22 +509,34 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
         ).first()
         if not node or not node.skippable:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This step is not skippable.")
-        # Advance to the next node by sequence. NOTE: for branched graphs this is a
-        # linear approximation — adequate for operator-skip of mostly-linear ops
-        # steps; full edge-aware skip is a follow-up.
-        ordered = sorted(
-            db.query(models.WorkflowNode).filter(models.WorkflowNode.workflow_id == workflow_id).all(),
-            key=lambda n: n.sequence_number,
-        )
-        idx = next((i for i, n in enumerate(ordered) if n.node_id == instance.current_node_id), -1)
         _trace(f"⏭ Step '{node.node_title}' skipped by {current_user.id}")
-        if idx < 0 or idx + 1 >= len(ordered):
+        # Edge-aware next-node resolution: follow the workflow's outgoing edges from
+        # the current node. A single outgoing edge is unambiguous → resume there.
+        # A branch (>1 outgoing edge) can't be resolved without evaluating edge
+        # conditions, so we fall back to sequence order. No outgoing edge ⇒ complete.
+        outgoing = db.query(models.WorkflowEdge).filter_by(
+            workflow_id=workflow_id, source_node_id=instance.current_node_id
+        ).all()
+        next_id = None
+        if len(outgoing) == 1:
+            next_id = outgoing[0].target_node_id
+            _trace(f"   ↳ next via edge → {next_id}")
+        else:
+            ordered = sorted(
+                db.query(models.WorkflowNode).filter(models.WorkflowNode.workflow_id == workflow_id).all(),
+                key=lambda n: n.sequence_number,
+            )
+            idx = next((i for i, n in enumerate(ordered) if n.node_id == instance.current_node_id), -1)
+            if 0 <= idx < len(ordered) - 1:
+                next_id = ordered[idx + 1].node_id
+                _trace(f"   ↳ {'branch' if len(outgoing) > 1 else 'no edge'} — next by sequence → {next_id}")
+        if not next_id:
             # Nothing after this step — the transaction is effectively complete.
             instance.status = "COMPLETED"
             instance.updated_at = now_iso
             db.commit()
             return {"status": "COMPLETED", "instance_id": instance_id, "trace": instance.execution_trace}
-        resume_node_id = ordered[idx + 1].node_id
+        resume_node_id = next_id
         instance.current_node_id = resume_node_id
     elif action == "retry":
         if instance.status not in ("RETRYING", "FAILED_TECHNICAL", "AWAITING_REPAIR"):
@@ -778,6 +828,10 @@ def get_workflow_instance(
                 "canvas_y_position": n.canvas_y_position,
                 "iso_message_type": n.iso_message_type,
                 "message_direction": n.message_direction,
+                # The node's bound screen — drives clickable-station playback (band D)
+                # and the START-node-derived header facts row (§4). Was omitted here,
+                # so every station silently fell back to the raw-context view.
+                "screen_template": n.screen_template,
                 # E0 authoring columns — the tracker uses these to show
                 # reversibility (rollback icon), retry config, repair queue
                 # routing, and cancellability per station.
