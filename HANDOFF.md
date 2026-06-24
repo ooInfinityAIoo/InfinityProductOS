@@ -40,15 +40,19 @@ end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
 - **Open decision (spec §4)** — facts-row config source: recommend deriving from
   the START node's screen definition rather than a new `WorkflowConfiguration`
   column. Not yet implemented; interim resolver is in `TransactionWorkflowScreen.tsx`.
-- **Backend (IMPORTANT — decision semantics are NOT implemented).** The resume
-  endpoint `POST /workflows/{id}/resume/{instance_id}` (routers/workflows.py:388)
-  (a) only accepts instances whose status is `PAUSED` (404 otherwise), and
-  (b) ignores `decision` / `action` / `reason` entirely — it just merges
-  `additional_context` and re-executes the current node. So today Reject behaves
-  identically to Approve, and the Band E Retry / Return-to-repair / Skip buttons
-  (which fire on RETRYING/FAILED/AWAITING_REPAIR, i.e. non-PAUSED) will 404.
-  The decision bar is UI-complete but **decorative until the resume endpoint is
-  taught to branch on decision/action and to accept non-PAUSED states.** This
-  predates the rework (Approve/Reject/Retry/Cancel were already unwired); the
-  next backend iteration should make resume honour the maker-checker contract.
+- **Backend resume semantics — NOW WIRED (iteration 5, commit below).** The
+  resume endpoint `POST /workflows/{id}/resume/{instance_id}` now branches on the
+  decision/action contract (schema `WorkflowResumeRequest` extended with
+  `decision/action/reason/node_id/category`):
+  - `decision=reject` → REJECTED terminal, **reason is mandatory**, records
+    `cancelled_by/reason_code/message` + trace (verified end-to-end via TestClient).
+  - `action=cancel_transaction` → CANCELLED with reason.
+  - `action=send_to_repair` → AWAITING_REPAIR + `repair_queue_assigned` from the node.
+  - `action=skip_step` → advances to the next node by sequence (linear approx;
+    full edge-aware skip is a follow-up) and resumes; completes if last.
+  - `action=retry` → re-executes (only valid from RETRYING/FAILED/AWAITING_REPAIR).
+  - `decision=approve` / bare resume → re-executes from the current node (PAUSED only).
+  - `action=reverse_step` → explicit 400 (saga reversal still NOT implemented here).
+  Terminal instances (COMPLETED/REJECTED/CANCELLED/REVERSED) are rejected with 400.
+- **Still open:** saga reversal (`reverse_step`) in resume; edge-aware skip.
 - Priority-3 (older): mobile-responsive metro tracker (SVG viewBox + adaptive radii).

@@ -392,11 +392,111 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
     Accepts additional context injected by the user's manual action.
     """
     instance = db.query(models.WorkflowExecutionInstance).filter(models.WorkflowExecutionInstance.instance_id == instance_id).first()
-    if not instance or instance.status != "PAUSED":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paused workflow instance not found or no longer paused.")
-    
+    if not instance:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow instance not found.")
     if instance.workflow_id != workflow_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Instance does not belong to the specified workflow.")
+
+    TERMINAL_STATUSES = {"COMPLETED", "REJECTED", "CANCELLED", "REVERSED"}
+    if instance.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Transaction is already {instance.status} and cannot be actioned.")
+
+    decision = (payload.decision or "").lower()
+    action = (payload.action or "").lower()
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    # Append to the instance's execution trace safely (it may be None on old rows).
+    def _trace(line: str):
+        if instance.execution_trace is None:
+            instance.execution_trace = []
+        # Re-assign so SQLAlchemy detects the JSONB mutation.
+        instance.execution_trace = list(instance.execution_trace) + [line]
+
+    # ── Maker-checker terminal/branching actions (do NOT re-execute the node) ──
+    # Each validates the status it is legal from, records audit columns, and returns.
+
+    # REJECT — a paused human-approval decision. THE fix that makes Reject ≠ Approve.
+    if decision == "reject":
+        if instance.status != "PAUSED":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only a paused transaction awaiting approval can be rejected.")
+        reason = (payload.reason or "").strip()
+        if not reason:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A reason is required to reject (maker-checker audit).")
+        instance.status = "REJECTED"
+        instance.cancelled_by = "operator"
+        instance.cancelled_reason_code = "OPERATOR_REJECT"
+        instance.cancelled_message = reason
+        instance.updated_at = now_iso
+        _trace(f"❌ REJECTED by {current_user.id}: {reason}")
+        db.commit()
+        return {"status": "REJECTED", "instance_id": instance_id, "reason": reason, "trace": instance.execution_trace}
+
+    # CANCEL — terminate the transaction with a reason.
+    if action == "cancel_transaction":
+        reason = (payload.reason or "Cancelled by operator").strip()
+        instance.status = "CANCELLED"
+        instance.cancelled_by = "operator"
+        instance.cancelled_reason_code = "OPERATOR_CANCEL"
+        instance.cancelled_message = reason
+        instance.updated_at = now_iso
+        _trace(f"⊘ CANCELLED by {current_user.id}: {reason}")
+        db.commit()
+        return {"status": "CANCELLED", "instance_id": instance_id, "reason": reason, "trace": instance.execution_trace}
+
+    # SEND TO REPAIR — park the transaction in its node's repair queue.
+    if action == "send_to_repair":
+        node = db.query(models.WorkflowNode).filter(
+            models.WorkflowNode.node_id == instance.current_node_id
+        ).first()
+        queue = node.repair_queue_name if node else None
+        instance.status = "AWAITING_REPAIR"
+        instance.repair_queue_assigned = queue
+        instance.updated_at = now_iso
+        _trace(f"⤺ Returned to repair queue '{queue or 'default'}' by {current_user.id}")
+        db.commit()
+        return {"status": "AWAITING_REPAIR", "instance_id": instance_id, "repair_queue": queue, "trace": instance.execution_trace}
+
+    # REVERSE — saga compensation. Not yet implemented in the resume endpoint;
+    # fail explicitly rather than silently falling through to the approve path.
+    if action == "reverse_step":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Saga reversal is not yet wired into the resume endpoint (tracked in HANDOFF.md).")
+
+    # ── Actions that DO continue execution (skip / retry / approve) ────────────
+    # Default: resume from the current node. SKIP advances to the next node first.
+    resume_node_id = instance.current_node_id
+
+    if action == "skip_step":
+        node = db.query(models.WorkflowNode).filter(
+            models.WorkflowNode.node_id == instance.current_node_id
+        ).first()
+        if not node or not node.skippable:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This step is not skippable.")
+        # Advance to the next node by sequence. NOTE: for branched graphs this is a
+        # linear approximation — adequate for operator-skip of mostly-linear ops
+        # steps; full edge-aware skip is a follow-up.
+        ordered = sorted(
+            db.query(models.WorkflowNode).filter(models.WorkflowNode.workflow_id == workflow_id).all(),
+            key=lambda n: n.sequence_number,
+        )
+        idx = next((i for i, n in enumerate(ordered) if n.node_id == instance.current_node_id), -1)
+        _trace(f"⏭ Step '{node.node_title}' skipped by {current_user.id}")
+        if idx < 0 or idx + 1 >= len(ordered):
+            # Nothing after this step — the transaction is effectively complete.
+            instance.status = "COMPLETED"
+            instance.updated_at = now_iso
+            db.commit()
+            return {"status": "COMPLETED", "instance_id": instance_id, "trace": instance.execution_trace}
+        resume_node_id = ordered[idx + 1].node_id
+        instance.current_node_id = resume_node_id
+    elif action == "retry":
+        if instance.status not in ("RETRYING", "FAILED_TECHNICAL", "AWAITING_REPAIR"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Retry is only valid for a retrying/failed/awaiting-repair step.")
+    else:
+        # approve (decision == 'approve') or a legacy bare resume — must be PAUSED.
+        if instance.status != "PAUSED":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only a paused transaction can be approved/resumed.")
+        if decision == "approve":
+            _trace(f"✓ APPROVED by {current_user.id}")
 
     merged_context = instance.current_context.copy()
     if payload.additional_context:
@@ -407,7 +507,7 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
 
     try:
         executor = WorkflowExecutor(db=db, workflow_id=workflow_id)
-        result = executor.execute(initial_payload=merged_context, resume_from_node_id=instance.current_node_id, resume_trace=instance.execution_trace)
+        result = executor.execute(initial_payload=merged_context, resume_from_node_id=resume_node_id, resume_trace=instance.execution_trace)
 
         # Executor handles COMPLETED update internally via __resume_instance_id__.
         # For non-COMPLETED terminal states (REJECTED, CANCELLED) sync the status here too.

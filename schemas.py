@@ -648,6 +648,17 @@ class RevertToVersionRequest(BaseModel):
 
 class WorkflowResumeRequest(BaseModel):
     additional_context: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional context to merge into the paused state.")
+    # ── Maker-checker decision contract (Transaction Workflow Screen, Band E) ──
+    # WHY: the runtime decision bar must tell the engine WHICH operator action was
+    # taken — approve vs reject vs cancel vs return-to-repair vs skip vs retry —
+    # not just hand back merged context. Without these the engine cannot tell a
+    # rejection from an approval, so both would resume identically. All optional so
+    # the legacy "just merge context and resume" callers keep working unchanged.
+    decision: Optional[str] = Field(None, description="approve | reject — the human-approval decision at a HUMAN_APPROVAL node.")
+    action: Optional[str] = Field(None, description="retry | skip_step | send_to_repair | cancel_transaction | reverse_step — an operator action on the current step.")
+    reason: Optional[str] = Field(None, description="Mandatory free-text reason for reject / cancel (recorded for maker-checker audit).")
+    node_id: Optional[str] = Field(None, description="Target node for node-scoped actions (e.g. reverse_step).")
+    category: Optional[str] = Field(None, description="Optional categorisation for the action (e.g. reversal category).")
 
 # =====================================================================
 # --- BUSINESS RULE ENGINE (BRE) SCHEMAS ---
