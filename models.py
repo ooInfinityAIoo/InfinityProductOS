@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float, Index, JSON
+from sqlalchemy import create_engine, Column, String, Integer, Boolean, Text, ForeignKey, Float, Index, JSON, UniqueConstraint
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB
 
@@ -168,10 +168,53 @@ class ISOFieldDefinition(Base):
     # BANK_CUSTOM  — bank-defined proprietary field added by a Field Registry admin
     # CALCULATED   — output token auto-registered when a Formula is saved/activated;
     #                formula_ref stores the program_id of the producing Formula
+    # field_source taxonomy (FIELD_REGISTRY_REQUIREMENTS.md §3): ISO_20022 |
+    # BANK_CUSTOM | CALCULATED | DERIVED | CONFIGURATION | REGULATORY. Plain String —
+    # new values need no DB change.
     field_source = Column(String, nullable=False, default="ISO_20022", index=True)
     formula_ref = Column(String, ForeignKey("calculation_programs.program_id"), nullable=True, index=True)
+
+    # ── Extended Field Registry — master-anchoring + 6-level placement chain ──
+    # (FIELD_REGISTRY_REQUIREMENTS.md §2/§4/§5). Added NULLABLE in Phase 1 (purely
+    # additive, no behaviour change). Mandatory enforcement (Package+Master+Product)
+    # and the iso_business_name-nullable rebuild land in later phases.
+    #
+    # Master anchor (§4) — points at the Master, which is an existing MAINTENANCE
+    # screen (Currency/Country/Customer Master, etc.). No Master ⇒ not selectable.
+    master_ref = Column(String, ForeignKey("screen_templates.screen_id"), nullable=True, index=True)
+    # ISO alias mapping (§5) — an aliased BANK_CUSTOM field points at the ISO field
+    # it renames; native custom fields leave this null.
+    iso_field_ref = Column(String, ForeignKey("iso_field_registry.field_id"), nullable=True, index=True)
+    # Placement chain L1..L6. L1 Package + L2 Product are mandatory at the app layer
+    # (Phase 3); L3..L6 are optional placeholders so lineage resolves top-to-bottom.
+    application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)  # L1
+    applies_to_all_products = Column(Boolean, nullable=False, default=False)  # L2 — ALL flag; specific products live in field_product_map
+    subproduct_id = Column(String, nullable=True, index=True)        # L3 placeholder
+    workflow_id = Column(String, nullable=True, index=True)          # L4 placeholder → WorkflowConfiguration.workflow_id
+    workflow_step_id = Column(String, nullable=True, index=True)     # L5 placeholder → WorkflowNode.node_id ("Workflow Step")
+    workflow_substep_id = Column(String, nullable=True, index=True)  # L6 placeholder → sub-step within a Workflow Step
+
     created_at = Column(String, nullable=False)
     created_by = Column(String, default="SYSTEM")
+
+
+class FieldProductMap(Base):
+    """
+    WHY THIS EXISTS (FIELD_REGISTRY_REQUIREMENTS.md §2, L2):
+    A field maps to one product, several products, or ALL products in its package.
+    The many-to-many "several products" case lives here; the "ALL" case is the
+    applies_to_all_products flag on the field (and auto-includes future products).
+    Together they let, e.g., a Currency field apply to ALL products while a niche
+    field maps to just FX Spot + FX Forward.
+    """
+    __tablename__ = "field_product_map"
+    map_id = Column(String, primary_key=True, index=True)
+    field_id = Column(String, ForeignKey("iso_field_registry.field_id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(String, ForeignKey("product_master.product_id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(String, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("field_id", "product_id", name="uq_field_product"),
+    )
 
 
 # --- LAYER 3 EXTENSION: ISO DOMAIN REGISTRY ---
