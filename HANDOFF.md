@@ -30,11 +30,20 @@ preview (no error overlay). Full click-through interaction not yet exercised
 end-to-end (needs backend up + a seeded PAUSED instance with screen_templates).
 
 ## Next steps / open items (roadmap §6 of the spec)
-- **Iteration 5** — Manual capture screen rendered from the START-node definition
-  (retire the hardcoded `RunTransactionModal.tsx` demo harness).
-- **Iteration 6** — Worklist / queue landing ("My Deals" equivalent) as the entry
+- **Iteration 6 DONE** (commit below) — Manual capture is now definition-driven.
+  `RunTransactionModal` renders the workflow's START-node screen via
+  `RuntimeScreenRenderer` instead of hardcoded fields; on submit it expands the
+  screen's flat ISO-path field values into the nested pacs.008 the engine expects
+  (`expandFlat`/`setByPath`) and layers engine defaults under them. Legacy fixed
+  fields remain as a fallback for workflows whose start node has no screen bound.
+  Migration `e8_001_bind_swift_entry_screen.py` binds SCR-8AE80048 (10-field SWIFT
+  Wire Payment Entry) to WF-ECC2B272's start node (idempotent; already applied to
+  local DB). Verified via TestClient: definition-driven payload runs to PAUSED.
+  **Follow-up:** patch `seed_golden_path.py` to set this binding so fresh seeds
+  include it (today only the migration does).
+- **Iteration 7** — Worklist / queue landing ("My Deals" equivalent) as the entry
   point (currently the screen opens straight into one instance, `TWS-PAUSED-01`).
-- **Iteration 7** — Institutional theme pass across the side panels
+- **Iteration 8** — Institutional theme pass across the side panels
   (`StepIssuePanel`, `TransactionSearch`, `BulkOperationsPanel`, `ReversalDrawer`)
   and the shared `RuntimeScreenRenderer` (still light-glass).
 - **Open decision (spec §4)** — facts-row config source: recommend deriving from
