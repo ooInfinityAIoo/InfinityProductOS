@@ -64,10 +64,28 @@ def create_screen_template(payload: schemas.ScreenTemplateCreate, db: Session = 
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Screen template with name '{payload.screen_name}' already exists.")
 
+    # `definition` is typed Any on the schema, so over the wire it arrives as plain
+    # JSON (a list of component dicts, OR a {components, action_buttons, ...} object,
+    # OR None) — NOT Pydantic models. Normalise defensively instead of assuming
+    # every element has .dict(); the previous code crashed on all real API input.
+    def _as_dict(x):
+        return x.dict(exclude_unset=True) if hasattr(x, "dict") else x
+
+    defn = payload.definition
+    if isinstance(defn, dict):
+        raw_components = defn.get("components", [])
+        embedded_buttons = defn.get("action_buttons", [])
+    elif isinstance(defn, list):
+        raw_components = defn
+        embedded_buttons = []
+    else:
+        raw_components = []
+        embedded_buttons = []
+
     full_definition = {
-        "components": [c.dict(exclude_unset=True) for c in payload.definition],
-        "action_buttons": [b.dict(exclude_unset=True) for b in payload.action_buttons],
-        "value_list_groups": [g.dict() for g in payload.value_list_groups]
+        "components": [_as_dict(c) for c in raw_components],
+        "action_buttons": [_as_dict(b) for b in (payload.action_buttons or embedded_buttons)],
+        "value_list_groups": [_as_dict(g) for g in payload.value_list_groups],
     }
     
     # GAP 2: Atomic Creation of the pending API
@@ -171,10 +189,28 @@ def update_screen_template(screen_id: str, payload: schemas.ScreenTemplateCreate
     db_screen.updated_at = datetime.datetime.utcnow().isoformat()
 
     # Pack and update the JSONB definition field
+    # `definition` is typed Any on the schema, so over the wire it arrives as plain
+    # JSON (a list of component dicts, OR a {components, action_buttons, ...} object,
+    # OR None) — NOT Pydantic models. Normalise defensively instead of assuming
+    # every element has .dict(); the previous code crashed on all real API input.
+    def _as_dict(x):
+        return x.dict(exclude_unset=True) if hasattr(x, "dict") else x
+
+    defn = payload.definition
+    if isinstance(defn, dict):
+        raw_components = defn.get("components", [])
+        embedded_buttons = defn.get("action_buttons", [])
+    elif isinstance(defn, list):
+        raw_components = defn
+        embedded_buttons = []
+    else:
+        raw_components = []
+        embedded_buttons = []
+
     full_definition = {
-        "components": [c.dict(exclude_unset=True) for c in payload.definition],
-        "action_buttons": [b.dict(exclude_unset=True) for b in payload.action_buttons],
-        "value_list_groups": [g.dict() for g in payload.value_list_groups]
+        "components": [_as_dict(c) for c in raw_components],
+        "action_buttons": [_as_dict(b) for b in (payload.action_buttons or embedded_buttons)],
+        "value_list_groups": [_as_dict(g) for g in payload.value_list_groups],
     }
     db_screen.definition = full_definition
     
@@ -316,7 +352,7 @@ def make_screen_live(screen_id: str, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=400, detail=f"Only PENDING_APPROVAL screens can go live. Current status: {screen.status}")
 
     now = datetime.datetime.utcnow().isoformat()
-    approver = current_user.get("user_id", "SYSTEM")
+    approver = current_user.id
 
     # Soft 4-Eye check — warn but don't hard-block until Entitlement module (WS-8) is live
     if screen.created_by == approver:
@@ -389,7 +425,7 @@ def create_new_version(screen_id: str, db: Session = Depends(get_db), current_us
         definition=live_screen.definition,
         created_at=now,
         updated_at=now,
-        created_by=current_user.get("user_id", "SYSTEM"),
+        created_by=current_user.id,
     )
     db.add(new_screen)
     db.commit()

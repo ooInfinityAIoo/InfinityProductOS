@@ -76,7 +76,7 @@ def set_package_domains(package_id: str, body: dict, db: Session = Depends(get_d
     for dc in domain_codes:
         db.execute(
             text("INSERT INTO package_iso_domains (package_id, domain_code, created_at, created_by) VALUES (:pkg, :dc, :now, :by)"),
-            {"pkg": package_id, "dc": dc, "now": now, "by": current_user.get("user_id", "SYSTEM")}
+            {"pkg": package_id, "dc": dc, "now": now, "by": current_user.id}
         )
     db.commit()
     return {"package_id": package_id, "domain_codes": domain_codes, "message": f"{len(domain_codes)} domains associated."}
