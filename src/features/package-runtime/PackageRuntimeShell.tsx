@@ -141,7 +141,9 @@ export const PackageRuntimeShell: React.FC = () => {
                   <MasterMaintenance
                     screenId={screenData.screen_id}
                     screenName={screenData.screen_name}
-                    definition={screenData.definition}
+                    components={screenData.definition}
+                    masterType={screenData.master_type}
+                    isGlobalShared={screenData.is_global_shared}
                   />
                 ) : (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">

@@ -53,7 +53,9 @@ def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTempl
         created_by=db_screen.created_by,
         definition=definition_data.get("components", []),
         action_buttons=definition_data.get("action_buttons", []),
-        value_list_groups=definition_data.get("value_list_groups", [])
+        value_list_groups=definition_data.get("value_list_groups", []),
+        master_type=definition_data.get("master_type"),
+        is_global_shared=getattr(db_screen, "is_global_shared", False),
     )
 
 # --- CRUD Endpoints ---

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
@@ -80,6 +80,29 @@ def delete_dynamic_master_record(screen_id: str, record_id: str, db: Session = D
     db.delete(db_record)
     db.commit()
     return
+
+@router.patch("/{screen_id}/global-share", summary="Toggle a Master's Global Share flag")
+def set_master_global_share(
+    screen_id: str,
+    is_global_shared: bool = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_designer_privileges),
+):
+    """
+    WHY THIS EXISTS (FIELD_REGISTRY_REQUIREMENTS.md §4):
+    Lets a user toggle whether a master (a MAINTENANCE screen) is shared across ALL
+    packages (e.g. Currency, Country) or stays scoped to its own package (e.g. BIC for
+    domestic-only Commercial Lending). Availability rule for consumers: a package sees a
+    master where application_package_id == pkg OR is_global_shared.
+    """
+    master = db.query(models.ScreenTemplate).filter(models.ScreenTemplate.screen_id == screen_id).first()
+    if not master:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found.")
+    master.is_global_shared = is_global_shared
+    master.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    return {"screen_id": screen_id, "is_global_shared": master.is_global_shared}
+
 
 # --- Global Tenant Theme & Branding ---
 

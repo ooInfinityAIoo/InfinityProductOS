@@ -20,7 +20,11 @@ import { RuntimeScreenRenderer } from './RuntimeScreenRenderer';
 interface MasterMaintenanceProps {
   screenId: string;
   screenName: string;
-  definition: any; // {components:[...], master_type?:'DECISION_TABLE'}
+  // The screen GET returns `definition` as the components ARRAY; master_type and
+  // is_global_shared come as separate response fields.
+  components: any[];
+  masterType?: string | null;
+  isGlobalShared?: boolean;
 }
 
 interface MasterRecord {
@@ -32,16 +36,27 @@ interface MasterRecord {
 // Column = a real input component of the master (skip layout-only components).
 const LAYOUT_TYPES = new Set(['section_header', 'label']);
 
-export const MasterMaintenance: React.FC<MasterMaintenanceProps> = ({ screenId, screenName, definition }) => {
+export const MasterMaintenance: React.FC<MasterMaintenanceProps> = ({ screenId, screenName, components: allComponents, masterType, isGlobalShared = false }) => {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<MasterRecord | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [globalShared, setGlobalShared] = useState(isGlobalShared);
 
-  const isDecisionTable = definition?.master_type === 'DECISION_TABLE';
-  const components: any[] = (definition?.components ?? []).filter(
+  const isDecisionTable = masterType === 'DECISION_TABLE';
+  const components: any[] = (allComponents ?? []).filter(
     (c: any) => c.field_binding && !LAYOUT_TYPES.has(c.component_type)
   );
+  // Full component array (incl. layout) for the generated add/edit form.
+  const formDefinition = allComponents ?? [];
+
+  // Global-share toggle (only meaningful for masters). Optimistic local state.
+  const globalShareMut = useMutation({
+    mutationFn: async (next: boolean) =>
+      (await apiClient.patch(`/masters/${screenId}/global-share`, { is_global_shared: next })).data,
+    onSuccess: (d: any) => setGlobalShared(!!d.is_global_shared),
+    onError: (e: any) => setError(e.response?.data?.detail ?? 'Could not update sharing'),
+  });
   const colLabel = (c: any) => c.properties?.display_label || c.field_binding;
 
   const { data, isLoading } = useQuery({
@@ -93,12 +108,28 @@ export const MasterMaintenance: React.FC<MasterMaintenanceProps> = ({ screenId, 
           )}
           <span className="text-[11px] text-slate-400">{records.length} {noun.toLowerCase()}{records.length === 1 ? '' : 's'}</span>
         </div>
-        <button
-          onClick={() => { setAdding(true); setError(null); }}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 transition-colors"
-        >
-          + Add {noun}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Global Share toggle — when on, this master is available to ALL packages. */}
+          <button
+            onClick={() => globalShareMut.mutate(!globalShared)}
+            disabled={globalShareMut.isPending}
+            title="When on, this master is shared across all packages"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors ${
+              globalShared
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <span>{globalShared ? '🌐' : '🔒'}</span>
+            {globalShared ? 'Global' : 'Package-scoped'}
+          </button>
+          <button
+            onClick={() => { setAdding(true); setError(null); }}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 transition-colors"
+          >
+            + Add {noun}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -165,7 +196,7 @@ export const MasterMaintenance: React.FC<MasterMaintenanceProps> = ({ screenId, 
             <div className="p-5 overflow-y-auto">
               <RuntimeScreenRenderer
                 screenName={screenName}
-                definition={definition}
+                definition={formDefinition}
                 initialValues={editing?.record_data ?? {}}
                 onSubmit={(values, action) => {
                   if (action === 'CANCEL_SESSION') { setAdding(false); setEditing(null); return; }

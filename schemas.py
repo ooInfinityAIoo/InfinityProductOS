@@ -1229,6 +1229,11 @@ class ScreenTemplateResponse(ScreenTemplateCreate):
     created_at: str
     updated_at: Optional[str] = None
     created_by: str
+    # Master metadata: master_type ('DECISION_TABLE' for rules) lives in the JSONB
+    # definition; is_global_shared is a column. Both surfaced so the master grid can
+    # render the right UX and the global-share toggle knows current state.
+    master_type: Optional[str] = None
+    is_global_shared: bool = False
 
     class Config:
         from_attributes = True
