@@ -87,6 +87,43 @@ def _build_definition(fields: list[dict]) -> dict:
     return {"components": comps, "action_buttons": [], "value_list_groups": []}
 
 
+# Address Master was removed; address is folded into Branch & Customer masters
+# (PM decision). Canonical address fields ensured on those masters after spec config.
+ADDRESS_FIELDS = [
+    ("address_line_1", "Address Line 1", "text_input"),
+    ("address_line_2", "Address Line 2", "text_input"),
+    ("city", "City", "text_input"),
+    ("state_province", "State / Province", "text_input"),
+    ("postal_code", "Postal Code", "text_input"),
+    ("country", "Country", "dropdown"),
+]
+ADDRESS_TARGETS = ["Branch Master", "Customer Master"]
+
+
+def _ensure_address(db) -> None:
+    for name in ADDRESS_TARGETS:
+        m = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
+        if not m:
+            continue
+        defn = dict(m.definition or {})
+        comps = list(defn.get("components", []))
+        existing = {c.get("field_binding") for c in comps}
+        for slug, label, ctype in ADDRESS_FIELDS:
+            if slug in existing:
+                continue
+            comps.append({
+                "component_type": ctype, "field_binding": slug,
+                "label_token": "LBL_" + slug.upper(), "requirement_status": "NON_MANDATORY",
+                "properties": {"display_label": label, "data_type": "Text",
+                               "input_mode": "Drop-down" if ctype == "dropdown" else "Text Box",
+                               "description": f"{label} (address)"},
+            })
+        defn["components"] = comps
+        m.definition = defn
+        db.commit()
+        print(f"[address] ensured address fields on {name}")
+
+
 def run() -> int:
     wb = openpyxl.load_workbook(SPEC_PATH, data_only=True)
     ws = wb["Sheet1"]
@@ -117,6 +154,7 @@ def run() -> int:
             db.commit()
             configured += 1
             print(f"[configured] {screen_name:38} <- {profile}  ({len(fields)} fields)")
+        _ensure_address(db)
         return configured
     finally:
         db.close()
