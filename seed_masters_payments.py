@@ -36,7 +36,17 @@ PAYMENTS_MASTERS = [
     "Line of Business", "Department", "Limits", "ISO Message Types", "BIC", "BBAN",
     "Service Level Agreements", "Transaction Codes", "Debit Account Derivation",
     "Credit Account Derivation",
+    # Batch 2 (PM-defined)
+    "Fee Configuration Master", "Mandate Management Master", "CounterParty Master",
+    "Payment Rejection Reason Codes", "Upstream Systems Registration Master",
+    "Downstream Systems Registration Master", "Payment Order Master", "Sheet Rate Master",
+    "Correspondent Bank", "Branch Hierarchy Master",
 ]
+
+# Optional per-master descriptions (placeholder masters otherwise get a generic one).
+MASTER_DESCRIPTIONS = {
+    "Branch Hierarchy Master": "Branch hierarchy — Main Branch with its Local Branches",
+}
 
 
 def _master_name(raw: str) -> str:
@@ -80,7 +90,7 @@ def run() -> int:
             screen = models.ScreenTemplate(
                 screen_id=f"MSTR-{uuid.uuid4().hex[:10].upper()}",
                 screen_name=name,
-                description=f"Payments Master (placeholder) — {name}",
+                description=MASTER_DESCRIPTIONS.get(name, f"Payments Master (placeholder) — {name}"),
                 screen_template_category="MAINTENANCE",
                 status="LIVE",
                 application_package_id=PAYMENTS_PACKAGE_ID,
