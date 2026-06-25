@@ -40,13 +40,11 @@ PAYMENTS_MASTERS = [
     "Fee Configuration Master", "Mandate Management Master", "CounterParty Master",
     "Payment Rejection Reason Codes", "Upstream Systems Registration Master",
     "Downstream Systems Registration Master", "Payment Order Master", "Sheet Rate Master",
-    "Correspondent Bank", "Branch Hierarchy Master",
+    "Correspondent Bank",
 ]
 
 # Optional per-master descriptions (placeholder masters otherwise get a generic one).
-MASTER_DESCRIPTIONS = {
-    "Branch Hierarchy Master": "Branch hierarchy — Main Branch with its Local Branches",
-}
+MASTER_DESCRIPTIONS = {}
 
 
 def _master_name(raw: str) -> str:
