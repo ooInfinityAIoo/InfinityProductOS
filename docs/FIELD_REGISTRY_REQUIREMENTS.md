@@ -99,8 +99,18 @@ off that habit. The field registry simply gains a reference to it:
     values from the master (Currency.Ccy → the currency list).
 - **Config / Calculated / Derived fields get their own standard masters** (Q5),
   seeded once and auto-bound on field creation so they're never orphan.
-- Masters are **package-scoped** (Q3), seeded from a global canonical so we don't
-  re-key ISO 4217 etc. per package. Global sharing is a future feature.
+- Masters are **package-scoped** by default (Q3). A user-controlled **Global Share
+  flag** (`screen_templates.is_global_shared`) lets a universal master (Currency,
+  Country) be shared across ALL packages, while package-specific masters stay scoped
+  (e.g. BIC is irrelevant to domestic-only Commercial Lending, so it stays off).
+  Availability rule for consumers: a package sees masters where
+  `application_package_id == pkg OR is_global_shared`. Currency + Country ship
+  global by default; the rest are package-scoped and the user toggles as needed.
+- **Master = curated value-domain reference table** (litmus: finite controlled list,
+  bank-maintained, multiple fields draw from it). Data types (Amount/Date/free text)
+  are NOT masters. `master_ref` on a field is therefore OPTIONAL — set only for
+  genuinely value-constrained fields; classification (data_type + domain) is the
+  universal no-orphan property.
 
 ---
 

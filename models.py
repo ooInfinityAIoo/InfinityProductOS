@@ -1010,6 +1010,12 @@ class ScreenTemplate(Base):
 
     # ── Hierarchical scoping ─────────────────────────────────────────────────
     application_package_id = Column(String, ForeignKey("master_product_application_packages.package_id"), nullable=True, index=True)
+    # Global Share flag (FIELD_REGISTRY_REQUIREMENTS.md §4) — for MAINTENANCE masters
+    # only. When a user enables this, the master (Currency, Country, …) is available
+    # to ALL packages, not just application_package_id. Package-specific masters (e.g.
+    # BIC for domestic-only Commercial Lending) leave it false. Availability rule:
+    # a package sees masters where application_package_id == pkg OR is_global_shared.
+    is_global_shared = Column(Boolean, nullable=False, default=False, index=True)
     product_id = Column(String, nullable=True, index=True)
     subproduct_id = Column(String, nullable=True, index=True)
     workflow_id = Column(String, nullable=True)
