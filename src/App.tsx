@@ -34,6 +34,7 @@ const GlobalTechnicalDashboard = lazy(() => import('./features/dashboard/GlobalT
 const PackageRuntimeShell = lazy(() => import('./features/package-runtime/PackageRuntimeShell').then(m => ({ default: m.PackageRuntimeShell })));
 const LegacyOnboardingStudio = lazy(() => import('./features/legacy-onboarding/LegacyOnboardingStudio').then(m => ({ default: m.LegacyOnboardingStudio })));
 const ProductRegistryStudio = lazy(() => import('./features/product-registry/ProductRegistryStudio').then(m => ({ default: m.ProductRegistryStudio })));
+const MasterDataExplorer = lazy(() => import('./features/masters/MasterDataExplorer').then(m => ({ default: m.MasterDataExplorer })));
 const SubProductRegistryStudio = lazy(() => import('./features/subproduct-registry/SubProductRegistryStudio').then(m => ({ default: m.SubProductRegistryStudio })));
 const QueueInfrastructureStudio = lazy(() => import('./features/queue-infrastructure/QueueInfrastructureStudio').then(m => ({ default: m.QueueInfrastructureStudio })));
 const AuthorizationMatrixStudio = lazy(() => import('./features/entitlements/AuthorizationMatrixStudio').then(m => ({ default: m.AuthorizationMatrixStudio })));
@@ -132,6 +133,7 @@ function App() {
           {/* WS-4: Legacy Onboarding Studio — screenshot → AI extraction → Screen Designer */}
           {activeModule === 'legacy-onboarding' && <LegacyOnboardingStudio />}
           {activeModule === 'product-registry' && <ProductRegistryStudio />}
+          {activeModule === 'master-data-explorer' && <MasterDataExplorer />}
           {activeModule === 'subproduct-registry' && <SubProductRegistryStudio />}
           {activeModule === 'queue-infrastructure' && <QueueInfrastructureStudio />}
           {activeModule === 'authorization-matrix' && <AuthorizationMatrixStudio />}

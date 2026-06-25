@@ -1234,6 +1234,7 @@ class ScreenTemplateResponse(ScreenTemplateCreate):
     # render the right UX and the global-share toggle knows current state.
     master_type: Optional[str] = None
     is_global_shared: bool = False
+    master_category: Optional[str] = None  # grouping for the Master Data explorer
 
     class Config:
         from_attributes = True

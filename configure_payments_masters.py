@@ -214,6 +214,42 @@ VALUE_SOURCES = {
 }
 
 
+# Master → category (the PM's grouping, mirrors the Payments Master spec sections).
+# Stored as definition.master_category so the Master Data explorer groups them.
+MASTER_CATEGORIES = {
+    "Geography & Reference": ["Currency Master", "Country Master", "Holiday Calendar Master"],
+    "Bank & Institution Identity": ["Bank Master", "BIC Master", "Correspondent Bank Master",
+        "Correspondent Bank Routing Master", "National Clearing Codes Master", "Branch Master"],
+    "Accounts": ["Customer Account Numbers Master", "GL Account Numbers Master",
+        "Clearing House Accounts Master", "Debit Account Derivation Master", "Credit Account Derivation Master"],
+    "Parties": ["Customer Master", "CounterParty Master"],
+    "Payment Processing": ["Method of Payment Master", "Payment Order Master",
+        "Payment Rejection Reason Codes Master", "Transaction Codes Master", "ISO Message Types Master",
+        "Fee Configuration Master", "Sheet Rate Master", "Mandate Management Master", "Cut off Time Master",
+        "Service Level Agreements Master", "Intelligent Routing Rules Master"],
+    "Security & Connectivity": ["RMA Master", "Bilateral Key Master", "Membership Master",
+        "Upstream Systems Registration Master", "Downstream Systems Registration Master"],
+    "Organisation": ["Line of Business Master", "Department Master", "Limits Master"],
+}
+
+
+def _apply_categories(db) -> None:
+    name_to_cat = {n: cat for cat, names in MASTER_CATEGORIES.items() for n in names}
+    applied = 0
+    for m in db.query(models.ScreenTemplate).filter_by(screen_template_category="MAINTENANCE").all():
+        cat = name_to_cat.get(m.screen_name)
+        if not cat:
+            continue
+        defn = copy.deepcopy(dict(m.definition or {}))
+        if defn.get("master_category") != cat:
+            defn["master_category"] = cat
+            m.definition = defn
+            flag_modified(m, "definition")
+            applied += 1
+    db.commit()
+    print(f"[category] tagged {applied} masters with a category")
+
+
 def _apply_value_sources(db) -> None:
     # Resolve each source master to its current screen_id and stamp value_source on
     # the linked dropdown component. Re-run after any reseed (screen_ids regenerate).
@@ -331,6 +367,7 @@ def run() -> int:
         _ensure_address(db)
         _ensure_account_ids(db)
         _apply_manual_definitions(db)
+        _apply_categories(db)
         _apply_value_sources(db)  # must run last — needs all masters configured
         return configured
     finally:

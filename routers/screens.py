@@ -56,6 +56,7 @@ def _construct_response(db_screen: models.ScreenTemplate) -> schemas.ScreenTempl
         value_list_groups=definition_data.get("value_list_groups", []),
         master_type=definition_data.get("master_type"),
         is_global_shared=getattr(db_screen, "is_global_shared", False),
+        master_category=definition_data.get("master_category"),
     )
 
 # --- CRUD Endpoints ---

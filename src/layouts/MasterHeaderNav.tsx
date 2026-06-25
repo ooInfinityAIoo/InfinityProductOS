@@ -88,17 +88,9 @@ export const MasterHeaderNav: React.FC = () => {
       <nav className="flex items-center gap-2">
         {activeProductContext && (
           <>
-            {/* WS-12: Launch the deployed banking product runtime — switches from designer mode to operator mode */}
-            <button
-              onClick={() => setActiveModule('package-runtime')}
-              className={`text-[12px] font-bold px-3.5 py-1.5 rounded-xl shadow-sm active:scale-[0.98] transition-all flex items-center gap-1.5 mr-1 ${
-                activeModule === 'package-runtime' || activeModule === 'runtime-transaction-shell'
-                  ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-              }`}
-            >
-              ▶ Launch App
-            </button>
+            {/* Launch App (runtime/operator mode) intentionally removed for now — to be
+                reintroduced once the core product is built. Keep it simple: one
+                (designer) mode. The package-runtime module/code is retained for later. */}
             <button
           onClick={() => setActiveModule('ai-assistant')}
           className="text-[12px] font-bold text-white bg-gradient-to-r from-indigo-600 via-indigo-750 to-indigo-800 hover:from-indigo-750 hover:to-indigo-900 px-3.5 py-1.5 rounded-xl shadow-md shadow-indigo-600/10 active:scale-[0.98] transition-all flex items-center gap-1.5 mr-2"
@@ -144,17 +136,11 @@ export const MasterHeaderNav: React.FC = () => {
             <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100/50 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Reference Tables
             </div>
-            <button className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">Currency & FX Tables</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">ISO 4217 currencies, exchange rates, tolerance bands.</div>
-            </button>
-            <button className="px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100/50 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">Counterparty Directory</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">BICs, correspondent banks, SSI standing instructions.</div>
-            </button>
-            <button className="px-4 py-2.5 text-left hover:bg-slate-50 transition-colors opacity-50 cursor-not-allowed">
-              <div className="text-[12px] font-bold text-slate-500">Holiday & Calendar</div>
-              <div className="text-[10px] text-slate-400 font-normal mt-0.5">Settlement calendars, cut-off times per jurisdiction.</div>
+            {/* Single, data-driven entry — opens the Master Data explorer where all
+                masters are grouped by category (replaces the old hardcoded stubs). */}
+            <button onClick={() => setActiveModule('master-data-explorer')} className="px-4 py-2.5 text-left hover:bg-indigo-50/40 transition-colors">
+              <div className="text-[12px] font-bold text-indigo-600">Reference &amp; Configuration Masters</div>
+              <div className="text-[10px] text-slate-400 font-normal mt-0.5">All masters grouped by category — Currency, Bank, Accounts, Routing, and more.</div>
             </button>
 
             {/* Access & Authorization — IAM config lives in Master because every studio
