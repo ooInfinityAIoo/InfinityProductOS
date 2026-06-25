@@ -45,16 +45,18 @@ MASTERS = [
 ]
 
 # A few sample records so the reference masters aren't empty (screen_name -> rows).
+# Field bindings match the PM spec config (Currency/Country masters), so linked
+# value-list dropdowns resolve their labels correctly.
 SAMPLE_RECORDS = {
     "Currency Master": [
-        {"ccy_code": "USD", "ccy_name": "US Dollar", "symbol": "$"},
-        {"ccy_code": "EUR", "ccy_name": "Euro", "symbol": "€"},
-        {"ccy_code": "GBP", "ccy_name": "Pound Sterling", "symbol": "£"},
+        {"currency": "USD", "currency_name": "US Dollar", "no_of_decimal_digits": "2"},
+        {"currency": "EUR", "currency_name": "Euro", "no_of_decimal_digits": "2"},
+        {"currency": "GBP", "currency_name": "Pound Sterling", "no_of_decimal_digits": "2"},
     ],
     "Country Master": [
-        {"ctry_code": "US", "ctry_name": "United States"},
-        {"ctry_code": "GB", "ctry_name": "United Kingdom"},
-        {"ctry_code": "DE", "ctry_name": "Germany"},
+        {"country_code": "US", "country_name": "United States", "currency": "USD"},
+        {"country_code": "GB", "country_name": "United Kingdom", "currency": "GBP"},
+        {"country_code": "DE", "country_name": "Germany", "currency": "EUR"},
     ],
 }
 

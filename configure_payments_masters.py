@@ -17,7 +17,9 @@ HOW TO RUN:
 from __future__ import annotations
 
 import re
+import copy
 import openpyxl
+from sqlalchemy.orm.attributes import flag_modified
 
 from database import SessionLocal
 import models
@@ -187,6 +189,69 @@ MANUAL_MASTER_DEFINITIONS = {
 DECISION_TABLE_MASTERS = {"Intelligent Routing Rules Master"}
 
 
+# Field → master value-list links: master -> { field_binding: (source_master, value_field, label_field) }.
+# At runtime the dropdown sources its options live from the referenced master's records.
+VALUE_SOURCES = {
+    "Currency Master": {
+        "currency_holiday_calendar": ("Holiday Calendar Master", "calendar_name", "calendar_name"),
+    },
+    "Country Master": {
+        "currency": ("Currency Master", "currency", "currency_name"),
+    },
+    "Correspondent Bank Routing Master": {
+        "currency": ("Currency Master", "currency", "currency_name"),
+        "default_correspondent": ("Bank Master", "bank_name", "bank_name"),
+    },
+    "Intelligent Routing Rules Master": {
+        "currency": ("Currency Master", "currency", "currency_name"),
+        "destination_country": ("Country Master", "country_code", "country_name"),
+        "method_of_payment": ("Method of Payment Master", "mop", "mop"),
+    },
+    "Membership Master": {
+        "mop_media": ("Method of Payment Master", "mop", "mop"),
+        "ncc_type": ("National Clearing Codes Master", "ncc_type", "ncc_type"),
+    },
+}
+
+
+def _apply_value_sources(db) -> None:
+    # Resolve each source master to its current screen_id and stamp value_source on
+    # the linked dropdown component. Re-run after any reseed (screen_ids regenerate).
+    name_to_id = {
+        s.screen_name: s.screen_id
+        for s in db.query(models.ScreenTemplate).filter_by(screen_template_category="MAINTENANCE").all()
+    }
+    for master_name, links in VALUE_SOURCES.items():
+        m = db.query(models.ScreenTemplate).filter_by(screen_name=master_name).first()
+        if not m:
+            continue
+        # Deep-copy so SQLAlchemy sees a brand-new object graph (in-place nested JSONB
+        # edits aren't auto-detected; flag_modified forces the UPDATE regardless).
+        defn = copy.deepcopy(dict(m.definition or {}))
+        comps = defn.get("components", [])
+        linked = 0
+        for c in comps:
+            link = links.get(c.get("field_binding"))
+            if not link:
+                continue
+            src_name, value_field, label_field = link
+            src_id = name_to_id.get(src_name)
+            if not src_id:
+                print(f"[warn] {master_name}.{c['field_binding']} -> source '{src_name}' not found")
+                continue
+            c.setdefault("properties", {})["value_source"] = {
+                "master_screen_id": src_id, "master_name": src_name,
+                "value_field": value_field, "label_field": label_field,
+            }
+            linked += 1
+        defn["components"] = comps
+        m.definition = defn
+        flag_modified(m, "definition")
+        db.commit()
+        if linked:
+            print(f"[value-source] linked {linked} field(s) on {master_name}")
+
+
 def _apply_manual_definitions(db) -> None:
     for name, fields in MANUAL_MASTER_DEFINITIONS.items():
         m = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
@@ -266,6 +331,7 @@ def run() -> int:
         _ensure_address(db)
         _ensure_account_ids(db)
         _apply_manual_definitions(db)
+        _apply_value_sources(db)  # must run last — needs all masters configured
         return configured
     finally:
         db.close()

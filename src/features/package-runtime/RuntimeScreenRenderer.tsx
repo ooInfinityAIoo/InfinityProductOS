@@ -15,6 +15,8 @@
 // The Runtime Transaction Shell cannot display the human-in-loop approval screen.
 
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient } from '../../api/client';
 
 interface ScreenComponent {
   component_type: string;
@@ -192,6 +194,27 @@ const ComponentField: React.FC<{
   const isMandatory = comp.requirement_status === 'MANDATORY';
   const isFullWidth = ['label', 'section_header', 'textarea'].includes(comp.component_type);
 
+  // ── Value-list linking ───────────────────────────────────────────────────
+  // A dropdown can source its options from another MASTER's records instead of a
+  // static list (e.g. a Currency field pulls live values from Currency Master).
+  // properties.value_source = { master_screen_id, value_field, label_field }.
+  const vs = comp.properties?.value_source as
+    | { master_screen_id: string; value_field: string; label_field?: string }
+    | undefined;
+  const { data: vsData } = useQuery({
+    queryKey: ['value-source', vs?.master_screen_id],
+    queryFn: async () => (await apiClient.get(`/masters/dynamic/${vs!.master_screen_id}`)).data,
+    enabled: !!vs?.master_screen_id,
+    staleTime: 60_000,
+  });
+  // Resolved options: [{value,label}]. Falls back to the static string list.
+  const linkedOptions: { value: string; label: string }[] | null = vs
+    ? (vsData?.records ?? []).map((r: any) => ({
+        value: r.record_data?.[vs.value_field] ?? '',
+        label: r.record_data?.[vs.label_field ?? vs.value_field] || r.record_data?.[vs.value_field] || '',
+      })).filter((o: any) => o.value !== '')
+    : null;
+
   const inputClass = `w-full px-3 py-2 text-sm border rounded-lg outline-none transition-colors ${
     error
       ? 'border-red-400 bg-red-50 focus:ring-2 focus:ring-red-200'
@@ -245,7 +268,10 @@ const ComponentField: React.FC<{
         );
       case 'dropdown':
       case 'select': {
-        const options: string[] = comp.properties?.options ?? [];
+        // Prefer master-linked options; fall back to the static string list.
+        const staticOptions: string[] = comp.properties?.options ?? [];
+        const opts = linkedOptions ?? staticOptions.map(o => ({ value: o, label: o }));
+        const linkedEmpty = !!vs && opts.length === 0;
         return (
           <select
             value={value}
@@ -253,9 +279,9 @@ const ComponentField: React.FC<{
             disabled={readOnly}
             className={inputClass}
           >
-            <option value="">— Select —</option>
-            {options.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
+            <option value="">{linkedEmpty ? '— no records in linked master —' : '— Select —'}</option>
+            {opts.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
         );
