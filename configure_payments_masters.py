@@ -132,6 +132,39 @@ def _ensure_account_ids(db) -> None:
     print("[account-id] ensured BBAN + IBAN on Customer Account Numbers Master")
 
 
+# Masters the PM defined inline (not in the Excel spec). Field tuples:
+# (slug, label, component_type, data_type, M/O, description). Applied as a full
+# definition (replace) so re-running keeps them in sync.
+MANUAL_MASTER_DEFINITIONS = {
+    "Correspondent Bank Routing Master": [
+        ("currency", "Currency", "dropdown", "Alphanumeric (3)", "Mandatory",
+         "Currency routed via this correspondent (references Currency Master)."),
+        ("default_correspondent", "Default Correspondent", "dropdown", "Text", "Mandatory",
+         "Primary correspondent bank used to route this currency for Straight Through Processing (STP)."),
+        ("bic", "Bank Identifier Code (BIC)", "text_input", "Alphanumeric (8/11)", "Mandatory",
+         "8- or 11-character SWIFT BIC for the Nostro/Vostro correspondent settlement account."),
+    ],
+}
+
+
+def _apply_manual_definitions(db) -> None:
+    for name, fields in MANUAL_MASTER_DEFINITIONS.items():
+        m = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
+        if not m:
+            print(f"[warn] manual master '{name}' not found")
+            continue
+        comps = [{
+            "component_type": ctype, "field_binding": slug,
+            "label_token": "LBL_" + slug.upper(), "requirement_status": _requirement(mo),
+            "properties": {"display_label": label, "data_type": dtype,
+                           "input_mode": "Drop-down" if ctype == "dropdown" else "Text Box",
+                           "description": desc},
+        } for slug, label, ctype, dtype, mo, desc in fields]
+        m.definition = {"components": comps, "action_buttons": [], "value_list_groups": []}
+        db.commit()
+        print(f"[manual] configured {name} ({len(comps)} fields)")
+
+
 def _ensure_address(db) -> None:
     for name in ADDRESS_TARGETS:
         m = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
@@ -188,6 +221,7 @@ def run() -> int:
             print(f"[configured] {screen_name:38} <- {profile}  ({len(fields)} fields)")
         _ensure_address(db)
         _ensure_account_ids(db)
+        _apply_manual_definitions(db)
         return configured
     finally:
         db.close()
