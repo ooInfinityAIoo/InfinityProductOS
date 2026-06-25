@@ -71,11 +71,18 @@ def run() -> int:
     now = datetime.datetime.utcnow().isoformat()
     created = 0
     try:
+        # Resolve the package's "Masters" business domain so masters appear under it
+        # in the package sidebar (without a domain they are unreachable in the runtime).
+        masters_dom = db.query(models.BusinessDomain).filter_by(
+            package_id=PAYMENTS_PACKAGE_ID, domain_code="MASTERS"
+        ).first()
+        dom_id = masters_dom.domain_id if masters_dom else None
+
         for raw in PAYMENTS_MASTERS:
             name = _master_name(raw)
             existing = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
             if existing:
-                # Re-scope to Payments + ensure LIVE/MAINTENANCE (reuse, don't duplicate).
+                # Re-scope to Payments + ensure LIVE/MAINTENANCE + Masters domain.
                 changed = False
                 if existing.application_package_id != PAYMENTS_PACKAGE_ID:
                     existing.application_package_id = PAYMENTS_PACKAGE_ID; changed = True
@@ -83,6 +90,8 @@ def run() -> int:
                     existing.screen_template_category = "MAINTENANCE"; changed = True
                 if existing.status != "LIVE":
                     existing.status = "LIVE"; changed = True
+                if dom_id and existing.business_domain_id != dom_id:
+                    existing.business_domain_id = dom_id; changed = True
                 db.commit()
                 print(f"[reuse{'+rescope' if changed else ''}] {existing.screen_id}  {name}")
                 continue
@@ -93,6 +102,7 @@ def run() -> int:
                 screen_template_category="MAINTENANCE",
                 status="LIVE",
                 application_package_id=PAYMENTS_PACKAGE_ID,
+                business_domain_id=dom_id,
                 definition=_placeholder_definition(),
                 created_at=now,
                 created_by="SYSTEM",
