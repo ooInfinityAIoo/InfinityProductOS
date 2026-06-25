@@ -31,7 +31,7 @@ PAYMENTS_PACKAGE_ID = "PKG-4D5B9DD9"  # Payment Hub
 PAYMENTS_MASTERS = [
     "Currency", "Country", "Address", "Holiday Calendar", "National Clearing Codes",
     "IBAN", "Customer Account Numbers", "GL Account Numbers", "Clearing House Accounts",
-    "Bank Identification Code", "Branch Master", "Customer", "Bank Master", "Bank Routing",
+    "Branch Master", "Customer", "Bank Master", "SWIFT Routing",
     "RMA", "Bilateral Key", "Method of Payment", "Membership", "Cut off Time Master",
     "Line of Business", "Department", "Limits", "ISO Message Types", "BIC", "BBAN",
     "Service Level Agreements", "Transaction Codes", "Debit Account Derivation",
