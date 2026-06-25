@@ -1,5 +1,35 @@
 # Handoff
 
+## ⏭ NEXT SESSION — revisit Master Data concepts (PM flagged, 2026-06-25)
+The PM wants to step back and revisit master-data concepts before building more.
+Open question raised: **"Master Data on Launch App vs Master Data before Launch App — why different?"**
+- HONEST ANSWER: it's an inconsistency, not a design. Two navigations:
+  - BEFORE launch = designer header "Master Data" dropdown (`src/layouts/MasterHeaderNav.tsx`)
+    — HARDCODED legacy menu; its "Reference Tables" (Currency & FX Tables, Counterparty
+    Directory, Holiday & Calendar) are fixed placeholder labels, NOT the real masters.
+  - ON launch = package runtime "🗂 Masters" sidebar (`PackageSidebarNav` →
+    `MasterMaintenance`) — DATA-DRIVEN, lists the actual 35 masters.
+- The masters we built ONLY surface on the runtime side. Reconcile next session.
+- Possible intentional split to decide on: BEFORE launch = DEFINE a master (fields/
+  structure, in Screen/Master Designer); ON launch = MAINTAIN records (data entry).
+  Today neither side does this cleanly.
+- Concepts to revisit together: the define-vs-maintain split, whether the designer
+  "Master Data" menu should be data-driven, master_ref/global-share/decision-table in
+  the authoring UI, and where field specs for the 19 placeholder masters get entered.
+
+### Where master work stands (Payment Hub = PKG-4D5B9DD9)
+- 35 masters, all LIVE, all bound to the package "Masters" business domain (navigable
+  via Launch App → Masters). 16 configured with real fields, 19 placeholders.
+- GUI (option B) DONE: generic Master Maintenance grid (list/add/edit/delete, form
+  generated from the master's fields), decision-table framing, field→master value-list
+  linking (9 links), global-share toggle. Reproducible via seed_masters_payments.py +
+  configure_payments_masters.py.
+- Two-tier routing modelled: Correspondent Bank Routing (execution: currency/default
+  correspondent/BIC/Nostro-Vostro/settlement acct) + Intelligent Routing Rules
+  (decision table: conditions → MOP + next hop).
+- Naming convention: use the PM's bank-standard names (no ISO-element renames). Scripts
+  are scaffolding (option A) until the master model settles, then move authoring to UI.
+
 ## Active effort (2026-06-24, later) — Extended Field Registry
 Turning the ISO-only field registry into a unified, master-anchored, package-scoped
 registry. **Contract: `docs/FIELD_REGISTRY_REQUIREMENTS.md`** (read first). Six-level
