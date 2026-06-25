@@ -32,6 +32,7 @@ PAYMENTS_MASTERS = [
     "Currency", "Country", "Holiday Calendar", "National Clearing Codes",
     "Customer Account Numbers", "GL Account Numbers", "Clearing House Accounts",
     "Branch Master", "Customer", "Bank Master", "Correspondent Bank Routing",
+    "Intelligent Routing Rules",
     "RMA", "Bilateral Key", "Method of Payment", "Membership", "Cut off Time Master",
     "Line of Business", "Department", "Limits", "ISO Message Types", "BIC",
     "Service Level Agreements", "Transaction Codes", "Debit Account Derivation",

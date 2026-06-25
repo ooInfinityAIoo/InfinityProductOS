@@ -136,15 +136,55 @@ def _ensure_account_ids(db) -> None:
 # (slug, label, component_type, data_type, M/O, description). Applied as a full
 # definition (replace) so re-running keeps them in sync.
 MANUAL_MASTER_DEFINITIONS = {
+    # ── Execution tier (reference data) — Default Currency Correspondents +
+    #    Settlement Accounts. ISO 20022: SttlmAcct, BICFI (ISO 9362), Ccy (ISO 4217).
     "Correspondent Bank Routing Master": [
         ("currency", "Currency", "dropdown", "Alphanumeric (3)", "Mandatory",
-         "Currency routed via this correspondent (references Currency Master)."),
+         "ISO 4217 currency routed via this correspondent (references Currency Master)."),
         ("default_correspondent", "Default Correspondent", "dropdown", "Text", "Mandatory",
          "Primary correspondent bank used to route this currency for Straight Through Processing (STP)."),
         ("bic", "Bank Identifier Code (BIC)", "text_input", "Alphanumeric (8/11)", "Mandatory",
-         "8- or 11-character SWIFT BIC for the Nostro/Vostro correspondent settlement account."),
+         "ISO 9362 SWIFT BIC of the correspondent settlement account (ISO 20022 BICFI)."),
+        ("nostro_vostro_indicator", "Nostro / Vostro Indicator", "dropdown", "Text", "Mandatory",
+         "Settlement account ownership — Nostro (our account with them) or Vostro (their account with us)."),
+        ("settlement_account_number", "Settlement Account Number", "text_input", "Alphanumeric (34)", "Mandatory",
+         "Nostro/Vostro settlement account number (ISO 20022 SttlmAcct.Id). Bilateral payments fail if not maintained."),
+    ],
+    # ── Decision tier (rules) — Intelligent Routing: derives Method of Payment +
+    #    next hop from conditions. ISO 20022: ClrSys/PmtTpInf, IntrmyAgt/CdtrAgt/DbtrAgt.
+    "Intelligent Routing Rules Master": [
+        # Conditions
+        ("currency", "Currency", "dropdown", "Alphanumeric (3)", "Optional",
+         "Condition — ISO 4217 currency of the payment (references Currency Master)."),
+        ("destination_country", "Destination Country", "dropdown", "Alphanumeric (2)", "Optional",
+         "Condition — ISO 3166 destination country (references Country Master)."),
+        ("amount_from", "Amount From", "number_input", "Numeric", "Optional",
+         "Condition — lower bound of the amount band this rule applies to."),
+        ("amount_to", "Amount To", "number_input", "Numeric", "Optional",
+         "Condition — upper bound of the amount band this rule applies to."),
+        ("routing_preference", "Routing Preference", "dropdown", "Text", "Mandatory",
+         "Condition — Cost-based | Time-Based | Optimal."),
+        ("preference_scope", "Preference Scope", "dropdown", "Text", "Mandatory",
+         "Condition — whether the preference is Customer-level or System-level."),
+        ("next_party_role", "Next Party Role", "dropdown", "Text", "Mandatory",
+         "Condition — next bank in the chain: Intermediary | Creditor | Debtor (ISO 20022 IntrmyAgt/CdtrAgt/DbtrAgt)."),
+        ("priority", "Priority", "number_input", "Numeric", "Mandatory",
+         "Rule evaluation order — lower number wins on a tie."),
+        # Outcomes
+        ("method_of_payment", "Method of Payment", "dropdown", "Text", "Mandatory",
+         "Outcome — derived payment network/MOP, e.g. SWIFT, RTGS (references Method of Payment Master; ISO 20022 ClrSys/PmtTpInf)."),
+        ("target_payment_system_id", "Target Payment System ID", "text_input", "Alphanumeric (35)", "Optional",
+         "Outcome — target payment system / bank identifier the message is routed to."),
+        ("effective_from", "Effective From", "date_picker", "Date", "Optional",
+         "Outcome — date this routing rule becomes effective."),
+        ("effective_to", "Effective To", "date_picker", "Date", "Optional",
+         "Outcome — date this routing rule expires."),
     ],
 }
+
+# Masters whose rows are RULES (condition->outcome), not reference data. Tagged so the
+# UI/resolver treat them as decision tables.
+DECISION_TABLE_MASTERS = {"Intelligent Routing Rules Master"}
 
 
 def _apply_manual_definitions(db) -> None:
@@ -160,9 +200,13 @@ def _apply_manual_definitions(db) -> None:
                            "input_mode": "Drop-down" if ctype == "dropdown" else "Text Box",
                            "description": desc},
         } for slug, label, ctype, dtype, mo, desc in fields]
-        m.definition = {"components": comps, "action_buttons": [], "value_list_groups": []}
+        defn = {"components": comps, "action_buttons": [], "value_list_groups": []}
+        if name in DECISION_TABLE_MASTERS:
+            defn["master_type"] = "DECISION_TABLE"  # rows are rules, not reference data
+        m.definition = defn
         db.commit()
-        print(f"[manual] configured {name} ({len(comps)} fields)")
+        kind = "decision-table" if name in DECISION_TABLE_MASTERS else "reference"
+        print(f"[manual] configured {name} ({len(comps)} fields, {kind})")
 
 
 def _ensure_address(db) -> None:
