@@ -100,6 +100,38 @@ ADDRESS_FIELDS = [
 ADDRESS_TARGETS = ["Branch Master", "Customer Master"]
 
 
+# IBAN/BBAN masters were removed (PM decision): they are account identifiers, so
+# they live as fields on Customer Account Numbers Master. BBAN = localized account
+# number (up to 30 alphanumeric); IBAN = its standardized international extension
+# (up to 34 alphanumeric).
+ACCOUNT_ID_FIELDS = [
+    ("bban", "BBAN", "Alphanumeric (30)", "Basic Bank Account Number — localized account number + bank/branch code."),
+    ("iban", "IBAN", "Alphanumeric (34)", "International Bank Account Number — standardized international extension of the BBAN."),
+]
+
+
+def _ensure_account_ids(db) -> None:
+    m = db.query(models.ScreenTemplate).filter_by(screen_name="Customer Account Numbers Master").first()
+    if not m:
+        return
+    defn = dict(m.definition or {})
+    comps = list(defn.get("components", []))
+    existing = {c.get("field_binding") for c in comps}
+    for slug, label, dtype, desc in ACCOUNT_ID_FIELDS:
+        if slug in existing:
+            continue
+        comps.append({
+            "component_type": "text_input", "field_binding": slug,
+            "label_token": "LBL_" + slug.upper(), "requirement_status": "NON_MANDATORY",
+            "properties": {"display_label": label, "data_type": dtype,
+                           "input_mode": "Text Box", "description": desc},
+        })
+    defn["components"] = comps
+    m.definition = defn
+    db.commit()
+    print("[account-id] ensured BBAN + IBAN on Customer Account Numbers Master")
+
+
 def _ensure_address(db) -> None:
     for name in ADDRESS_TARGETS:
         m = db.query(models.ScreenTemplate).filter_by(screen_name=name).first()
@@ -155,6 +187,7 @@ def run() -> int:
             configured += 1
             print(f"[configured] {screen_name:38} <- {profile}  ({len(fields)} fields)")
         _ensure_address(db)
+        _ensure_account_ids(db)
         return configured
     finally:
         db.close()

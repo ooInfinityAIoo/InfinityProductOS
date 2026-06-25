@@ -30,10 +30,10 @@ PAYMENTS_PACKAGE_ID = "PKG-4D5B9DD9"  # Payment Hub
 # The PM-defined Payments masters. " Master" is appended where not already present.
 PAYMENTS_MASTERS = [
     "Currency", "Country", "Holiday Calendar", "National Clearing Codes",
-    "IBAN", "Customer Account Numbers", "GL Account Numbers", "Clearing House Accounts",
+    "Customer Account Numbers", "GL Account Numbers", "Clearing House Accounts",
     "Branch Master", "Customer", "Bank Master", "SWIFT Routing",
     "RMA", "Bilateral Key", "Method of Payment", "Membership", "Cut off Time Master",
-    "Line of Business", "Department", "Limits", "ISO Message Types", "BIC", "BBAN",
+    "Line of Business", "Department", "Limits", "ISO Message Types", "BIC",
     "Service Level Agreements", "Transaction Codes", "Debit Account Derivation",
     "Credit Account Derivation",
     # Batch 2 (PM-defined)
