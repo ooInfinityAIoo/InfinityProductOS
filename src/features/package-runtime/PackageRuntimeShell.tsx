@@ -20,6 +20,7 @@ import { useResolvedPackageId } from '../../hooks/useResolvedPackageId';
 import { PackageSidebarNav } from './PackageSidebarNav';
 import { RuntimeScreenRenderer } from './RuntimeScreenRenderer';
 import { RuntimeTransactionShell } from './RuntimeTransactionShell';
+import { MasterMaintenance } from './MasterMaintenance';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 
@@ -130,26 +131,35 @@ export const PackageRuntimeShell: React.FC = () => {
 
           {/* Screen view */}
           {contentMode === 'screen' && selectedScreen && (
-            <div className="max-w-3xl">
+            <div className={selectedScreen.screen_template_category === 'MAINTENANCE' ? 'max-w-5xl' : 'max-w-3xl'}>
               {screenLoading ? (
                 <div className="text-center text-slate-400 py-16 text-sm">Loading screen…</div>
               ) : screenData ? (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                  {screenData.description && (
-                    <p className="text-sm text-slate-500 mb-5 pb-4 border-b border-slate-100">
-                      {screenData.description}
-                    </p>
-                  )}
-                  <RuntimeScreenRenderer
+                // MAINTENANCE screens are masters — render the record-maintenance grid
+                // (list + add/edit/delete) instead of a one-off form.
+                selectedScreen.screen_template_category === 'MAINTENANCE' ? (
+                  <MasterMaintenance
+                    screenId={screenData.screen_id}
                     screenName={screenData.screen_name}
                     definition={screenData.definition}
-                    onSubmit={(values, action) => {
-                      // In a real deployment this would call an API or trigger a workflow
-                      console.info('Screen submitted:', action, values);
-                      alert(`Action: ${action}\n\nValues:\n${JSON.stringify(values, null, 2)}`);
-                    }}
                   />
-                </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                    {screenData.description && (
+                      <p className="text-sm text-slate-500 mb-5 pb-4 border-b border-slate-100">
+                        {screenData.description}
+                      </p>
+                    )}
+                    <RuntimeScreenRenderer
+                      screenName={screenData.screen_name}
+                      definition={screenData.definition}
+                      onSubmit={(values, action) => {
+                        console.info('Screen submitted:', action, values);
+                        alert(`Action: ${action}\n\nValues:\n${JSON.stringify(values, null, 2)}`);
+                      }}
+                    />
+                  </div>
+                )
               ) : (
                 <div className="text-center text-slate-400 py-16 text-sm">
                   Screen not found or no longer live.
