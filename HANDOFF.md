@@ -1,21 +1,27 @@
 # Handoff
 
-## ⏭ NEXT SESSION — revisit Master Data concepts (PM flagged, 2026-06-25)
-The PM wants to step back and revisit master-data concepts before building more.
-Open question raised: **"Master Data on Launch App vs Master Data before Launch App — why different?"**
-- HONEST ANSWER: it's an inconsistency, not a design. Two navigations:
-  - BEFORE launch = designer header "Master Data" dropdown (`src/layouts/MasterHeaderNav.tsx`)
-    — HARDCODED legacy menu; its "Reference Tables" (Currency & FX Tables, Counterparty
-    Directory, Holiday & Calendar) are fixed placeholder labels, NOT the real masters.
-  - ON launch = package runtime "🗂 Masters" sidebar (`PackageSidebarNav` →
-    `MasterMaintenance`) — DATA-DRIVEN, lists the actual 35 masters.
-- The masters we built ONLY surface on the runtime side. Reconcile next session.
-- Possible intentional split to decide on: BEFORE launch = DEFINE a master (fields/
-  structure, in Screen/Master Designer); ON launch = MAINTAIN records (data entry).
-  Today neither side does this cleanly.
-- Concepts to revisit together: the define-vs-maintain split, whether the designer
-  "Master Data" menu should be data-driven, master_ref/global-share/decision-table in
-  the authoring UI, and where field specs for the 19 placeholder masters get entered.
+## ⏭ NEXT SESSION — master-data navigation consolidated; define-vs-maintain split still open
+The two-navigation inconsistency the PM flagged on 2026-06-25 is now RESOLVED in code
+(commit `8da8a5e`, 2026-06-26): there is ONE master-data surface.
+- **Launch App button REMOVED** (runtime/operator mode). To be reintroduced once the
+  core product is built; package-runtime code retained, not deleted.
+- **New `MasterDataExplorer`** (`src/features/masters/MasterDataExplorer.tsx`, designer
+  mode): masters grouped by category on the left (7 categories — Geography & Reference,
+  Bank & Institution Identity, Accounts, Parties, Payment Processing, Security &
+  Connectivity, Organisation); selected master's maintenance grid (reuses
+  `MasterMaintenance`) on the right. Decision-table 🧮 + global 🌐 badges.
+- The dead "Reference Tables" stubs in the designer "Master Data" dropdown
+  (`src/layouts/MasterHeaderNav.tsx`) are replaced with ONE live entry opening the explorer.
+- Masters tagged with `definition.master_category` (35 tagged via
+  `configure_payments_masters.py`); exposed through `ScreenTemplateResponse.master_category`.
+
+**Still open for next session (concept, not a bug):**
+- The **define-vs-maintain split** is still unresolved. Today the explorer MAINTAINS
+  records; there is no clean "DEFINE a master's fields/structure" authoring flow.
+  Decide where field specs for the 19 placeholder masters get entered (Screen/Master
+  Designer vs the explorer itself).
+- Decide whether master_ref / global-share / decision-table belong in an authoring UI
+  vs staying script-driven scaffolding (option A) until the master model settles.
 
 ### Where master work stands (Payment Hub = PKG-4D5B9DD9)
 - 35 masters, all LIVE, all bound to the package "Masters" business domain (navigable
