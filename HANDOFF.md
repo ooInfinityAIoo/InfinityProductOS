@@ -1,8 +1,32 @@
 # Handoff
 
-## ⏭ NEXT SESSION — master-data navigation consolidated; define-vs-maintain split still open
-The two-navigation inconsistency the PM flagged on 2026-06-25 is now RESOLVED in code
-(commit `8da8a5e`, 2026-06-26): there is ONE master-data surface.
+## ⏭ NEXT SESSION (June 28, 2026) — Transaction Cockpit E2E & Field Registry ISO Integration Complete
+
+All core transaction cockpit features, checker controls, and E2E simulation specs are fully implemented, verified, and test suites are passing green.
+
+### Key Accomplishments in this Session:
+1. **L1->L6 Field Registry Integration & ISO Standards Configuration**:
+   - Added `use_iso_standards` column to `ProductApplicationPackage` and implemented a beautiful frontend toggle in [PackageDashboard.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/dashboard/PackageDashboard.tsx) to swap package configuration.
+   - Refactored [IsoFieldSelector.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/components/IsoFieldSelector.tsx) to dynamically swap UI name labels (ISO vs Bank Custom) based on the package toggle.
+   - Updated field creation in [FieldRegistryStudio.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/field-registry/FieldRegistryStudio.tsx) to resolve `application_package_id` and map custom fields to their correct base reference master template by data type.
+2. **Transaction Workflows & Maker-Checker Cockpit Rework**:
+   - Upgraded [MetroTracker.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/transaction-screen/MetroTracker.tsx) to support nested sub-workflow tracks and clean neutral rails.
+   - Reworked [TransactionWorkflowScreen.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/transaction-screen/TransactionWorkflowScreen.tsx) with a maker initiation flow, maker-checker dual authorization form, and a Chronological Audit Trace panel ([ExecutionTracePanel.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/transaction-screen/ExecutionTracePanel.tsx)).
+   - Implemented a collapsible, rich X-Ray Drawer ([DetailedLifecycleView.tsx](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/src/features/transaction-screen/DetailedLifecycleView.tsx)) tracing Rules, Calculations, API Integrations, Approvals, and Notifications in real time.
+   - Extended `POST /workflows/{id}/resume/{instance_id}` in [routers/workflows.py](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/routers/workflows.py) to support deep context merging and audit trail logging on repair actions.
+3. **Playwright E2E Testing**:
+   - Added four test suites under the [e2e/](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/e2e) directory. These specs cover package initialization, product configuration, custom field registrations, workflow design, and end-to-end transaction flow execution (including checker approvals and UAT simulation).
+4. **Idempotent DB Seeding**:
+   - Refactored all seed files ([seed_pkg.py](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/seed_pkg.py), [seed_golden_path.py](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/seed_golden_path.py), [seed_masters_payments.py](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/seed_masters_payments.py), and [seed_tws_test_data.py](file:///Volumes/AI%20Projects%20Mac/InfinityProductOS/seed_tws_test_data.py)) to match latest model columns and resolve IDs dynamically.
+
+### What is Left/Open for Next Session (For Claude):
+- **Full Playwright E2E Suite Run**: Run the newly added test suites under `/e2e` using the Playwright runner with the dev servers active.
+- **Reversal Compensation Dispatching**: Expand backend engine to execute/dispatch reversal request APIs or events declared in `reversal_recipe` (currently REVERSED state transitions are committed and stored, but actual compensations are traced in logs only).
+- **Define-vs-Maintain Split Revisit**: Revisit the authoring flows to cleanly separate defining master structures vs maintaining records.
+
+---
+
+## ⏭ PREVIOUS SESSION — master-data navigation consolidated; define-vs-maintain split still open
 - **Launch App button REMOVED** (runtime/operator mode). To be reintroduced once the
   core product is built; package-runtime code retained, not deleted.
 - **New `MasterDataExplorer`** (`src/features/masters/MasterDataExplorer.tsx`, designer

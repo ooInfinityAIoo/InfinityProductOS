@@ -373,9 +373,61 @@ const WorkflowCanvasInner: React.FC = () => {
         setWorkflowReturnStepId(null);
       }
     }
-    // Removed auto-loading of workflows[0] so the canvas starts blank
-    // The user prefers to load workflows explicitly via search/GUI instead of auto-populating.
   }, [workflowDraft]);
+
+  // Auto-load saved workflow for selected core product context
+  useEffect(() => {
+    if (activeCoreProductId && workflows) {
+      const activeWf = workflows.find(
+        (w: any) => w.product_id === activeCoreProductId && !w.is_template
+      );
+      if (activeWf) {
+        const toRfType = (nodeType?: string) =>
+          ['DECISION', 'PARALLEL_SPLIT', 'PARALLEL_JOIN'].includes(nodeType ?? '')
+            ? 'decisionNode'
+            : 'gatewayNode'; // Default to gatewayNode or customBankingNode
+
+        const rfNodes: Node[] = (activeWf.nodes || []).map((n: any, idx: number) => ({
+          id: n.node_id || `node-${idx}`,
+          type: n.node_type === 'STEP' ? 'customBankingNode' : toRfType(n.node_type),
+          position: { x: n.canvas_x_position ?? (100 + idx * 220), y: n.canvas_y_position ?? 200 },
+          data: {
+            title: n.node_title,
+            slaDays: n.sla_days ?? 1,
+            sla_config: n.sla_config ?? null,
+            orchestration_steps: n.orchestration_steps ?? [],
+            node_type: n.node_type ?? null,
+            iso_message_type: n.iso_message_type ?? null,
+            message_direction: n.message_direction ?? null,
+            party_from: n.party_from ?? null,
+            party_to: n.party_to ?? null,
+          },
+        }));
+
+        const rfEdges: Edge[] = (activeWf.edges || []).map((e: any, idx: number) => ({
+          id: e.edge_id || `edge-${idx}`,
+          source: e.source_node_id,
+          target: e.target_node_id,
+          type: 'labeledEdge',
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { strokeWidth: 2 },
+          data: { label: e.edge_condition?.label ?? '' },
+        }));
+
+        setNodes(rfNodes);
+        setEdges(rfEdges);
+        setSavedWorkflowId(activeWf.workflow_id);
+      } else {
+        setNodes([]);
+        setEdges([]);
+        setSavedWorkflowId(null);
+      }
+    } else if (!activeCoreProductId) {
+      setNodes([]);
+      setEdges([]);
+      setSavedWorkflowId(null);
+    }
+  }, [activeCoreProductId, workflows]);
 
   const handleSaveDraftToDB = async (currentNodes: Node[], currentEdges: Edge[]) => {
     // Skip draft save if canvas is empty or no product selected — avoids 422 from missing required fields

@@ -27,13 +27,13 @@ new_plan = [
     {"module_name": "Ai Assistant Studio", "owner": "AI Team", "sla_days": 4, "is_configured": False}
 ]
 
-pkg_id = 'PKG-' + str(uuid.uuid4())[:8].upper()
+pkg_id = 'PKG-4D5B9DD9'
 
 c.execute('''
     INSERT INTO master_product_application_packages 
-    (package_id, package_name, business_domain, jurisdiction_country_code, base_currency_code, status, implementation_status, configuration_plan, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-''', (pkg_id, 'Payment Hub', 'Payments', 'US', 'USD', 'ACTIVE', 'IN_PROGRESS', json.dumps(new_plan), str(datetime.datetime.utcnow())))
+    (package_id, package_name, business_domain, jurisdiction_country_code, base_currency_code, status, implementation_status, configuration_plan, use_iso_standards, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+''', (pkg_id, 'Payment Hub', 'Payments', 'US', 'USD', 'ACTIVE', 'IN_PROGRESS', json.dumps(new_plan), 0, str(datetime.datetime.utcnow())))
 
 conn.commit()
 conn.close()

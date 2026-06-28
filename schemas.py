@@ -1,3 +1,4 @@
+import os
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
@@ -85,6 +86,7 @@ class ProductApplicationPackageCreate(BaseModel):
     business_domain: str = Field(..., description="e.g., Payments, Treasury")
     jurisdiction_country_code: str = Field(..., description="e.g., US, IN")
     base_currency_code: str = Field(..., description="e.g., USD, INR")
+    use_iso_standards: bool = Field(False, description="Whether to prioritize ISO standards naming across all studios.")
     description: Optional[str] = None
     configuration_plan: List[ConfigurationModuleTask] = Field(default_factory=list)
 
@@ -375,7 +377,7 @@ class FieldRegistryFilterParams(BaseModel):
 class ISOFieldDefinitionCreate(BaseModel):
     technical_sys_name: str = Field(..., description="Internal system field identifier")
     client_business_name: str = Field(..., description="User-facing field label")
-    display_preference: str = Field("ISO", description="Preference for UI rendering: ISO or CLIENT")
+    display_preference: str = Field(os.getenv("DEFAULT_DISPLAY_PREFERENCE", "CLIENT"), description="Preference for UI rendering: ISO or CLIENT")
     # iso_business_name is now OPTIONAL (FIELD_REGISTRY_REQUIREMENTS.md §5): native
     # BANK_CUSTOM fields have no ISO equivalent. Interim: when omitted the create
     # handler falls back to client_business_name (true-nullable rebuild is a later phase).
@@ -632,6 +634,9 @@ class WorkflowConfigurationResponse(BaseModel):
     message_type: Optional[str] = None
     clearing_network: Optional[str] = None
     template_category: Optional[str] = None
+    application_package_id: Optional[str] = None
+    product_id: Optional[str] = None
+    subproduct_id: Optional[str] = None
 
     class Config:
         from_attributes = True

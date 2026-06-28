@@ -363,6 +363,18 @@ export const FieldRegistryStudio: React.FC = () => {
   const { activeProductContext } = usePlatformStore();
   const domainContext = activeProductContext || 'Global';
 
+  // Fetch packages to resolve package_id
+  const { data: packagesData } = useQuery({
+    queryKey: ['product-packages-dict'],
+    queryFn: async () => (await apiClient.get('/masters/packages')).data,
+  });
+
+  // Fetch screens to resolve master_ref
+  const { data: screensData } = useQuery({
+    queryKey: ['screens-list-dict'],
+    queryFn: async () => (await apiClient.get('/screens/')).data,
+  });
+
   // Phase 7 — the field whose lineage ("where used") panel is open (null = closed).
   const [lineageField, setLineageField] = useState<ISOField | null>(null);
 
@@ -520,15 +532,38 @@ export const FieldRegistryStudio: React.FC = () => {
   const handleNewSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+
+    // Resolve active package ID
+    const activePkg = packagesData?.packages?.find((p: any) => p.package_name === activeProductContext);
+    const packageId = activePkg?.package_id || 'PKG-4D5B9DD9'; // Fallback to Payment Hub if null/global
+
+    // Resolve master ref based on data type
+    const dataType = fd.get('data_type') as string;
+    let targetMasterName = 'Reference Master';
+    if (dataType === 'Amount') targetMasterName = 'Amount Master';
+    else if (dataType === 'Date') targetMasterName = 'Date Master';
+    else if (dataType === 'Decimal') targetMasterName = 'Amount Master';
+
+    const matchedScreen = screensData?.screens?.find(
+      (s: any) => s.screen_name === targetMasterName || s.screen_name.toLowerCase().includes(targetMasterName.toLowerCase())
+    );
+    // If no match by name, pick the first MAINTENANCE screen, else fallback screen ID
+    const masterRef = matchedScreen?.screen_id || 
+                      screensData?.screens?.find((s: any) => s.screen_template_category === 'MAINTENANCE')?.screen_id || 
+                      'MSTR-AMOUNT';
+
     createMutation.mutate({
       technical_sys_name: fd.get('technical_sys_name'),
       client_business_name: fd.get('client_business_name'),
       iso_business_name: fd.get('iso_business_name'),
       display_preference: fd.get('display_preference') || 'ISO',
       domain_category: domainContext,
-      data_type: fd.get('data_type'),
+      data_type: dataType,
       is_pii: fd.get('is_pii') === 'on',
       localized_names: localizedNames,
+      application_package_id: packageId,
+      master_ref: masterRef,
+      applies_to_all_products: true,
     });
   };
 

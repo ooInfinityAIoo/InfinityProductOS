@@ -42,6 +42,8 @@ PAYMENTS_MASTERS = [
     "Payment Rejection Reason Codes", "Upstream Systems Registration Master",
     "Downstream Systems Registration Master", "Payment Order Master", "Sheet Rate Master",
     "Correspondent Bank",
+    # Classification / Attribute Masters for Field Registry Selectability
+    "Amount", "Date", "Reference", "Configuration", "Calculation Output", "Derived Field"
 ]
 
 # Optional per-master descriptions (placeholder masters otherwise get a generic one).
@@ -111,6 +113,31 @@ def run() -> int:
             db.commit()
             created += 1
             print(f"[created] {screen.screen_id}  {name}")
+        
+        # Link baseline fields to their respective masters
+        field_master_mappings = {
+            "tsy_ccy_code": "Currency Master",
+            "customer_name": "Customer Master",
+            "iso_cb_field_name": "Amount Master",
+            "of_fintax_bal_01": "Amount Master",
+            "of_fintax_rate_05": "Reference Master",
+            "of_fintax_date_09": "Date Master",
+            "of_fintax_date_12": "Date Master",
+            "iso_msg_id": "Reference Master",
+            "tsy_settlement_date": "Date Master",
+            "account_number": "Customer Account Numbers Master",
+            "customer_email": "Customer Master",
+            "customer_phone": "Customer Master",
+            "tax_identifier": "Customer Master"
+        }
+        for field_name, master_name in field_master_mappings.items():
+            field = db.query(models.ISOFieldDefinition).filter_by(technical_sys_name=field_name).first()
+            master = db.query(models.ScreenTemplate).filter_by(screen_name=master_name).first()
+            if field and master:
+                field.master_ref = master.screen_id
+                print(f"[linked] Field {field_name} -> Master {master_name} ({master.screen_id})")
+        db.commit()
+
         return created
     finally:
         db.close()

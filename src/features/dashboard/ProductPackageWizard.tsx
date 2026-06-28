@@ -31,6 +31,7 @@ export const ProductPackageWizard: React.FC = () => {
   const [domain, setDomain] = useState('Payments');
   const [country, setCountry] = useState('US');
   const [currency, setCurrency] = useState('USD');
+  const [useIsoStandards, setUseIsoStandards] = useState(false);
   const [selectedDomains, setSelectedDomains] = useState<string[]>(DOMAIN_SUGGESTIONS['Payments']);
 
   const [modules, setModules] = useState([
@@ -81,6 +82,7 @@ export const ProductPackageWizard: React.FC = () => {
         business_domain: domain,
         jurisdiction_country_code: country,
         base_currency_code: currency,
+        use_iso_standards: useIsoStandards,
         configuration_plan: modules.map(m => ({ ...m, is_configured: false })),
       };
       const res = await apiClient.post('/masters/packages', payload);
@@ -161,6 +163,18 @@ export const ProductPackageWizard: React.FC = () => {
                   className="w-full text-sm font-semibold font-mono text-slate-800 bg-white/60 border border-slate-200/80 rounded-xl p-3 focus:border-indigo-500 outline-none transition-all shadow-sm text-center"
                 />
               </div>
+            </div>
+            <div className="col-span-2 flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl shadow-sm">
+              <div>
+                <label className="block text-xs font-bold text-slate-700">Use ISO 20022 Standard Field Names</label>
+                <p className="text-[10px] text-slate-400 font-medium mt-0.5">Prioritize ISO dot-notation standard names (e.g. Settlement.CurrencyCode) over Bank Custom Names.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={useIsoStandards}
+                onChange={e => setUseIsoStandards(e.target.checked)}
+                className="w-4.5 h-4.5 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+              />
             </div>
           </div>
 

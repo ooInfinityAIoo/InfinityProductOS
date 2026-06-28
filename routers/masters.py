@@ -167,6 +167,27 @@ def cancel_product_package(package_id: str, db: Session = Depends(get_db), curre
     db.refresh(db_package)
     return db_package
 
+@router.put("/packages/{package_id}", response_model=schemas.ProductApplicationPackageResponse, summary="Update a Product Package")
+def update_product_package(package_id: str, payload: schemas.ProductApplicationPackageCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_designer_privileges)):
+    db_package = db.query(models.ProductApplicationPackage).filter(models.ProductApplicationPackage.package_id == package_id).first()
+    if not db_package:
+        raise HTTPException(status_code=404, detail="Package not found")
+    
+    db_package.package_name = payload.package_name
+    db_package.business_domain = payload.business_domain
+    db_package.jurisdiction_country_code = payload.jurisdiction_country_code
+    db_package.base_currency_code = payload.base_currency_code
+    db_package.use_iso_standards = payload.use_iso_standards
+    db_package.description = payload.description
+    
+    if payload.configuration_plan:
+        db_package.configuration_plan = [m.dict() for m in payload.configuration_plan]
+        
+    db_package.updated_at = datetime.datetime.utcnow().isoformat()
+    db.commit()
+    db.refresh(db_package)
+    return db_package
+
 # --- Product and Subproduct Masters for Screen Designer ---
 
 def _next_product_id(db: Session) -> str:

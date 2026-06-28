@@ -200,6 +200,24 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
   const currentPackage = packagesData?.packages?.find((p: any) => p.package_name === packageName);
   const packageId = currentPackage?.package_id;
 
+  const updatePackageMutation = useMutation({
+    mutationFn: async (updatedFields: any) => {
+      const payload = {
+        package_name: currentPackage.package_name,
+        business_domain: currentPackage.business_domain,
+        jurisdiction_country_code: currentPackage.jurisdiction_country_code,
+        base_currency_code: currentPackage.base_currency_code,
+        description: currentPackage.description,
+        configuration_plan: currentPackage.configuration_plan,
+        ...updatedFields
+      };
+      return (await apiClient.put(`/masters/packages/${packageId}`, payload)).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['product-packages'] });
+    }
+  });
+
   // 2. Fetch Role-Based Insights dynamically from Backend using resolved packageId
   const { data: widgets, isLoading: isLoadingWidgets } = useQuery({
     queryKey: ['dashboard-widgets', activeInsightTab, packageId, userRole],
@@ -237,6 +255,49 @@ export const PackageDashboard: React.FC<{ packageName: string }> = ({ packageNam
 
   return (
     <div className="space-y-6 animate-slide-in-right">
+
+      {/* ── PACKAGE WORKSPACE OVERVIEW ── */}
+      <div className="bg-white border border-slate-150 rounded-2xl shadow-glass overflow-hidden p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-[20px] font-extrabold text-slate-800 leading-tight font-display">{currentPackage.package_name}</h1>
+            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
+              {currentPackage.business_domain}
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1.5 font-medium">
+            Jurisdiction: <span className="font-semibold font-mono text-slate-600">{currentPackage.jurisdiction_country_code}</span> · 
+            Currency: <span className="font-semibold font-mono text-slate-600">{currentPackage.base_currency_code}</span> · 
+            ID: <span className="font-semibold font-mono text-slate-600">{currentPackage.package_id}</span>
+          </p>
+          {currentPackage.description && (
+            <p className="text-xs text-slate-500 mt-2 italic">{currentPackage.description}</p>
+          )}
+        </div>
+
+        {/* Right side: ISO Standards Toggle */}
+        <div className="flex items-center gap-4 bg-slate-50 border border-slate-200/60 rounded-xl p-3 px-4 min-w-[280px] shrink-0 justify-between">
+          <div>
+            <span className="block text-xs font-bold text-slate-700">ISO 20022 Standards</span>
+            <span className="block text-[10px] text-slate-400 font-semibold uppercase mt-0.5">
+              {currentPackage.use_iso_standards ? 'Enabled (ISO Names)' : 'Disabled (Bank Custom)'}
+            </span>
+          </div>
+          <button
+            onClick={() => updatePackageMutation.mutate({ use_iso_standards: !currentPackage.use_iso_standards })}
+            disabled={updatePackageMutation.isPending}
+            className={`flex items-center justify-center p-1 rounded-full w-11 h-6 transition-colors duration-200 focus:outline-none ${
+              currentPackage.use_iso_standards ? 'bg-indigo-600' : 'bg-slate-200'
+            }`}
+          >
+            <span
+              className={`bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200 ${
+                currentPackage.use_iso_standards ? 'translate-x-2.5' : '-translate-x-2.5'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
 
       {/* ── PACKAGE CONFIGURATION CHECKLIST — compact progress bar + sidebar ──
           Pre-live: shows progress bar + "Setup Checklist" button.

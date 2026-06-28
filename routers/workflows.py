@@ -117,6 +117,9 @@ def list_workflows(
     is_template: Optional[bool] = Query(None, description="Filter to ISO message templates only (true) or user workflows only (false)"),
     clearing_network: Optional[str] = Query(None, description="Filter templates by clearing network: SWIFT | FEDNOW | RTP | CHIPS | SEPA | ACH | ALL"),
     template_category: Optional[str] = Query(None, description="Filter templates by category: PAYMENT_INITIATION | CLEARING_SETTLEMENT | CASH_MANAGEMENT | ADMINISTRATION"),
+    package_id: Optional[str] = Query(None, description="Filter workflows by parent package ID"),
+    product_id: Optional[str] = Query(None, description="Filter workflows by product ID"),
+    subproduct_id: Optional[str] = Query(None, description="Filter workflows by sub-product ID"),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user)
 ):
@@ -133,6 +136,12 @@ def list_workflows(
         q = q.filter(models.WorkflowConfiguration.clearing_network == clearing_network)
     if template_category:
         q = q.filter(models.WorkflowConfiguration.template_category == template_category)
+    if package_id:
+        q = q.filter(models.WorkflowConfiguration.application_package_id == package_id)
+    if product_id:
+        q = q.filter(models.WorkflowConfiguration.product_id == product_id)
+    if subproduct_id:
+        q = q.filter(models.WorkflowConfiguration.subproduct_id == subproduct_id)
     return q.offset(skip).limit(limit).all()
 
 # ── Wiring Audit endpoints must be BEFORE /{workflow_id} to avoid route shadowing ──
@@ -555,9 +564,46 @@ def resume_workflow_run(workflow_id: str, instance_id: str, payload: schemas.Wor
         if decision == "approve":
             _trace(f"✓ APPROVED by {current_user.id}")
 
-    merged_context = instance.current_context.copy()
+    def _flatten_dict(d: Any, prefix: str = "") -> Dict[str, Any]:
+        if not isinstance(d, dict):
+            return {prefix: d} if prefix else {}
+        flat = {}
+        for k, v in d.items():
+            key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                flat.update(_flatten_dict(v, key))
+            else:
+                flat[key] = v
+        return flat
+
+    def _deep_merge(dict1: dict, dict2: dict) -> dict:
+        result = dict1.copy()
+        for k, v in dict2.items():
+            if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                result[k] = _deep_merge(result[k], v)
+            else:
+                result[k] = v
+        return result
+
+    merged_context = instance.current_context.copy() if instance.current_context else {}
     if payload.additional_context:
-        merged_context.update(payload.additional_context)
+        # Calculate deltas for audit logging
+        flat_old = _flatten_dict(instance.current_context or {})
+        flat_new = _flatten_dict(payload.additional_context)
+        deltas = []
+        for k, new_val in flat_new.items():
+            if k in flat_old:
+                if str(flat_old[k]) != str(new_val):
+                    deltas.append(f"'{k}' changed from '{flat_old[k]}' to '{new_val}'")
+            else:
+                deltas.append(f"'{k}' set to '{new_val}'")
+        
+        if deltas:
+            _trace(f"🔧 REPAIRED by {current_user.id}: {', '.join(deltas)}")
+            
+        merged_context = _deep_merge(merged_context, payload.additional_context)
+        instance.current_context = merged_context
+
     # Tell the executor which existing instance to update on COMPLETED so it avoids
     # creating a duplicate — the instance was already persisted at the PAUSED step.
     merged_context["__resume_instance_id__"] = instance_id

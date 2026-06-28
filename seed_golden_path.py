@@ -32,16 +32,16 @@ PROD_ID = uid("PROD-")
 SUB_ID = uid("SUB-")
 
 c.execute("""INSERT OR IGNORE INTO product_master 
-    (product_id, package_id, product_name, description, created_at, updated_at)
-    VALUES (?,?,?,?,?,?)""",
+    (product_id, package_id, product_name, description, status, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?)""",
     (PROD_ID, PKG_ID, "Cross-Border Payments",
-     "Handles all cross-border wire transfers including SWIFT, SEPA, and RTGS payments.", NOW, NOW))
+     "Handles all cross-border wire transfers including SWIFT, SEPA, and RTGS payments.", "ACTIVE", NOW, NOW))
 
 c.execute("""INSERT OR IGNORE INTO subproduct_master
-    (subproduct_id, subproduct_name, product_id, description, created_at, updated_at)
-    VALUES (?,?,?,?,?,?)""",
+    (subproduct_id, subproduct_name, product_id, description, status, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?)""",
     (SUB_ID, "SWIFT MT103 Wire", PROD_ID,
-     "High-value single customer credit transfers via SWIFT pacs.008 / MT103 message format.", NOW, NOW))
+     "High-value single customer credit transfers via SWIFT pacs.008 / MT103 message format.", "ACTIVE", NOW, NOW))
 
 print(f"✓ Masters seeded: {PROD_ID} / {SUB_ID}")
 
@@ -229,12 +229,12 @@ WF_ID = uid("WF-")
 
 c.execute("""INSERT OR IGNORE INTO workflow_configurations
     (workflow_id, workflow_name, domain_scope, product_context, sub_product, version, status,
-     application_package_id, product_id, subproduct_id, is_active, description,
+     application_package_id, product_id, subproduct_id, is_active, is_template, description,
      input_schema, output_schema, formulas_defined, created_at, created_by, updated_at, updated_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
     (WF_ID, "Cross-Border SWIFT Wire Processing",
      "PAYMENTS", "Cross-Border Payments", "SWIFT MT103 Wire",
-     "1.0", "ACTIVE", PKG_ID, PROD_ID, SUB_ID, 1,
+     "1.0", "ACTIVE", PKG_ID, PROD_ID, SUB_ID, 1, 0,
      "End-to-end SWIFT pacs.008 payment processing: Ingestion → AML/OFAC screening → FX enrichment → Dual authorization → RTGS settlement → Reconciliation.",
      json.dumps({"transaction_reference": "string", "instructed_amount": "decimal", "currency": "string", "beneficiary_iban": "string", "beneficiary_name": "string", "value_date": "date"}),
      json.dumps({"settlement_status": "string", "settlement_amount": "decimal", "settlement_currency": "string", "gpi_uetr": "string"}),
@@ -281,14 +281,16 @@ nodes = [
 
 for (nid, seq, title, code, steps, events, docs, sla, sla_anchor, cx, cy) in nodes:
     full_node_id = f"{WF_ID}_{nid}"
+    screen_tmpl = "SCR-13A22526" if nid in ("NODE-01", "NODE-04") else None
     c.execute("""INSERT OR IGNORE INTO workflow_nodes
         (node_id, workflow_id, sequence_number, node_title, node_code, canvas_x_position, canvas_y_position,
          orchestration_steps, events_broadcast, required_documents, sla_days, sla_anchor_field,
-         screen_template, created_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         screen_template, on_failure, cancellable, skippable, reversibility, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (full_node_id, WF_ID, seq, title, code, cx, cy,
          json.dumps(steps), json.dumps(events), json.dumps(docs),
-         sla, sla_anchor, None, NOW, NOW))
+         sla, sla_anchor, screen_tmpl, "RETRY_THEN_REPAIR", 1, 0, "REVERSAL_SUPPORTED", NOW, NOW))
+
 
 # Workflow edges (linear flow)
 for i in range(len(nodes)-1):
@@ -321,12 +323,12 @@ screen_components = [
 
 c.execute("""INSERT OR IGNORE INTO screen_templates
     (screen_id, screen_name, description, status, screen_template_category,
-     application_package_id, product_id, subproduct_id, workflow_id, workflow_step_id,
+     application_package_id, is_global_shared, version_number, product_id, subproduct_id, workflow_id, workflow_step_id,
      definition, created_at, updated_at, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
     (SCR_ID, "SWIFT Wire Payment Entry",
      "Maker entry screen for initiating a new SWIFT MT103 cross-border wire transfer. All ISO fields are bound to the pacs.008 canonical model.",
-     "ACTIVE", "DATA_ENTRY_FORM", PKG_ID, PROD_ID, SUB_ID,
+     "ACTIVE", "DATA_ENTRY_FORM", PKG_ID, 0, 1, PROD_ID, SUB_ID,
      WF_ID, None,
      json.dumps({"components": screen_components, "layout": "SINGLE_COLUMN", "theme": "PAYMENT_BLUE"}),
      NOW, NOW, SEED_USER))
@@ -383,12 +385,12 @@ for api in apis:
     c.execute("""INSERT OR IGNORE INTO api_configurations
         (api_id, api_name, http_method, url_template, request_body_template, headers,
          mask_pii_in_body, rate_limit_rps, circuit_breaker_threshold, circuit_breaker_timeout_sec,
-         description, status, application_package_id, product_id, subproduct_id, created_at, created_by,
+         description, direction, scope, status, application_package_id, product_id, subproduct_id, created_at, created_by,
          updated_at, updated_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (api["id"], api["name"], api["method"], api["url"], api["request_body"], api["headers"],
          api["mask_pii"], api["rate_limit"], api["cb_threshold"], api["cb_timeout"],
-         api["desc"], "ACTIVE", PKG_ID, PROD_ID, SUB_ID, NOW, SEED_USER, NOW, SEED_USER))
+         api["desc"], "OUTBOUND", "EXTERNAL", "ACTIVE", PKG_ID, PROD_ID, SUB_ID, NOW, SEED_USER, NOW, SEED_USER))
     print(f"  ✓ API: {api['name']}")
 
 print(f"✓ API Designer seeded: {len(apis)} endpoints")

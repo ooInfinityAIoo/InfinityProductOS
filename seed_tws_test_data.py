@@ -14,15 +14,23 @@ The script is idempotent — it upserts by instance_id so re-running is safe.
 import sqlite3, json, datetime
 
 DB = "infinity_db.sqlite"
-WF = "WF-ECC2B272"
 
-NODES = [
-    "WF-ECC2B272_NODE-01",  # MT103 Ingest & Parse
-    "WF-ECC2B272_NODE-02",  # AML & OFAC Screening
-    "WF-ECC2B272_NODE-03",  # FX Rate Enrichment
-    "WF-ECC2B272_NODE-04",  # Dual Authorization (4-Eyes)
-    "WF-ECC2B272_NODE-05",  # RTGS Settlement & GPI
-]
+conn = sqlite3.connect(DB)
+cur  = conn.cursor()
+
+# Resolve workflow ID dynamically
+row = cur.execute("SELECT workflow_id FROM workflow_configurations WHERE workflow_name LIKE '%SWIFT%' LIMIT 1").fetchone()
+if not row:
+    print("ERROR: Golden Path workflow not found. Run seed_golden_path.py first.")
+    exit(1)
+WF = row[0]
+
+# Resolve nodes dynamically
+node_rows = cur.execute("SELECT node_id FROM workflow_nodes WHERE workflow_id = ? ORDER BY sequence_number ASC", (WF,)).fetchall()
+if len(node_rows) < 5:
+    print(f"ERROR: Expected at least 5 nodes, found {len(node_rows)}")
+    exit(1)
+NODES = [r[0] for r in node_rows]
 
 def ts(offset_hours=0):
     """ISO timestamp relative to now, offset_hours can be negative for past."""
@@ -114,8 +122,7 @@ SEED = [
      }),
 ]
 
-conn = sqlite3.connect(DB)
-cur  = conn.cursor()
+# Database connection is already open and initialized at the top of the file
 
 for inst_id, status, node_id, extras in SEED:
     # Build base context

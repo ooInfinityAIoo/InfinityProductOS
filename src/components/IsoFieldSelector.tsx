@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { Search, ChevronDown, Check, Shield, X } from 'lucide-react';
+import { useResolvedPackageId } from '../hooks/useResolvedPackageId';
 
 interface IsoFieldSelectorProps {
   value: string | string[];
@@ -47,6 +48,8 @@ export const IsoFieldSelector: React.FC<IsoFieldSelectorProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeTypeFilter, setActiveTypeFilter] = useState('All');
+  const { currentPackage } = useResolvedPackageId();
+  const useIso = currentPackage?.use_iso_standards ?? false;
   const [piiOnly, setPiiOnly] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -154,9 +157,9 @@ export const IsoFieldSelector: React.FC<IsoFieldSelectorProps> = ({
   }, [focusedIndex]);
 
   const getFieldDisplayName = (f: any) =>
-    f.display_preference === 'CLIENT' && f.client_business_name ? f.client_business_name : f.iso_business_name;
+    (!useIso && f.client_business_name) ? f.client_business_name : f.iso_business_name;
   const getFieldSubName = (f: any) =>
-    f.display_preference === 'CLIENT' && f.client_business_name ? f.iso_business_name : f.client_business_name;
+    (!useIso && f.client_business_name) ? f.iso_business_name : f.client_business_name;
 
   return (
     <div className={`relative ${className}`} ref={wrapperRef} onKeyDown={handleKeyDown}>

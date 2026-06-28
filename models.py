@@ -149,7 +149,7 @@ class ISOFieldDefinition(Base):
     field_id = Column(String, primary_key=True, index=True)
     technical_sys_name = Column(String, unique=True, nullable=False, index=True)
     client_business_name = Column(String, nullable=False)
-    display_preference = Column(String, nullable=False, default="ISO")
+    display_preference = Column(String, nullable=False, default=os.getenv("DEFAULT_DISPLAY_PREFERENCE", "CLIENT"))
     iso_business_name = Column(String, nullable=False, index=True)
     data_type = Column(String, nullable=False)  # Decimal, Alphanumeric, Amount, Date, Text
     domain_category = Column(String, nullable=False, index=True)  # e.g., HELOC, PAYMENTS, TREASURY
@@ -783,6 +783,7 @@ class ProductApplicationPackage(Base):
     status = Column(String, nullable=False, default="DRAFT", index=True)
     implementation_status = Column(String, nullable=False, default="NOT_STARTED", index=True) # NOT_STARTED, IN_PROGRESS, COMPLETED, CANCELLED
     configuration_plan = Column(JSONB, nullable=True) # Array of modules, SLAs, and Owners
+    use_iso_standards = Column(Boolean, default=False, nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)

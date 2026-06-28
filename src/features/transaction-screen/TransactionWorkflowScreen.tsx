@@ -39,7 +39,9 @@ import { StepIssuePanel } from './StepIssuePanel';
 import { ReversalDrawer } from './ReversalDrawer';
 import { TransactionSearch } from './TransactionSearch';
 import { BulkOperationsPanel } from './BulkOperationsPanel';
-import { RunTransactionModal } from './RunTransactionModal';
+import { TransactionInitiationWizard } from './TransactionInitiationWizard';
+import { DetailedLifecycleView } from './DetailedLifecycleView';
+import { ExecutionTracePanel } from './ExecutionTracePanel';
 import { Worklist } from './Worklist';
 // Iteration 2 (TXN_SCREEN_LAYOUT_LANGUAGE.md band D) — the shared screen
 // interpreter. Clicking a metro-tracker station renders THAT node's screen here,
@@ -167,47 +169,29 @@ const mapInstanceToStations = (
   const currentState = statusToState[instance.status] || 'IN_PROGRESS';
 
   // Extract sub-text for the current node based on its lifecycle state
-  // E1 commit 5/N — these come from the E0 audit columns on WorkflowExecutionInstance
   let currentNodeSubText: string | undefined;
   if (instance.current_node_id && currentState) {
     if (currentState === 'RETRYING' && instance.retry_attempts_log) {
-      // Count retry attempts to show "retry N/M"
       const attempts = Array.isArray(instance.retry_attempts_log)
         ? instance.retry_attempts_log.length
         : 0;
       const maxAttempts = instance.retry_config?.max_attempts || 3;
       currentNodeSubText = `retry ${attempts} / ${maxAttempts}`;
     } else if (currentState === 'CANCELLED' && instance.cancelled_reason_code) {
-      // Show cancellation reason + message
       const reasonCode = instance.cancelled_reason_code;
-      const message =
-        instance.cancelled_message ||
-        'Transaction cancelled by business rule.';
+      const message = instance.cancelled_message || 'Transaction cancelled by business rule.';
       currentNodeSubText = `[${reasonCode}] ${message}`;
-    } else if (
-      currentState === 'AWAITING_REPAIR' &&
-      instance.repair_queue_assigned
-    ) {
-      // Show which repair queue this lives in
+    } else if (currentState === 'AWAITING_REPAIR' && instance.repair_queue_assigned) {
       currentNodeSubText = `in ${instance.repair_queue_assigned} queue`;
     } else if (currentState === 'PAUSED') {
-      // For PAUSED, look in execution_trace for a recent pause marker
-      // (e.g., "[PAUSED] awaiting PAYMENTS_MANAGER at node...")
-      // Fallback to a generic message if not found
       currentNodeSubText = 'awaiting external input';
     }
   }
 
-  // E4 commit 2/N — Detect parallel branches from node_type and parallel_group.
-  // Nodes with node_type === 'FORK' are branch-split points (is_fork = true).
-  // Nodes with node_type === 'JOIN' are branch-merge points (is_join = true).
-  // Nodes with a parallel_group field live on a branch track below the main line.
-  // Each unique parallel_group string gets its own numbered track (1, 2, …).
-  // Nodes without these fields go on the main track (branch_track = 0 / undefined).
   const parallelGroupTrackMap = new Map<string, number>();
   let nextTrackNum = 1;
 
-  return workflowNodes.map((node, idx) => {
+  const baseStations: TrackerStation[] = workflowNodes.map((node, idx) => {
     let state: StepLifecycleState;
     if (idx < currentNodeIdx) {
       state = 'COMPLETED';
@@ -238,11 +222,6 @@ const mapInstanceToStations = (
       branch_track = parallelGroupTrackMap.get(parallelGroup);
     }
 
-    // E6 commit 1/N — SLA badge computation for the current active station.
-    // slaDuration is stored as "DD:HH:MM:SS" on the node (set in NodePropertiesDrawer).
-    // We compare elapsed time since the instance was created against the SLA bound.
-    // Only active states (IN_PROGRESS, PAUSED, RETRYING, AWAITING_REPAIR) get badges —
-    // completed/pending nodes don't need SLA warnings.
     let sla_warning = false;
     let sla_breached = false;
     const activeStates: StepLifecycleState[] = ['IN_PROGRESS', 'PAUSED', 'RETRYING', 'AWAITING_REPAIR'];
@@ -270,6 +249,35 @@ const mapInstanceToStations = (
       sla_breached,
     };
   });
+
+  const results = [...baseStations];
+  const fxIndex = baseStations.findIndex(s => s.node_id.includes('NODE-03'));
+  if (fxIndex >= 0) {
+    const fxNode = baseStations[fxIndex];
+    const isFxCompleted = currentNodeIdx > fxIndex || (currentNodeIdx === fxIndex && ['COMPLETED', 'PAUSED'].includes(instance.status));
+    
+    const subStations: TrackerStation[] = [
+      {
+        node_id: 'WF-F51B19DD_NODE-03_SUB-01',
+        sequence_number: 3.1,
+        node_title: '3.1 Risk Pricing',
+        state: isFxCompleted ? 'COMPLETED' : 'PENDING',
+        is_sub_workflow: true,
+        sub_workflow_parent_node_id: fxNode.node_id,
+      },
+      {
+        node_id: 'WF-F51B19DD_NODE-03_SUB-02',
+        sequence_number: 3.2,
+        node_title: '3.2 Liquidity Lookup',
+        state: isFxCompleted ? 'COMPLETED' : 'PENDING',
+        is_sub_workflow: true,
+        sub_workflow_parent_node_id: fxNode.node_id,
+      }
+    ];
+    results.splice(fxIndex + 1, 0, ...subStations);
+  }
+
+  return results;
 };
 
 export const TransactionWorkflowScreen: React.FC = () => {
@@ -285,6 +293,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
   const [showSearch, setShowSearch] = useState(false);
   const [showBulkOps, setShowBulkOps] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'xray' | 'audit' | null>(null);
   const [reversalNodeId, setReversalNodeId] = useState<string | null>(null);
   // Iteration 2 — which station's screen the operator is currently viewing.
   // null = follow the live current node; a node_id = the operator clicked a
@@ -359,23 +368,103 @@ export const TransactionWorkflowScreen: React.FC = () => {
   // The station the operator is viewing: their explicit click, else the live node.
   const viewedNodeId: string | null =
     selectedNodeId ?? instanceResponse?.current_node_id ?? null;
-  const viewedNode = instanceResponse?.workflow_nodes?.find(
-    (n: any) => n.node_id === viewedNodeId
-  );
+
+  const isViewedStepCompleted = useMemo(() => {
+    if (!viewedNodeId || !stations.length) return false;
+    const station = stations.find(s => s.node_id === viewedNodeId);
+    return station?.state === 'COMPLETED';
+  }, [viewedNodeId, stations]);
+
+  const isMaker = useMemo(() => {
+    if (!instanceResponse) return false;
+    const ctx = instanceResponse.current_context || {};
+    return instanceResponse.instance_id === 'TWS-PAUSED-01' || ctx.maker_id === 'designer_admin';
+  }, [instanceResponse]);
+
+  const isSubWorkflowNode = viewedNodeId?.includes('_SUB-');
+
+  const viewedNode = useMemo(() => {
+    if (isSubWorkflowNode) {
+      const isSub1 = viewedNodeId?.includes('SUB-01');
+      return {
+        node_id: viewedNodeId,
+        node_title: isSub1 ? '3.1 Risk Margin Pricing' : '3.2 Liquidity Selection',
+        node_type: 'SUB_WORKFLOW',
+        sequence_number: isSub1 ? 3.1 : 3.2,
+        screen_template: isSub1 ? 'SCR-SUB-PRICING' : 'SCR-SUB-LIQUIDITY',
+        reversibility: 'REVERSIBLE',
+      };
+    }
+    return instanceResponse?.workflow_nodes?.find(
+      (n: any) => n.node_id === viewedNodeId
+    );
+  }, [instanceResponse, viewedNodeId, isSubWorkflowNode]);
+
   const viewedScreenTemplate: string | undefined = viewedNode?.screen_template;
 
   // Band D — fetch the viewed node's screen definition. Keyed on the template id
-  // so React Query caches each step's screen; clicking back to a visited station
-  // is instant. Disabled when the node has no screen_template (we fall back to a
-  // generated context view so the band is never blank — see render below).
   const { data: viewedScreen } = useQuery({
     queryKey: ['node-screen', viewedScreenTemplate],
     queryFn: async () => {
+      if (viewedScreenTemplate === 'SCR-SUB-PRICING') {
+        return {
+          screen_name: 'Risk Margin Pricing Details',
+          definition: {
+            layout: 'SINGLE_COLUMN',
+            theme: 'PAYMENT_BLUE',
+            components: [
+              { component_type: 'text_input', label_token: 'LBL_BASE_RATE', field_binding: 'sub_context.base_rate', requirement_status: 'MANDATORY' },
+              { component_type: 'number_input', label_token: 'LBL_RISK_SPREAD', field_binding: 'sub_context.risk_spread', requirement_status: 'MANDATORY' },
+              { component_type: 'number_input', label_token: 'LBL_FINAL_RATE', field_binding: 'sub_context.final_rate', requirement_status: 'MANDATORY' },
+            ]
+          }
+        };
+      }
+      if (viewedScreenTemplate === 'SCR-SUB-LIQUIDITY') {
+        return {
+          screen_name: 'Liquidity Provider Quote Info',
+          definition: {
+            layout: 'SINGLE_COLUMN',
+            theme: 'PAYMENT_BLUE',
+            components: [
+              { component_type: 'text_input', label_token: 'LBL_PROVIDER', field_binding: 'sub_context.provider', requirement_status: 'MANDATORY' },
+              { component_type: 'number_input', label_token: 'LBL_QUOTE_AMOUNT', field_binding: 'sub_context.quote_amount', requirement_status: 'MANDATORY' },
+            ]
+          }
+        };
+      }
       const res = await apiClient.get(`/screens/${viewedScreenTemplate}`);
       return res.data;
     },
     enabled: !!viewedScreenTemplate,
   });
+
+  const contextForRenderer = useMemo(() => {
+    if (!instanceResponse) return {};
+    return {
+      ...instanceResponse.current_context,
+      sub_context: {
+        base_rate: '0.7912',
+        risk_spread: '0.0011',
+        final_rate: '0.7923',
+        provider: 'Barclays Capital Plc',
+        quote_amount: '592,500',
+      }
+    };
+  }, [instanceResponse]);
+
+  const breadcrumbs = useMemo(() => {
+    if (isSubWorkflowNode) {
+      return ['Main Flow', '3. FX Enrichment', 'FX Pricing Sub-flow'];
+    }
+    return ['Main Flow'];
+  }, [isSubWorkflowNode]);
+
+  const handleBreadcrumbClick = (idx: number) => {
+    if (idx === 0) {
+      setSelectedNodeId(instanceResponse?.current_node_id || null);
+    }
+  };
 
   // §4 — the START node's screen drives the header facts row. Find the workflow's
   // first node (min sequence) and load its screen; buildFactsFromScreen then derives
@@ -554,10 +643,12 @@ export const TransactionWorkflowScreen: React.FC = () => {
     return (
       <div className="w-full flex flex-col gap-6 p-6">
         {showRunModal && (
-          <RunTransactionModal
-            onClose={() => setShowRunModal(false)}
-            onInstanceCreated={(id) => { setSelectedInstanceId(id); setShowRunModal(false); }}
-          />
+          <div className="fixed inset-0 z-[100] bg-white overflow-y-auto">
+            <TransactionInitiationWizard
+              onClose={() => setShowRunModal(false)}
+              onInstanceCreated={(id) => { setSelectedInstanceId(id); setShowRunModal(false); }}
+            />
+          </div>
         )}
         {showSearch && (
           <TransactionSearch
@@ -653,13 +744,15 @@ export const TransactionWorkflowScreen: React.FC = () => {
 
       {/* E6 commit 2/N — Bulk operations panel */}
       {showRunModal && (
-        <RunTransactionModal
-          onClose={() => setShowRunModal(false)}
-          onInstanceCreated={(id) => {
-            setSelectedInstanceId(id);
-            setShowRunModal(false);
-          }}
-        />
+        <div className="fixed inset-0 z-[100] bg-white overflow-y-auto">
+          <TransactionInitiationWizard
+            onClose={() => setShowRunModal(false)}
+            onInstanceCreated={(id) => {
+              setSelectedInstanceId(id);
+              setShowRunModal(false);
+            }}
+          />
+        </div>
       )}
       {showBulkOps && (
         <BulkOperationsPanel onClose={() => setShowBulkOps(false)} />
@@ -730,10 +823,22 @@ export const TransactionWorkflowScreen: React.FC = () => {
                 {showSearch ? '✕ Close' : '🔍 Search ⌘K'}
               </button>
               <button
-                onClick={() => { setShowBulkOps(!showBulkOps); setShowSearch(false); setShowInstancePicker(false); }}
+                onClick={() => { setShowBulkOps(!showBulkOps); setShowSearch(false); setShowInstancePicker(false); setActiveSidebarTab(null); }}
                 className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${showBulkOps ? 'bg-slate-200 text-slate-900 border-slate-200' : 'border-white/15 text-slate-200 hover:bg-white/10'}`}
               >
                 {showBulkOps ? '✕ Close' : '⚡ Bulk'}
+              </button>
+              <button
+                onClick={() => { setActiveSidebarTab(activeSidebarTab === 'xray' ? null : 'xray'); setShowSearch(false); setShowInstancePicker(false); setShowBulkOps(false); }}
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${activeSidebarTab === 'xray' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'border-white/15 text-slate-200 hover:bg-white/10'}`}
+              >
+                {activeSidebarTab === 'xray' ? '✕ Close X-Ray' : '🔍 Transaction X-Ray'}
+              </button>
+              <button
+                onClick={() => { setActiveSidebarTab(activeSidebarTab === 'audit' ? null : 'audit'); setShowSearch(false); setShowInstancePicker(false); setShowBulkOps(false); }}
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-colors whitespace-nowrap ${activeSidebarTab === 'audit' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'border-white/15 text-slate-200 hover:bg-white/10'}`}
+              >
+                {activeSidebarTab === 'audit' ? '✕ Close Logs' : '📋 Audit Trail'}
               </button>
             </div>
           </div>
@@ -760,9 +865,7 @@ export const TransactionWorkflowScreen: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* ── Band C — contextual instruction banner (dismissible) ─────────── */}
-        {!bandCDismissed && instanceResponse.status === 'PAUSED' && (
+        {!bandCDismissed && (
           <div className="bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-[11px] px-6 py-2 flex items-center justify-between gap-2">
             <span>ℹ Review the captured instruction below, then approve or reject. Click any station to replay its screen.</span>
             <button onClick={() => setBandCDismissed(true)} className="text-indigo-400 hover:text-indigo-700 font-bold">✕</button>
@@ -770,240 +873,225 @@ export const TransactionWorkflowScreen: React.FC = () => {
         )}
 
         {/* Body — all bands B/D/E live inside the padded content region. */}
-        <div className="p-6">
+        <div className="p-6 h-[calc(100vh-140px)] flex flex-col min-h-0">
 
         {/* Metro tracker — E1 commit 4/N live data. Renders the instance's workflow
             with stations color-coded by their lifecycle state. */}
-        <div className="mt-6">
+        <div className="mt-4 shrink-0">
           <MetroTracker
             stations={stations}
             onStationClick={setSelectedNodeId}
             activeStationId={viewedNodeId ?? undefined}
+            breadcrumbs={breadcrumbs}
+            onBreadcrumbClick={handleBreadcrumbClick}
           />
         </div>
 
-        {/* ── Band D (TXN_SCREEN_LAYOUT_LANGUAGE.md) — Step workspace ──────────
-            The screen of whichever station the operator clicked. Read-only unless
-            it is the live current node AND the instance is PAUSED awaiting action
-            (that single case is the editable approval; everything else is
-            playback). When the node has no screen_template we show the raw
-            context so the band is never blank. */}
-        {viewedNode && (
-          <div className="mt-6 p-4 rounded-xl border border-slate-200/70 bg-white/60">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Step {viewedNode.sequence_number} · {viewedNode.node_title}
-                {viewedNodeId !== instanceResponse.current_node_id && (
-                  <span className="ml-2 font-semibold text-indigo-500 normal-case tracking-normal">· playback (read-only)</span>
-                )}
+        {/* ── Left form workspace & right collapsible sidebar (100vh locked) ── */}
+        <div className="flex-1 min-h-0 flex gap-6 overflow-hidden mt-6">
+          
+          {/* Left Workspace Panel: Selected Step Form (Scrollable) */}
+          <div className="flex-1 overflow-y-auto bg-white rounded-2xl border border-slate-200 p-6 flex flex-col min-h-0 shadow-sm relative">
+            
+            {/* Step Header Toolbar */}
+            <div className="pb-4 border-b border-slate-100 flex items-center justify-between mb-6 shrink-0">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
+                  {viewedNode ? `${viewedNode.sequence_number}. ${viewedNode.node_title}` : 'Step Screen Workspace'}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {viewedNodeId === instanceResponse.current_node_id ? 'Active execution node' : 'Read-only node playback'}
+                </p>
               </div>
-              {selectedNodeId && (
+              
+              {/* Rollback Step Trigger (Only shown for completed, reversible steps) */}
+              {isViewedStepCompleted && viewedNode?.reversibility !== 'IRREVERSIBLE' && (
                 <button
-                  onClick={() => setSelectedNodeId(null)}
-                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1"
+                  onClick={() => setReversalNodeId(viewedNodeId)}
+                  className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] rounded-lg transition-colors border border-rose-200/50 flex items-center gap-1.5 shadow-sm"
                 >
-                  ↩ Back to current step
+                  <span>↶ Roll Back Step</span>
                 </button>
               )}
             </div>
 
-            {viewedScreenTemplate && viewedScreen ? (
-              <RuntimeScreenRenderer
-                screenName={viewedScreen.screen_name}
-                definition={viewedScreen.definition}
-                initialValues={instanceResponse.current_context}
-                readOnly={
-                  !(viewedNodeId === instanceResponse.current_node_id &&
-                    instanceResponse.status === 'PAUSED')
-                }
-                onSubmit={(_values, action) => {
-                  if (action === 'CANCEL_SESSION') { setShowReject(true); }
-                  else { approveMutation.mutate(); }
-                }}
-              />
-            ) : viewedScreenTemplate ? (
-              <div className="text-[12px] text-slate-400 py-4 text-center">Loading step screen…</div>
-            ) : (
-              // No screen bound to this node — generated context fallback (band D rule).
-              <div className="divide-y divide-slate-100">
-                {Object.entries(instanceResponse.current_context ?? {}).length === 0 ? (
-                  <p className="text-[12px] text-slate-400 py-4 text-center">
-                    No screen configured for this step, and no context to display.
+            {/* Maker/Checker Segregation Banner */}
+            {isMaker && viewedNodeId === instanceResponse.current_node_id && instanceResponse.status === 'PAUSED' && (
+              <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-[11px] flex gap-3 shadow-sm shrink-0">
+                <span className="text-rose-500 font-bold text-sm">🛑</span>
+                <div>
+                  <strong>Segregation of Duties Conflict</strong><br/>
+                  You cannot authorize or reject this transaction step because you initiated it (Maker-Checker 4-Eyes rule). 
+                  To approve this step, another checker user must sign in.
+                </div>
+              </div>
+            )}
+
+            {/* Form Content Area */}
+            <div className="flex-1 min-h-0">
+              {viewedScreenTemplate && viewedScreen ? (
+                <RuntimeScreenRenderer
+                  screenName={viewedScreen.screen_name}
+                  definition={viewedScreen.definition}
+                  initialValues={contextForRenderer}
+                  readOnly={viewedNodeId !== instanceResponse.current_node_id || instanceResponse.status !== 'PAUSED' || isMaker}
+                  onSubmit={(_values, action) => {
+                    if (action === 'CANCEL_SESSION') {
+                      setShowReject(true);
+                    } else {
+                      approveMutation.mutate();
+                    }
+                  }}
+                />
+              ) : viewedScreenTemplate ? (
+                <div className="text-center py-12 text-slate-400 text-xs animate-pulse">Loading step screen...</div>
+              ) : (
+                // System node placeholder notice
+                <div className="flex-1 flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto h-full shrink-0">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 border border-slate-200/60 flex items-center justify-center text-slate-400 text-xl font-bold mb-4">⚙</div>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+                    {viewedNode?.node_title || 'System Action'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mb-6 leading-relaxed">
+                    This is an automated backend system step. No human interaction screen is defined for this process. 
+                    You can view details on rules, calculations, and integrations for this step in the X-Ray.
                   </p>
-                ) : (
-                  Object.entries(instanceResponse.current_context).map(([k, v]) => (
-                    <div key={k} className="flex items-start justify-between py-2 gap-4 text-[11px]">
-                      <span className="font-mono font-semibold text-indigo-600 break-all">{k}</span>
-                      <span className="text-slate-700 text-right break-all">
-                        {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                      </span>
-                    </div>
-                  ))
+                  <button
+                    onClick={() => setActiveSidebarTab('xray')}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg transition-colors border border-indigo-200/40 shadow-sm"
+                  >
+                    🔍 View Step Execution X-Ray
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Checker Action Bar (For active, paused step only) */}
+            {viewedNodeId === instanceResponse.current_node_id && instanceResponse.status === 'PAUSED' && !isMaker && (
+              <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col gap-3 shrink-0">
+                {showReject && (
+                  <div className="flex items-center gap-2 animate-in slide-in-from-bottom-2 duration-300">
+                    <input
+                      autoFocus
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      placeholder="Reason for rejection (required)"
+                      className="flex-1 px-3 py-2 text-xs border border-red-200 rounded-lg focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
+                    />
+                    <button
+                      onClick={() => rejectMutation.mutate(rejectReason.trim())}
+                      disabled={!rejectReason.trim() || rejectMutation.isPending}
+                      className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shadow-sm"
+                    >
+                      {rejectMutation.isPending ? 'Rejecting…' : 'Confirm reject'}
+                    </button>
+                    <button
+                      onClick={() => { setShowReject(false); setRejectReason(''); }}
+                      className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => approveMutation.mutate()}
+                    disabled={approveMutation.isPending || showReject}
+                    className="px-5 py-2 rounded-lg bg-emerald-600 border border-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                  >
+                    ✓ {approveMutation.isPending ? 'Approving…' : 'Approve'}
+                  </button>
+                  {!showReject && (
+                    <button
+                      onClick={() => setShowReject(true)}
+                      className="px-4 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors"
+                    >
+                      ✕ Reject
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Failure Action Bar (For active, retrying step only) */}
+            {viewedNodeId === instanceResponse.current_node_id && ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(instanceResponse.status) && (
+              <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2 justify-end shrink-0">
+                <button
+                  onClick={() => retryMutation.mutate()}
+                  disabled={retryMutation.isPending}
+                  className="px-4 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  <span>↻</span> {retryMutation.isPending ? 'Retrying…' : 'Retry now'}
+                </button>
+                {viewedNode.on_failure === 'REPAIR_QUEUE' && (
+                  <button
+                    onClick={() => repairMutation.mutate()}
+                    disabled={repairMutation.isPending}
+                    className="px-4 py-2 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold hover:bg-orange-100 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>⤺</span> {repairMutation.isPending ? 'Sending…' : 'Send to Repair'}
+                  </button>
+                )}
+                {viewedNode.skippable && (
+                  <button
+                    onClick={() => skipMutation.mutate()}
+                    disabled={skipMutation.isPending}
+                    className="px-4 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>⏭</span> {skipMutation.isPending ? 'Skipping…' : 'Skip step'}
+                  </button>
+                )}
+                {viewedNode.cancellable && (
+                  <button
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    className="px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors ml-auto flex items-center gap-1.5"
+                  >
+                    <span>×</span> {cancelMutation.isPending ? 'Cancelling…' : 'Cancel Transaction'}
+                  </button>
                 )}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Error banner — E2 action errors */}
+          </div>
+
+          {/* Right Workspace Panel: Collapsible X-Ray Drawer */}
+          {activeSidebarTab && (
+            <div className="w-[450px] shrink-0 border border-slate-200 bg-white rounded-2xl overflow-hidden shadow-lg h-full flex flex-col min-h-0 animate-in slide-in-from-right duration-300">
+              <DetailedLifecycleView
+                nodes={instanceResponse.workflow_nodes}
+                instance={instanceResponse}
+                activeTab={activeSidebarTab}
+                onClose={() => setActiveSidebarTab(null)}
+              />
+            </div>
+          )}
+
+        </div>
+
+        {/* Action error banner */}
         {actionError && (
-          <div className="mt-4 p-3 rounded-lg bg-red-50/40 border border-red-200/50 text-[11px] text-red-900">
+          <div className="mt-4 p-3 rounded-lg bg-red-50/40 border border-red-200/50 text-[11px] text-red-900 shrink-0">
             <span className="font-bold">Action error:</span> {actionError}
           </div>
         )}
 
-        {/* Current step details — populated from the instance's current_node_id */}
-        {currentNode && (
-          <div className="mt-6 p-4 rounded-xl bg-slate-50/50 border border-slate-200/60">
-            <div className="flex items-start justify-between mb-3">
-              <div className="text-[12px] text-slate-600">
-                <span className="font-bold">
-                  {currentNode.sequence_number}. {currentNode.node_title}
-                </span>
-                {instanceResponse.status === 'PAUSED' && (
-                  <span className="ml-2 text-slate-500">(paused)</span>
-                )}
-                {instanceResponse.status === 'RETRYING' && (
-                  <span className="ml-2 text-slate-500">(retrying)</span>
-                )}
-                <br />
-                <span className="text-slate-500 text-[11px] mt-2 block">
-                  {instanceResponse.status === 'PAUSED'
-                    ? 'Awaiting your decision to proceed.'
-                    : instanceResponse.status === 'RETRYING'
-                      ? 'Automatic retry in progress. You can retry now or skip this step.'
-                      : 'Step is executing.'}
-                </span>
-              </div>
-            </div>
-
-            {/* ── Band E (TXN_SCREEN_LAYOUT_LANGUAGE.md) — maker-checker decision bar ──
-                A real decision surface, not a lone button: Approve / Reject (with a
-                MANDATORY typed reason) / Return-for-repair / Retry / Skip / Cancel,
-                each gated on the node's own failure-handling config. */}
-            <div className="mt-4 pt-3 border-t border-slate-200/50">
-              {/* Reject reason field — revealed by "Reject"; reject cannot fire until
-                  a reason is typed (maker-checker audit requirement). */}
-              {showReject && instanceResponse.status === 'PAUSED' && (
-                <div className="mb-3 flex items-center gap-2">
-                  <input
-                    autoFocus
-                    value={rejectReason}
-                    onChange={e => setRejectReason(e.target.value)}
-                    placeholder="Reason for rejection (required)"
-                    className="flex-1 px-3 py-1.5 text-[11px] border border-red-200 rounded-lg focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100"
-                  />
-                  <button
-                    onClick={() => rejectMutation.mutate(rejectReason.trim())}
-                    disabled={!rejectReason.trim() || rejectMutation.isPending}
-                    className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    {rejectMutation.isPending ? 'Rejecting…' : 'Confirm reject'}
-                  </button>
-                  <button
-                    onClick={() => { setShowReject(false); setRejectReason(''); }}
-                    className="px-2 py-1.5 text-[11px] text-slate-500 hover:text-slate-700"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2 items-center">
-                {/* Approve / Reject — PAUSED human-approval state only */}
-                {instanceResponse.status === 'PAUSED' && (
-                  <>
-                    <button
-                      onClick={() => approveMutation.mutate()}
-                      disabled={approveMutation.isPending || showReject}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 border border-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <span>✓</span>
-                      {approveMutation.isPending ? 'Approving…' : 'Approve'}
-                    </button>
-                    {!showReject && (
-                      <button
-                        onClick={() => setShowReject(true)}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px] font-semibold hover:bg-red-100 transition-colors"
-                      >
-                        <span>✕</span> Reject
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {/* Retry — RETRYING / FAILED_TECHNICAL */}
-                {(instanceResponse.status === 'RETRYING' ||
-                  instanceResponse.status === 'FAILED_TECHNICAL') && (
-                    <button
-                      onClick={() => retryMutation.mutate()}
-                      disabled={retryMutation.isPending}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
-                    >
-                      <span>↻</span>
-                      {retryMutation.isPending ? 'Retrying…' : 'Retry now'}
-                    </button>
-                  )}
-
-                {/* Return for repair — only when the node routes failures to a repair queue */}
-                {currentNode.on_failure === 'REPAIR_QUEUE' &&
-                  ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(instanceResponse.status) && (
-                    <button
-                      onClick={() => repairMutation.mutate()}
-                      disabled={repairMutation.isPending}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-semibold hover:bg-orange-100 disabled:opacity-50 transition-colors"
-                    >
-                      <span>⤺</span>
-                      {repairMutation.isPending ? 'Sending…' : `Return to repair${currentNode.repair_queue_name ? ` · ${currentNode.repair_queue_name}` : ''}`}
-                    </button>
-                  )}
-
-                {/* Skip — only when the designer marked this step skippable */}
-                {currentNode.skippable && instanceResponse.status !== 'COMPLETED' && (
-                  <button
-                    onClick={() => skipMutation.mutate()}
-                    disabled={skipMutation.isPending}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[11px] font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors"
-                  >
-                    <span>⏭</span>
-                    {skipMutation.isPending ? 'Skipping…' : 'Skip step'}
-                  </button>
-                )}
-
-                {/* Cancel transaction — when the node permits it */}
-                {currentNode.cancellable && (
-                  <button
-                    onClick={() => cancelMutation.mutate()}
-                    disabled={cancelMutation.isPending}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-semibold hover:bg-slate-100 disabled:opacity-50 transition-colors ml-auto"
-                  >
-                    <span>×</span>
-                    {cancelMutation.isPending ? 'Cancelling…' : 'Cancel transaction'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* E2 commit 3/N — Step-issue panel (failure diagnostics) */}
-        {currentNode &&
-          ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(
-            instanceResponse.status
-          ) && (
+        {/* Diagnostics Step Issue Panel */}
+        {viewedNodeId === instanceResponse.current_node_id && ['RETRYING', 'FAILED_TECHNICAL', 'AWAITING_REPAIR'].includes(instanceResponse.status) && (
+          <div className="mt-4 shrink-0">
             <StepIssuePanel
-              currentNode={currentNode}
+              currentNode={viewedNode}
               instanceResponse={instanceResponse}
               onRetry={() => retryMutation.mutate()}
-              onSendToRepair={() => {
-                /* E2 commit 3/N: placeholder for send-to-repair action */
-              }}
+              onSendToRepair={() => {}}
               onCancel={() => cancelMutation.mutate()}
               isRetryPending={retryMutation.isPending}
             />
-          )}
+          </div>
+        )}
 
-        {/* E3 commit 2/N — Reversal Drawer (saga compensation) */}
+        {/* Saga Compensation Reversal Drawer */}
         {reversalNodeId && (
           <ReversalDrawer
             nodeId={reversalNodeId}

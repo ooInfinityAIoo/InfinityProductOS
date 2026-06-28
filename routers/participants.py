@@ -29,7 +29,7 @@ from schemas import (
 import uuid
 
 router = APIRouter(
-    prefix="/workflows/{workflow_id}/participants",
+    prefix="/api/v1/workflows/{workflow_id}/participants",
     tags=["Workflow Participants"],
 )
 
